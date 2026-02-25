@@ -4,7 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-brightgreen.svg)](https://www.python.org/downloads/)
 
-Rekall is a **project reality blackboard + ledger**—the irrefutable truth of what a project is, what failed, and what's blocking.  
+Rekall is a **ledger for your project state**. It's the shared source of truth that helps you and your AI agents stay on the same page about what's actually happening, what failed, and what's next.
+
 Rekall is NOT "Kanban for agents." (Read: [Why Rekall is Not Kanban](docs/WHY_NOT_KANBAN.md))
 
 ---
@@ -13,22 +14,22 @@ Rekall is NOT "Kanban for agents." (Read: [Why Rekall is Not Kanban](docs/WHY_NO
 
 ![Rekall demo](assets/demo/rekall_demo.gif)
 
-It gives humans and AI agents a shared, portable “project brain” that answers:
-- What is this project?
-- What’s the current status and what’s blocking?
-- What’s been tried (and what failed)?
-- What decisions/trade-offs were made and why?
-- Where is it running, and how do I access it (without storing secrets)?
+It's a "project brain" you can share with your agents to answer the hard stuff:
+- **What is this?** (Project context)
+- **What's the status?** (Are we actually on track?)
+- **What's blocking?** (And how do we fix it?)
+- **What have we already tried?** (So we don't repeat mistakes)
+- **What did we decide?** (The trade-offs and rationale)
 
-Rekall **does not replace** Jira/Notion/GitHub/Slack/Figma. It **links out** to them via typed links, while standardizing the missing state that agents and leaders actually need.
+Rekall doesn't replace Jira, Notion, or Slack. It **links to them** while providing the machine-readable state that agents actually need to be useful without drifting.
 
 ---
 
 ## Try it
 
 
-### 3) Try Rekall (Zero-Friction Onboarding)
-Run the fully mocked demo lifecycle to feel the magic in 30 seconds:
+### 1) See it in action
+Run the demo to see how a project lifecycle looks in 30 seconds:
 
 **Using pipx (Recommended for CLI apps):**
 ```bash
@@ -111,11 +112,9 @@ Mermaid diagrams live under `assets/diagrams/`:
 
 ## Idempotency Keys
 
-Idempotency keys let agents deduplicate high-impact, one-shot actions—"send this email once," "run this migration once," "create this ticket once"—without relying on external infrastructure.
+Agents crash. Networks fail. Idempotency keys make sure high-impact actions—like sending an email or running a migration—only happen **exactly once**, even if the agent retries.
 
-**Use when:** your agent might retry a call (crash/network) and the action must only execute once.
-
-**How it works:** if two records share the same `idempotency_key` within the same JSONL file, the second write is a no-op returning the first record. Primary `attempt_id`/`event_id`/`decision_id` dedup still applies.
+**How it works:** If you try to write a record with a key that already exists, Rekall just returns the existing record instead of creating a duplicate.
 
 **Example JSON-RPC call:**
 ```json
@@ -160,7 +159,7 @@ Rekall can still brand the experience (UI, CLI, MCP server, templates) without f
 
 ## Checkpointing
 
-Crashes and lost context are the #1 agent grievance. `rekall checkpoint` is a local-first "save game"—a durable export of project state with a timeline marker so you always know when and why you saved.
+Losing agent context mid-task is painful. `rekall checkpoint` is a "save game" for your project. It creates a durable export of your current state so you can roll back or branch off if things go sideways.
 
 ```powershell
 # Save a checkpoint before a risky change
@@ -206,8 +205,9 @@ rekall validate --mcp --server-cmd "python -m rekall.server.mcp_server" --strict
 
 ### Reporting Issues
 
-If you encounter bugs or want to request a feature, please use the provided [GitHub Issue Templates](.github/ISSUE_TEMPLATE/). 
-**Note:** For bug reports, you are required to attach the structured diagnostic output locally by running `rekall validate --json` (or `rekall validate --strict --json`). If the issue is MCP-related, please attach the output of `rekall validate --mcp --json`.
+If you find a bug, please use our [GitHub Issue Templates](.github/ISSUE_TEMPLATE/). 
+
+**Note:** To help us debug, please run `rekall validate --json` and attach the output. If it's an MCP issue, use `rekall validate --mcp --json`.
 
 ### "Unsupported schema version"
 Ensure your `schema-version.txt` exists at the root of the state directory and contains exactly `0.1`.
