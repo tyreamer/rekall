@@ -13,6 +13,40 @@ Rekall **does not replace** Jira/Notion/GitHub/Slack/Figma. It **links out** to 
 
 ---
 
+## Try it
+
+### Tier 1: “Try it in 30 seconds”
+If you want to feel the magic immediately:
+```bash
+pip install -e .
+rekall demo
+rekall init ./my-project-state
+```
+This installs the tool and runs a fully mocked `demo` lifecycle (recording work items / appending attempts / proposing decisions, validating, and generating a handoff pack). 
+Finally, `rekall init ./my-project-state` is called because the demo executes in a temporary directory. The `init` command explicitly scaffolds an empty, valid project reality folder so you have a blank slate to begin testing with your own agents natively.
+
+### Tier 2: “Use it on your own project-state folder”
+Once initialized, point the CLI or MCP server at your directory:
+
+- **CLI Operations**:
+  - `rekall features` (shows capability map and "Not Kanban" explainer)
+  - `rekall status --store-dir ./my-project-state` (quick executive summary)
+  - `rekall blockers --store-dir ./my-project-state` (fetch active blockers)
+  - `rekall validate --store-dir ./my-project-state` (checks invariants and links)
+  - `rekall export --store-dir ./my-project-state --out ./backup-state` (creates a portable state artifact export)
+  - `rekall import ./backup-state --store-dir ./my-project-state` (idempotent folder-based ingestion)
+  - `rekall handoff <project_id> --store-dir ./my-project-state -o ./pack` (generates `boot_brief.md` + snapshot)
+
+- **MCP Server** (for Claude Desktop): `python -m rekall.server.mcp_server` (reads from stdin/stdout)
+
+### Explore the Samples
+- **Sample Artifact**: See `examples/sample_state_artifact/` to see how `project.yaml`, `work-items.jsonl`, `attempts.jsonl`, `decisions.jsonl`, etc., are structured.
+- **Demo Scripts**: Check `examples/demo_scripts/` for simulated interactions.
+- **Run the tests**: `python -m pytest tests/`
+- **Smoke Client**: `python scripts/smoke_client.py` (verifies MCP tool contract)
+
+---
+
 ## Repository layout
 
 - `specs/` — the constitution (contracts + schema)
@@ -31,52 +65,6 @@ Rekall **does not replace** Jira/Notion/GitHub/Slack/Figma. It **links out** to 
 4) `specs/03_executive_status_query_contract.md`  
 5) `specs/04_state_spec_schema_v0.1.md`  
 6) `specs/05_mcp_tool_contract_v0.1.md`
-
----
-
-## Quick start (POC)
-
-### 1) Open the sample State Artifact
-See: `examples/sample_state_artifact/`
-
-It includes:
-- `project.yaml` (goal, constraints, typed links)
-- `work-items.jsonl` (work item event stream)
-- `attempts.jsonl` (what we tried)
-- `decisions.jsonl` (trade-offs)
-- `timeline.jsonl` (what changed)
-- `envs.yaml` + `access.yaml` (where it runs + access pointers)
-- `activity.jsonl` (audit/provenance)
-- `schema-version.txt`
-
-### 2) Run a demo conversation
-Use:
-- `examples/demo_scripts/director_demo.md`
-- `examples/demo_scripts/builder_demo.md`
-- `examples/demo_scripts/demo_prompt_pack.md`
-
-### 3) Try Rekall in 3 commands (Zero-Friction Onboarding)
-If you want to feel the magic in 30 seconds:
-```bash
-pip install -e .
-rekall demo
-rekall init ./my-project-state
-```
-This installs the tool, runs a fully mocked `demo` lifecycle (creating items, validating, generating a handoff pack), and then prepares an empty project artifact directory for you to test with.
-
-### 4) Validation & DX
-- **Run the CLI**:
-  - `rekall features` (shows capability map and "Not Kanban" explainer)
-  - `rekall status` / `rekall blockers` / `rekall resume` (executive queries)
-  - `rekall validate` (checks invariants and links)
-  - `rekall export --out snapshot.json` (creates portable dump)
-  - `rekall import snapshot.json` (idempotent ingestion)
-  - `rekall handoff <project_id> -o ./pack` (generates `boot_brief.md` + snapshot)
-- **Run the tests**: `python -m pytest tests/`
-- **Run the local server**: `python -m rekall.server.mcp_server` (reads from stdin/stdout)
-- **Run the smoke client** (verifies MCP tool contract): `python scripts/smoke_client.py`
-
-See: `roadmap/poc_acceptance_criteria.md`
 
 ---
 
