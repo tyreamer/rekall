@@ -13,6 +13,7 @@ Everything lives in a simple, git-friendly `project-state/` folder (YAML + JSONL
 ---
 
 ![Rekall demo](assets/demo/rekall_demo.gif)
+*15-second demo: agent lifecycle with attempts, decisions, and handoff*
 
 ---
 
@@ -49,15 +50,27 @@ project-state/
 }
 ```
 
+```bash
+# Get a quick executive summary
+rekall status --store-dir ./project-state
+
+[ON_TRACK] Target: Cloud Migration v1
+Status: 85% confidence. 2 active blockers.
+Decisions: [d1] Use S3 for assets, [d2] Lambda for processing.
+Recent Attempt: [a1] Deploy API (failed) -> Rationale: VPC Timeout.
+```
+
 ---
 
-## Core Concepts (The Blackstone/Reality Layer)
+## Core Concepts
 Rekall is a **project reality blackboard + ledger**, not a task manager. It provides the missing state layer that agents need:
 
 - **Attempts**: A typed ledger of what has been tried. Agents learn from past failures instead of repeating them.
 - **Decisions**: Explicit records of trade-offs. Context is preserved permanently.
 - **Timeline**: An immutable event log of milestones and state changes.
-- **Pointers**: Typed references to environments, access methods, and external docs.
+- **Environment Pointers**: Typed references to environments and access methods.
+
+*Rekall also provides native **Idempotency** (preventing duplicate agent actions) and **Checkpointing** (durable save-points).*
 
 ---
 
@@ -66,6 +79,7 @@ Rekall is a **project reality blackboard + ledger**, not a task manager. It prov
 - `rekall guard` — Preflight check: summarized goals, risks, and recent work.
 - `rekall blockers` — List active blockers and their estimated impact.
 - `rekall handoff <project_id>` — Generate a `boot_brief.md` for the next agent session.
+- **MCP-Native** — First-class support for Claude Desktop and Cursor (`python -m rekall.server.mcp_server`).
 
 ---
 
@@ -84,6 +98,24 @@ Rekall is a **project reality blackboard + ledger**, not a task manager. It prov
 3. [Connecting Clients](docs/CONNECTING_CLIENTS.md) — Claude Desktop, Cursor, and more.
 4. [Advanced Docs](docs/) — Idempotency, Checkpointing, and MCP Validation.
 
+
 ---
 
-*Note: Rekall is currently in early beta. `rekall.io` domain is reserved for future hosted services.*
+## Ready to give your agents memory?
+```bash
+# Zero-friction install
+pipx install git+https://github.com/tyreamer/rekall.git
+
+# Try the demo
+rekall demo
+```
+
+⭐ **Star this repo** if this solves a real pain for you.  
+🐦 **Follow [@TyReamer](https://x.com/tyreamer)** for updates and beta announcements.
+
+---
+
+### Status
+`v0.1.0-beta.1` — Private beta (2026-02-25). See [CHANGELOG.md](CHANGELOG.md) for details.
+
+*Note: `rekall.io` domain is reserved for future hosted services.*
