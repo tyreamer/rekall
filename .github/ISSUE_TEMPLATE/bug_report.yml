@@ -1,0 +1,61 @@
+name: Bug Report
+description: File a bug report for Rekall
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: e.g. Windows 11, macOS Sonoma, Ubuntu 22.04
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python Version
+      description: e.g. 3.10.12
+    validations:
+      required: true
+  - type: input
+    id: rekall-version
+    attributes:
+      label: Rekall Version / Commit
+      description: e.g. v0.1.0 or commit hash
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command Run
+      description: The exact command that produced the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected vs Actual Behavior
+      description: What did you expect to happen, and what actually happened?
+    validations:
+      required: true
+  - type: textarea
+    id: validate-output
+    attributes:
+      label: rekall validate --json Output
+      description: Please attach the output of `rekall validate --json` or `rekall validate --strict --json`
+    validations:
+      required: true
+  - type: textarea
+    id: mcp-output
+    attributes:
+      label: MCP Validation Output (If MCP-related)
+      description: If this is an MCP issue, attach the output of `rekall validate --mcp --json`
+    validations:
+      required: false

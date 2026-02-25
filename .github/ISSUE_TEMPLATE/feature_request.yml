@@ -1,0 +1,33 @@
+name: Feature Request
+description: Suggest an idea for Rekall
+title: "[Feature Request]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: A clear and concise description of the problem you are trying to solve.
+    validations:
+      required: true
+  - type: textarea
+    id: primitives
+    attributes:
+      label: Why Rekall Primitives Fit
+      description: Explain why attempts, decisions, timeline, or env pointers fit this feature.
+    validations:
+      required: true
+  - type: textarea
+    id: spec-change
+    attributes:
+      label: What Spec Section Would Change?
+      description: Refer to the specific spec in `specs/`.
+    validations:
+      required: true
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints Check
+      options:
+        - label: I confirm this is NOT asking for full two-way sync with Jira/Notion/Linear.
+          required: true

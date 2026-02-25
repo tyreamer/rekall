@@ -18,6 +18,14 @@ Rekall **does not replace** Jira/Notion/GitHub/Slack/Figma. It **links out** to 
 
 ### 3) Try Rekall (Zero-Friction Onboarding)
 Run the fully mocked demo lifecycle to feel the magic in 30 seconds:
+
+**Using pipx (Recommended for CLI apps):**
+```bash
+pipx install .
+rekall demo
+```
+
+**Using venv:**
 ```bash
 python -m venv venv
 source venv/bin/activate  # or `venv\Scripts\activate` on Windows
@@ -66,12 +74,14 @@ Once initialized, point the CLI or MCP server at your directory:
 
 ## Start here (reading order)
 
-1) `specs/00_overview.md`  
-2) `specs/01_non_negotiables.md`  
-3) `specs/02_invariants_and_operating_rules.md`  
-4) `specs/03_executive_status_query_contract.md`  
-5) `specs/04_state_spec_schema_v0.1.md`  
-6) `specs/05_mcp_tool_contract_v0.1.md`
+1) [Quickstart](docs/QUICKSTART.md)
+2) [Why Rekall is Not Kanban](docs/WHY_NOT_KANBAN.md)
+3) `specs/00_overview.md`  
+4) `specs/01_non_negotiables.md`  
+5) `specs/02_invariants_and_operating_rules.md`  
+6) `specs/03_executive_status_query_contract.md`  
+7) `specs/04_state_spec_schema_v0.1.md`  
+8) `specs/05_mcp_tool_contract_v0.1.md`
 
 ---
 
@@ -157,6 +167,11 @@ rekall validate --mcp --server-cmd "python -m rekall.server.mcp_server" --strict
 ---
 
 ## Troubleshooting
+
+### Reporting Issues
+
+If you encounter bugs or want to request a feature, please use the provided [GitHub Issue Templates](.github/ISSUE_TEMPLATE/). 
+**Note:** For bug reports, you are required to attach the structured diagnostic output locally by running `rekall validate --json` (or `rekall validate --strict --json`). If the issue is MCP-related, please attach the output of `rekall validate --mcp --json`.
 
 ### "Unsupported schema version"
 Ensure your `schema-version.txt` exists at the root of the state directory and contains exactly `0.1`.

@@ -1,36 +1,30 @@
-# Rekall is NOT a Kanban Board for Agents
+# Why Rekall is Not Kanban
 
-When engineers first hear about Rekall, the most common reaction is: *"Oh, so it's a Jira/Notion clone built specifically for AI agents."*
+**Rekall is a project reality blackboard + ledger, not a board or task manager.**
 
-**No, it is not.**
+AI agents don't need another place to drag tickets from "To Do" to "Done." They need a machine-readable, irrefutable source of truth about what the project is, what constraints exist, and what has already failed. Rekall provides the missing state layer that agents and technical leaders actually need.
 
-Rekall is a **state-first, agent-native project reality blackboard + ledger**. 
+## The 4 Differentiating Primitives
 
-## The Problem with "Tasks"
-Kanban boards and issue trackers are designed for human coordination. They represent discrete units of effort (Tasks, Tickets) assigned to people. 
+1. **Attempts**: A typed ledger of what has been tried, the result, and why it failed. Agents learn from past mistakes instead of repeating them.
+2. **Decisions**: Explicit records of trade-offs and architectural choices. Context is preserved permanently.
+3. **Timeline**: An immutable event log of milestones, commits, and state changes.
+4. **Env+Access Pointers**: Typed pointers to where the project is running and how to access it (without storing secrets directly).
 
-AI agents, however, don't need "tickets" to understand what to do; they need **context**, **history**, and **state**.
-If an agent fails an attempt to configure a specific environment, Jira doesn't organically capture the *why* or the *what failed*. 
+## Evidence-First Exec Queries
+Status in Rekall is trustworthy because it is derived from evidence. When you ask Rekall what is blocking a project, it doesn't just read a string; it queries the graph of failed attempts and unresolved decisions. This ensures that the "status" actually reflects the reality of the codebase and environment.
 
-## The Rekall Architecture
-Rekall operates entirely differently. It records the irrefutable truth of what the project is, what was decided, what failed, and what is currently happening—all stored as machine-readable YAML and JSONL files within your repository.
+## Complements Jira / GitHub / Notion
+Rekall **does not replace** your existing task trackers or wikis. Instead, it **links out** to them via typed links. You keep high-level epics in Jira, product requirements in Notion, and code in GitHub. Rekall acts as the local, portable tissue connecting these systems for the agent, standardizing the immediate context required to execute autonomous work.
 
-- **`project.yaml`**: The constitution. What is this project? What are its boundaries?
-- **`work-items.jsonl`**: The ledger. Not just open tasks, but the history of *how* a task evolved, what blocked it, and explicitly defining what "done" means.
-- **`attempts.jsonl`**: The scientific journal. What did the agent or human already try that failed? (Prevents infinite agentic looping).
-- **`decisions.jsonl`**: The "Why". Explaining architectural trade-offs explicitly so new agents don't second-guess the blueprint.
-- **`timeline.jsonl`**: The audit trail.
+## When to Use Rekall (and When Not To)
 
-## Complementary, Not Competitive
-Rekall **does not replace** Jira, Notion, GitHub Issues, Slack, or Figma. 
+**Use Rekall when:**
+- You are operating autonomous AI coding agents (or pair-programming heavily).
+- You frequently lose context between sessions or team members.
+- You need a portable, local-first artifact that can be committed to Git.
 
-Instead of re-typing specs, Rekall uses **typed links** to bridge into those tools.
-```yaml
-links:
-  - type: PRD
-    url: https://notion.so/my-prd
-  - type: Figma
-    url: https://figma.com/my-designs
-```
-
-Rekall acts as the unified, machine-readable brain for your AI agents to consult *before* they act, ensuring they never lose context across sessions, branches, or humans. It's the unifying ledger of project truth.
+**Do NOT use Rekall when:**
+- You just want a visual board to track tasks for a non-technical team.
+- You want two-way syncing with Jira or Linear.
+- You need deep, human-centric sprint planning mechanics.
