@@ -1,0 +1,46 @@
+schema_version: "0.1"
+version: 1
+environments:
+  - env_id: dev
+    name: "Development"
+    urls:
+      - type: app
+        url: "http://localhost:5173"
+      - type: api
+        url: "http://localhost:8080"
+    hosting:
+      provider: "local"
+      runtime: "local"
+    observability_links:
+      - link_id: LNK-logs-dev
+        type: logs
+        label: "Local logs"
+        url: "file://./logs/dev.log"
+        system: other
+    deployment_notes: "Run MCP server locally; state artifact lives on disk."
+  - env_id: prod
+    name: "Production (demo)"
+    urls:
+      - type: api
+        url: "https://api.sample-psl.example.com"
+      - type: app
+        url: "https://sample-psl.example.com"
+    hosting:
+      provider: "demo-host"
+      account_ref_id: "ACC-demo-host"
+      region: "us-east-1"
+      runtime: "container"
+    observability_links:
+      - link_id: LNK-logs-prod
+        type: logs
+        label: "Prod API errors (last 24h)"
+        url: "https://app.datadoghq.com/logs?query=service:psl%20env:prod%20status:error"
+        system: datadog
+      - link_id: LNK-traces-prod
+        type: traces
+        label: "Prod traces"
+        url: "https://app.datadoghq.com/apm/traces?query=service:psl%20env:prod"
+        system: datadog
+    last_known_good:
+      timestamp: "2026-02-24T15:00:00Z"
+      notes: "Last successful demo run."

@@ -1,0 +1,27 @@
+```mermaid
+sequenceDiagram
+  %% Project State Layer — Executive Status Query (v0.1)
+  participant Exec as Director/Manager
+  participant Chat as Chat Agent
+  participant MCP as MCP Server
+  participant State as State Artifact/Store
+
+  Exec->>Chat: "Is this project on track?"
+  Chat->>MCP: exec.query(ON_TRACK, project_id)
+  MCP->>State: read project + work items + recent timeline/decisions/attempts
+  State-->>MCP: state snapshots + logs
+  MCP-->>Chat: ExecutiveResponse
+(summary, confidence, evidence)
+  Chat-->>Exec: Status + confidence
+Top drivers + blockers
+Evidence refs
+
+  Exec->>Chat: "Show me why it's blocked"
+  Chat->>MCP: work.get(work_item_id)
++ timeline.list(since)
++ decision.list(since)
+  MCP->>State: fetch backing artifacts
+  State-->>MCP: artifacts
+  MCP-->>Chat: evidence details
+  Chat-->>Exec: Drill-down with links
+```

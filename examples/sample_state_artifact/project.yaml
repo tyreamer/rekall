@@ -1,0 +1,72 @@
+schema_version: "0.1"
+project_id: "prj_646d63703ec5"
+name: "Sample Project State Layer POC"
+one_liner: "Portable, evidence-backed project state artifact + MCP server for agent-native coordination."
+current_goal: "Prove the concept end-to-end: state artifact + MCP server + exec status queries with evidence."
+phase: "mvp"
+data_classification: "internal"
+
+version: 1
+status: "at_risk"
+confidence: "medium"
+
+non_goals:
+  - "Replace Jira/Notion/GitHub/Slack/Figma"
+  - "Host or mirror code as a primary function"
+
+constraints:
+  privacy: "No secrets in state artifact; AccessRefs are pointers only."
+  latency: "Exec queries should answer from state quickly; deep drill-down via evidence links."
+
+tech_stack_summary: "Local-first state artifact (YAML/JSONL) + MCP server exposing tools; optional hosted hub later."
+
+typed_links:
+  - link_id: LNK-repo
+    type: repo
+    label: "Core repo (code lives here)"
+    url: "https://github.com/acme-co/atlasyn-core"
+    system: github
+    notes: "State layer links out; code is not stored in the state artifact."
+  - link_id: LNK-board
+    type: board
+    label: "Issue/roadmap board"
+    url: "https://github.com/orgs/acme-co/projects/12"
+    system: github
+  - link_id: LNK-doc-arch
+    type: doc
+    label: "Architecture notes (deep dive)"
+    url: "https://notion.so/acme/Project-State-Layer-Architecture-Notes-123"
+    system: notion
+  - link_id: LNK-figma
+    type: design
+    label: "UI mockups"
+    url: "https://www.figma.com/file/abc123/Project-State-Layer"
+    system: figma
+  - link_id: LNK-logs-prod
+    type: logs
+    label: "Prod API errors (last 24h)"
+    url: "https://app.datadoghq.com/logs?query=service:psl%20env:prod%20status:error"
+    system: datadog
+  - link_id: LNK-runbook
+    type: runbook
+    label: "Ops runbook"
+    url: "https://confluence.acme.co/display/PSL/Runbook"
+    system: confluence
+  - link_id: LNK-notebook
+    type: notebook
+    label: "Research notebook (NotebookLM)"
+    url: "https://notebooklm.google.com/notebook/xyz"
+    system: other
+    notes: "Linked research; decisions/attempts live in this state artifact."
+
+owners:
+  human_owners:
+    - "ty"
+  primary_agent: "agent_alpha"
+
+tags:
+  - "agent-native"
+  - "state-first"
+  - "poc"
+
+updated_at: "2026-02-25T15:00:00Z"

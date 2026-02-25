@@ -1,0 +1,56 @@
+```mermaid
+flowchart LR
+  %% Project State Layer — System Overview (v0.1)
+  subgraph Humans
+    H1[Builder]
+    H2[Manager / Director]
+  end
+
+  subgraph Agents
+    A1[Local Agent
+(Claude Code / Cursor)]
+    A2[Cloud Agent]
+    A3[Chat Status Agent]
+  end
+
+  subgraph PSL["Project State Layer"]
+    M[MCP Server
+(tool surface)]
+    SA[(State Artifact
+YAML/JSONL
+portable)]
+    HUB[(Optional Hosted Hub
+permissions + audit + search)]
+  end
+
+  subgraph External["Existing Systems (linked, not replaced)"]
+    GH[GitHub
+(repo / issues / projects)]
+    NJ[Notion / Confluence
+(docs)]
+    SL[Slack
+(threads)]
+    FG[Figma
+(design)]
+    OB[Observability
+(logs/traces/dashboards)]
+  end
+
+  H1 -->|edit/view| M
+  H2 -->|ask status| A3
+
+  A1 -->|tools/call| M
+  A2 -->|tools/call| M
+  A3 -->|tools/call| M
+
+  M <--> SA
+  M <--> HUB
+
+  SA -.typed links.-> GH
+  SA -.typed links.-> NJ
+  SA -.typed links.-> SL
+  SA -.typed links.-> FG
+  SA -.typed links.-> OB
+
+  HUB -.optional sync.-> SA
+```

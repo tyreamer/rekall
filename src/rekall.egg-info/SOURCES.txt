@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+setup.py
+src/rekall.egg-info/PKG-INFO
+src/rekall.egg-info/SOURCES.txt
+src/rekall.egg-info/dependency_links.txt
+src/rekall.egg-info/entry_points.txt
+src/rekall.egg-info/requires.txt
+src/rekall.egg-info/top_level.txt
+tests/test_cli.py
+tests/test_mcp_server.py
+tests/test_state_store.py

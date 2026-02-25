@@ -1,0 +1,98 @@
+```mermaid
+classDiagram
+  %% Project State Layer — State Artifact Model (v0.1)
+  class Project {
+    +project_id
+    +name
+    +current_goal
+    +phase
+    +status (optional)
+    +data_classification
+    +typed_links[]
+  }
+
+  class WorkItem {
+    +work_item_id
+    +type
+    +title
+    +intent
+    +status
+    +priority
+    +dependencies
+    +claim/lease
+    +version
+  }
+
+  class Attempt {
+    +attempt_id
+    +hypothesis
+    +action_taken
+    +result
+    +conclusion
+    +timestamp
+  }
+
+  class Decision {
+    +decision_id
+    +context
+    +options
+    +decision
+    +tradeoffs
+    +status (proposed/approved)
+    +timestamp
+  }
+
+  class TimelineEvent {
+    +event_id
+    +type
+    +summary
+    +timestamp
+  }
+
+  class Environment {
+    +env_id
+    +urls[]
+    +hosting (pointers)
+    +observability_links[]
+  }
+
+  class AccessRef {
+    +access_ref_id
+    +type
+    +system
+    +identifier (pointer)
+    +request_access_steps[]
+  }
+
+  class TypedLink {
+    +link_id
+    +type
+    +label
+    +url
+    +system (optional)
+  }
+
+  class ActivityEvent {
+    +activity_id
+    +actor
+    +action
+    +target_type
+    +target_id
+    +diff (optional)
+    +timestamp
+  }
+
+  Project "1" --> "many" WorkItem
+  WorkItem "1" --> "many" Attempt : has attempts
+  Project "1" --> "many" Decision
+  Project "1" --> "many" TimelineEvent
+  Project "1" --> "many" Environment
+  Project "1" --> "many" AccessRef
+  Project "1" --> "many" TypedLink
+  Project "1" --> "many" ActivityEvent
+
+  Decision ..> WorkItem : linked_work_items
+  TimelineEvent ..> WorkItem : related_ids
+  TimelineEvent ..> Decision : related_ids
+  Attempt ..> WorkItem : work_item_id
+```

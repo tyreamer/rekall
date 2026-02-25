@@ -56,6 +56,11 @@ Use:
 - `examples/demo_scripts/demo_prompt_pack.md`
 
 ### 3) Validation & DX
+- **Run the CLI**:
+  - `rekall validate` (checks invariants and links)
+  - `rekall export --out snapshot.json` (creates portable dump)
+  - `rekall import snapshot.json` (idempotent ingestion)
+  - `rekall handoff <project_id> -o ./pack` (generates `boot_brief.md` + snapshot)
 - **Run the tests**: `python -m pytest tests/`
 - **Run the local server**: `python -m rekall.server.mcp_server` (reads from stdin/stdout)
 - **Run the smoke client** (verifies MCP tool contract): `python scripts/smoke_client.py`
