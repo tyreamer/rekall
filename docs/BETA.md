@@ -1,8 +1,6 @@
 # Rekall Private Beta Guide
 
-> **Version:** v0.1.0-beta.1  
-> **Expected time commitment:** ~10 minutes  
-> **Target persona:** Solo builders using AI agents daily
+This is a quick guide to help you kick the tires on Rekall. We're looking for feedback on one thing: **Can Rekall help an agent understand your project reality in seconds?**
 
 ---
 
@@ -47,7 +45,7 @@ Open `./pack/boot_brief.md` and `./pack/snapshot.json`. This is what an agent wo
 
 ## How to File Issues
 
-Use the **[Beta Feedback](https://github.com/anthropic-rekall/rekall/issues/new?template=beta_feedback.yml)** issue template. Every report must include:
+Please use our **[Beta Feedback](https://github.com/tyreamer/rekall/issues/new?template=beta_feedback.yml)** template on GitHub.
 
 | Required artifact | How to get it |
 |---|---|
