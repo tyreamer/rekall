@@ -115,5 +115,18 @@ Rekall can still brand the experience (UI, CLI, MCP server, templates) without f
 
 ---
 
+## Troubleshooting
+
+### "Unsupported schema version"
+Ensure your `schema-version.txt` exists at the root of the state directory and contains exactly `0.1`.
+
+### "Validation failed during initialization"
+Rekall enforces structural guarantees on load. If your JSONL files are malformed or missing required IDs, `rekall validate` will output the exact line number of the error. Run `rekall validate --strict --json` to get a structured diagnostic payload to pipe into jq or your agent.
+
+### "Work item is claimed"
+If a work item is leased by another actor, you cannot mutate its state. Either wait for the `lease_until` time to expire, or if you hold administrative privileges, use the `force` flag in the API.
+
+---
+
 ## Status
 POC specs and contracts are at **v0.1** (2026-02-25).

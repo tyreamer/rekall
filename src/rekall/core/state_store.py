@@ -101,7 +101,11 @@ class StateStore:
     def append_jsonl_idempotent(self, filename: str, record: Dict[str, Any], id_field: str) -> Dict[str, Any]:
         """
         Appends a record to a jsonl file idempotently based on `id_field`.
-        Checks for secrets before saving.
+        Checks for secrets before saving. 
+        If a record with the same ID exists, it does not append.
+        To maintain deterministic ordering, this appends to the file, but we should ensure
+        that readers of this file sort by a deterministic key (e.g. timestamp or version).
+        For append-only logs, the current write order is acceptable if deduplicated properly.
         """
         detect_secrets(record)
         
@@ -111,14 +115,17 @@ class StateStore:
         if filepath.exists():
             with open(filepath, "r", encoding="utf-8") as f:
                 for line in f:
-                    if line.strip():
+                    if not line.strip(): continue
+                    try:
                         existing = json.loads(line)
                         if existing.get(id_field) == record.get(id_field):
                             return existing # No-op, already exists
+                    except json.JSONDecodeError:
+                        continue # Ignore malformed lines during dedupe check
                             
         # Append
         with open(filepath, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record) + "\n")
+            f.write(json.dumps(record, sort_keys=True) + "\n")
             
         return record
 
@@ -128,8 +135,14 @@ class StateStore:
         Computes `version` and `claim` dynamically.
         """
         self.work_items.clear()
-        events = self._load_jsonl("work-items.jsonl")
         
+        # In strict validation we might want to catch these earlier, but replay needs to survive
+        try:
+            events = self._load_jsonl("work-items.jsonl")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse work-items.jsonl: {e}")
+            events = []
+            
         for event in events:
             wid = event.get("work_item_id")
             if not wid:
@@ -515,4 +528,132 @@ class StateStore:
             self._append_activity("append", "timeline", event_id, actor, reason=reason)
             
         return record
+
+    def validate_all(self, strict: bool = False) -> Dict[str, Any]:
+        """
+        Performs a deep diagnostic scan of the entire StateStore.
+        Returns a structured report dictionary.
+        Raises ValueError in strict mode if any warnings exist.
+        """
+        import datetime
+        report = {
+            "summary": {"status": "✅", "errors": 0, "warnings": 0},
+            "schema_version": {"status": "✅", "details": ""},
+            "files_present": {"status": "✅", "missing": []},
+            "jsonl_integrity": {"status": "✅", "malformed": []},
+            "id_uniqueness": {"status": "✅", "duplicates": []},
+            "references": {"status": "✅", "dangling": []},
+            "secrets": {"status": "✅", "detected": []},
+            "claims": {"status": "✅", "expired": []}
+        }
+        
+        def add_error(section: str, msg: str):
+            report[section]["status"] = "❌"
+            if "errors" not in report[section]: report[section]["errors"] = []
+            report[section]["errors"].append(msg)
+            report["summary"]["errors"] += 1
+            report["summary"]["status"] = "❌"
+            
+        def add_warning(section: str, list_key: str, msg: str):
+            if report[section]["status"] == "✅":
+                report[section]["status"] = "⚠️"
+            report[section][list_key].append(msg)
+            report["summary"]["warnings"] += 1
+            if report["summary"]["status"] == "✅":
+                report["summary"]["status"] = "⚠️"
+
+        # 1. Schema Version
+        schema_file = self.base_dir / "schema-version.txt"
+        if not schema_file.exists():
+            add_error("schema_version", "Missing schema-version.txt")
+        else:
+            v = schema_file.read_text().strip()
+            report["schema_version"]["details"] = v
+            if v != "0.1":
+                add_error("schema_version", f"Unsupported version: {v}")
+                
+        # 2. Files Present
+        expected_files = ["project.yaml", "envs.yaml", "access.yaml", "work-items.jsonl", "activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"]
+        for f in expected_files:
+            if not (self.base_dir / f).exists():
+                add_warning("files_present", "missing", f)
+                
+        # 3. JSONL Integrity & ID Uniqueness
+        seen_ids = set()
+        for f in ["work-items.jsonl", "activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"]:
+            filepath = self.base_dir / f
+            if not filepath.exists():
+                continue
+                
+            id_field_map = {
+                "work-items.jsonl": "event_id",
+                "activity.jsonl": "activity_id",
+                "attempts.jsonl": "attempt_id",
+                "decisions.jsonl": "decision_id",
+                "timeline.jsonl": "event_id"
+            }
+            id_key = id_field_map[f]
+            
+            with open(filepath, "r", encoding="utf-8") as file:
+                for line_no, line in enumerate(file, 1):
+                    if not line.strip(): continue
+                    try:
+                        record = json.loads(line)
+                        rid = record.get(id_key)
+                        if rid:
+                            if rid in seen_ids:
+                                add_warning("id_uniqueness", "duplicates", f"{f}:{line_no} Duplicate ID {rid}")
+                            else:
+                                seen_ids.add(rid)
+                        else:
+                            add_error("jsonl_integrity", f"{f}:{line_no} Missing ID field '{id_key}'")
+                    except json.JSONDecodeError as e:
+                        add_warning("jsonl_integrity", "malformed", f"{f}:{line_no} JSON Decode Error: {str(e)}")
+                        add_error("jsonl_integrity", f"Fatal parse error in {f}")
+
+        # 4. Secrets
+        for f in ["project.yaml", "envs.yaml", "access.yaml"]:
+            try:
+                data = self._load_yaml(f)
+                detect_secrets(data, path=f)
+            except SecretDetectedError as e:
+                add_warning("secrets", "detected", str(e))
+                add_error("secrets", "Secrets detected in YAML configurations")
+                
+        for items in [self.work_items.values()]:
+            for item in items:
+                try:
+                    detect_secrets(item, path=f"WorkItem[{item.get('work_item_id')}]")
+                except SecretDetectedError as e:
+                    add_warning("secrets", "detected", str(e))
+                    add_error("secrets", "Secrets detected in Work Items")
+
+        # 5. References & Semantic Schema (Work Items)
+        for wid, item in self.work_items.items():
+            if not item.get("title"):
+                add_warning("references", "dangling", f"Work item {wid} missing 'title'")
+            if "status" not in item:
+                add_error("references", f"Work item {wid} missing 'status'")
+                
+            deps = item.get("dependencies", {})
+            for blocker in deps.get("blocked_by", []):
+                if blocker not in self.work_items:
+                    add_warning("references", "dangling", f"Work item {wid} blocked by missing ID: {blocker}")
+                    
+        # 6. Claims Validity
+        now = datetime.datetime.now(datetime.timezone.utc)
+        for wid, item in self.work_items.items():
+            claim = item.get("claim")
+            if claim and claim.get("lease_until"):
+                try:
+                    dt = datetime.datetime.fromisoformat(claim["lease_until"].replace('Z', '+00:00'))
+                    if now > dt:
+                        add_warning("claims", "expired", f"Work item {wid} has expired claim held by {claim.get('claimed_by')}")
+                except ValueError:
+                    add_error("claims", f"Work item {wid} has malformed claim date {claim['lease_until']}")
+                    
+        if strict and report["summary"]["warnings"] > 0:
+            report["summary"]["status"] = "❌"
+            
+        return report
 

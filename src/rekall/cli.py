@@ -103,36 +103,53 @@ def cmd_validate(args):
     base_dir = Path(args.store_dir)
     if not base_dir.exists():
         logger.error(f"Directory {base_dir} does not exist.")
+        if args.json: print(json.dumps({"error": f"Directory {base_dir} does not exist."}))
         sys.exit(1)
         
     try:
-        store = StateStore(base_dir)
-        # Check dangling links and basic structure
-        validation_errors = []
-        
-        # Check for required semantic fields
-        for wid, item in store.work_items.items():
-            if not item.get("title"):
-                validation_errors.append(f"Work item {wid} missing 'title'")
-            if "status" not in item:
-                validation_errors.append(f"Work item {wid} missing 'status'")
-                
-            # Check dependencies
-            deps = item.get("dependencies", {})
-            blocked_by = deps.get("blocked_by", [])
-            for blocker in blocked_by:
-                if blocker not in store.work_items:
-                    validation_errors.append(f"Work item {wid} has dangling dependency: {blocker}")
-                    
-        if validation_errors:
-            logger.error("Validation failed:")
-            for err in validation_errors:
-                logger.error(f" - {err}")
+        # We instantiate StateStore but don't want it to crash if schema-version is missing during init,
+        # so we might need a raw validate. Actually, StateStore.initialize() raises exceptions. 
+        # Let's bypass full init for validate so it can report *all* errors instead of crashing on the first.
+        # But for now, let's wrap the init:
+        try:
+            store = StateStore(base_dir)
+        except Exception as e:
+            if args.json:
+                print(json.dumps({"summary": {"status": "❌", "errors": 1, "warnings": 0}, "init_error": str(e)}))
+            else:
+                logger.error(f"Validation failed during initialization: {str(e)}")
             sys.exit(1)
             
-        logger.info(f"Validation successful: {len(store.work_items)} work items validated.")
+        report = store.validate_all(strict=args.strict)
+        
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            print("\n=== Rekall Validation Report ===")
+            print(f"Status: {report['summary']['status']} ({report['summary']['errors']} errors, {report['summary']['warnings']} warnings)")
+            
+            for section, data in report.items():
+                if section == "summary": continue
+                status = data.get("status", "✅")
+                print(f"\n{status} {section.replace('_', ' ').title()}")
+                
+                if status != "✅":
+                    for k, v in data.items():
+                        if k == "status": continue
+                        if isinstance(v, list) and v:
+                            for item in v:
+                                print(f"  - [{k}] {item}")
+                        elif v:
+                             print(f"  - {v}")
+                             
+            print("================================\n")
+            
+        if report["summary"]["status"] == "❌":
+            sys.exit(1)
+            
     except Exception as e:
         logger.error(f"Validation failed with exception: {str(e)}")
+        if args.json: print(json.dumps({"error": str(e)}))
         sys.exit(1)
 
 def cmd_snapshot(args):
@@ -141,18 +158,21 @@ def cmd_snapshot(args):
     try:
         store = StateStore(base_dir)
         
-        # Compile snapshot
-        activity = store._load_jsonl("activity.jsonl")
-        attempts = store._load_jsonl("attempts.jsonl")
-        decisions = store._load_jsonl("decisions.jsonl")
-        timeline = store._load_jsonl("timeline.jsonl")
-        events = store._load_jsonl("work-items.jsonl")
+        # Compile snapshot with deterministic ordering
+        activity = sorted(store._load_jsonl("activity.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("activity_id", "")))
+        attempts = sorted(store._load_jsonl("attempts.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("attempt_id", "")))
+        decisions = sorted(store._load_jsonl("decisions.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("decision_id", "")))
+        timeline = sorted(store._load_jsonl("timeline.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
+        events = sorted(store._load_jsonl("work-items.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
+        
+        # Sort work_items keys deterministically
+        work_items_sorted = {k: store.work_items[k] for k in sorted(store.work_items.keys())}
         
         snapshot = {
             "project": store.project_config,
             "envs": store.envs_config,
             "access": store.access_config,
-            "work_items": store.work_items,
+            "work_items": work_items_sorted,
             "events": events,
             "activity": activity,
             "attempts": attempts,
@@ -273,18 +293,20 @@ def cmd_handoff(args):
             
         out_dir.mkdir(parents=True, exist_ok=True)
         
-        # Compile snapshot
-        events = store._load_jsonl("work-items.jsonl")
-        activity = store._load_jsonl("activity.jsonl")
-        attempts = store._load_jsonl("attempts.jsonl")
-        decisions = store._load_jsonl("decisions.jsonl")
-        timeline = store._load_jsonl("timeline.jsonl")
+        # Compile snapshot with deterministic ordering
+        events = sorted(store._load_jsonl("work-items.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
+        activity = sorted(store._load_jsonl("activity.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("activity_id", "")))
+        attempts = sorted(store._load_jsonl("attempts.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("attempt_id", "")))
+        decisions = sorted(store._load_jsonl("decisions.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("decision_id", "")))
+        timeline = sorted(store._load_jsonl("timeline.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
+        
+        work_items_sorted = {k: store.work_items[k] for k in sorted(store.work_items.keys())}
         
         snapshot = {
             "project": store.project_config,
             "envs": store.envs_config,
             "access": store.access_config,
-            "work_items": store.work_items,
+            "work_items": work_items_sorted,
             "events": events,
             "activity": activity,
             "attempts": attempts,
@@ -327,6 +349,7 @@ def main():
     # validate
     parser_validate = subparsers.add_parser("validate", help="Validate the StateStore invariants and schema.")
     parser_validate.add_argument("--store-dir", default=".", help="Directory of the StateStore (default: current directory)")
+    parser_validate.add_argument("--strict", action="store_true", help="Fail with non-zero exit code on warnings as well as errors")
     parser_validate.set_defaults(func=cmd_validate)
     
     # export

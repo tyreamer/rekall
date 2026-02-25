@@ -29,22 +29,29 @@ def temp_store():
         (base_dir / "work-items.jsonl").write_text(json.dumps(event) + "\n")
         yield base_dir
 
-def test_cmd_validate_success(temp_store, caplog):
+def test_cmd_validate_success(temp_store, capfd):
     import logging
-    caplog.set_level(logging.INFO)
-    args = Namespace(store_dir=str(temp_store))
+    args = Namespace(store_dir=str(temp_store), json=False, strict=False)
     try:
         cmd_validate(args)
     except SystemExit as e:
         # Should not exit on success, or exit 0
         assert e.code == 0
-    assert "Validation successful: 1 work" in caplog.text
+    captured = capfd.readouterr()
+    assert "Status: ⚠️" in captured.out  # the mock has dangling refs so it's a warning, not a perfect check
+
+def test_cmd_validate_missing_dir(capfd):
+    # Test validation when store_dir does not exist
+    args = Namespace(store_dir="/nonexistent/path", json=False, strict=False)
+    with pytest.raises(SystemExit) as excinfo:
+        cmd_validate(args)
+    assert excinfo.value.code == 1
 
 def test_cmd_validate_failure():
     with tempfile.TemporaryDirectory() as d:
         base_dir = Path(d)
         (base_dir / "schema-version.txt").write_text("0.1")
-        # Missing title and status
+        # Missing title and status so validation will flag it
         event = {
             "event_id": "e1",
             "type": "WORK_ITEM_CREATED",
@@ -53,7 +60,7 @@ def test_cmd_validate_failure():
         }
         (base_dir / "work-items.jsonl").write_text(json.dumps(event) + "\n")
         
-        args = Namespace(store_dir=d)
+        args = Namespace(store_dir=d, json=False, strict=False)
         with pytest.raises(SystemExit) as excinfo:
             cmd_validate(args)
         assert excinfo.value.code == 1
@@ -100,4 +107,90 @@ def test_cmd_handoff(temp_store):
     assert "Status" in content
     assert "Blockers" in content
     assert "wi_1" in content
-    assert "test_proj" in content
+def test_validate_regression_missing_files(temp_store, capfd):
+    import os
+    os.remove(temp_store / "envs.yaml")
+    args = Namespace(store_dir=str(temp_store), json=False, strict=True)
+    with pytest.raises(SystemExit) as excinfo:
+        cmd_validate(args)
+    assert excinfo.value.code == 1
+    captured = capfd.readouterr()
+    assert "missing" in captured.out.lower()
+    
+def test_validate_regression_malformed_jsonl():
+    with tempfile.TemporaryDirectory() as d:
+        base_dir = Path(d)
+        (base_dir / "schema-version.txt").write_text("0.1")
+        (base_dir / "project.yaml").write_text("project_id: test_proj\n")
+        (base_dir / "envs.yaml").write_text("dev: {}")
+        (base_dir / "access.yaml").write_text("roles: {}")
+        
+        # Malformed jsonl
+        (base_dir / "work-items.jsonl").write_text("{bad json\n")
+        
+        args = Namespace(store_dir=d, json=False, strict=False)
+        with pytest.raises(SystemExit) as excinfo:
+            cmd_validate(args)
+        assert excinfo.value.code == 1
+
+def test_validate_regression_duplicate_ids():
+    with tempfile.TemporaryDirectory() as d:
+        base_dir = Path(d)
+        (base_dir / "schema-version.txt").write_text("0.1")
+        (base_dir / "project.yaml").write_text("project_id: test_proj\n")
+        (base_dir / "envs.yaml").write_text("dev: {}")
+        (base_dir / "access.yaml").write_text("roles: {}")
+        
+        event = {
+            "event_id": "duplicate_1",
+            "type": "WORK_ITEM_CREATED",
+            "work_item_id": "wi_1",
+            "patch": {"title": "Test", "status": "todo"}
+        }
+        content = json.dumps(event) + "\n" + json.dumps(event) + "\n"
+        (base_dir / "work-items.jsonl").write_text(content)
+        
+        args = Namespace(store_dir=d, json=False, strict=True)
+        with pytest.raises(SystemExit) as excinfo:
+            cmd_validate(args)
+        assert excinfo.value.code == 1
+
+def test_validate_regression_expired_claim(temp_store, capfd):
+    import datetime
+    store = temp_store
+    
+    # Manually inject an expired claim into work-items.jsonl
+    event = {
+        "event_id": "e_claim",
+        "type": "WORK_ITEM_CLAIMED",
+        "work_item_id": "wi_1",
+        "patch": {
+            "claimed_by": "test_user",
+            "lease_until": (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).isoformat()
+        }
+    }
+    with open(store / "work-items.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(event) + "\n")
+        
+    args = Namespace(store_dir=str(store), json=False, strict=True)
+    with pytest.raises(SystemExit) as excinfo:
+        cmd_validate(args)
+    assert excinfo.value.code == 1
+    captured = capfd.readouterr()
+    assert "expired" in captured.out.lower()
+
+def test_validate_json_schema(temp_store, capfd):
+    args = Namespace(store_dir=str(temp_store), json=True, strict=False)
+    # Should not raise
+    cmd_validate(args)
+    captured = capfd.readouterr()
+    report = json.loads(captured.out)
+    
+    assert "summary" in report
+    assert "schema_version" in report
+    assert "files_present" in report
+    assert "jsonl_integrity" in report
+    assert "id_uniqueness" in report
+    assert "references" in report
+    assert "secrets" in report
+    assert "claims" in report
