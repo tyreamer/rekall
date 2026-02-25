@@ -24,5 +24,6 @@ test_out.txt
 .pytest_cache/
 
 # Misc
+.vscode/
 *.DS_Store
 Thumbs.db

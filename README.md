@@ -11,8 +11,7 @@ Rekall is a **project reality blackboard + ledger**—the irrefutable truth of w
 
 ### Demo
 
-<!-- Demo GIF goes here — replace the placeholder below with an actual recording -->
-> **🎬 Demo GIF goes here.** Record `rekall demo` → `rekall guard` → `rekall handoff` and drop the GIF in this section.
+![Rekall demo](assets/demo/rekall_demo.gif)
 
 It gives humans and AI agents a shared, portable “project brain” that answers:
 - What is this project?
@@ -45,7 +44,7 @@ source venv/bin/activate  # or `venv\Scripts\activate` on Windows
 pip install -e .
 rekall demo
 ```
-*Note: `rekall demo` creates a temporal snapshot and will print a `cat` command to view the executive handoff. Run that command!*
+*Note: `rekall demo` creates a temporal snapshot and will print an OS-specific open command (notepad/open/xdg-open) to view the executive handoff. Run that command!*
 
 Once you understand what Rekall does, initialize an empty project state:
 ```bash
