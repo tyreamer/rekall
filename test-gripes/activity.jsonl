@@ -1,2 +1,0 @@
-{"action": "append", "activity_id": "ad8859f1-66a1-4f04-a555-d5e704c7a91d", "actor": {"actor_id": "cli_user"}, "project_id": "new_project_123", "target_id": "55c0d790-165f-4508-8d5d-875d978d881d", "target_type": "attempt", "timestamp": "2026-02-25T21:43:10.545990+00:00"}
-{"action": "propose", "activity_id": "7ea4364a-e3e2-4f43-adad-6a479ae64e09", "actor": {"actor_id": "cli_user"}, "project_id": "new_project_123", "target_id": "28eb24a2-eca5-44aa-bc04-bbf71d48cd08", "target_type": "decision", "timestamp": "2026-02-25T21:43:10.667018+00:00"}

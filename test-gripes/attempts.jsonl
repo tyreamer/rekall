@@ -1,1 +1,0 @@
-{"attempt_id": "55c0d790-165f-4508-8d5d-875d978d881d", "evidence": "https://splunk/...", "performed_by": {"actor_id": "cli_user"}, "timestamp": "2026-02-25T21:43:10.545990+00:00", "title": "Investigate login latency", "work_item_id": "wi_1"}

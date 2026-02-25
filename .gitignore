@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Test artifacts / scratch dirs
+test_tmp/
+test-gripes/
+handoff_test/
+handoff_v2_test/
+rekall-local/
+test_out.txt
+.pytest_cache/
+
+# Misc
+*.DS_Store
+Thumbs.db
