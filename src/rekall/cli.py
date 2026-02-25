@@ -82,6 +82,7 @@ def cmd_demo(args):
             logger.info("Created sample work items. Running validation...")
             
         # Re-use validate
+        args.strict = False
         cmd_validate(args)
         
         if not args.json:
@@ -96,7 +97,17 @@ def cmd_demo(args):
         if args.json:
             print(json.dumps({"status": "success", "demo_dir": temp_dir}))
         else:
-            logger.info("Demo complete! To try Rekall yourself, run `rekall init ./project-state`")
+            print("\n" + "="*50)
+            print("🚀 DEMO COMPLETE: REKALL PROJECT STATE GENERATED 🚀")
+            print("="*50)
+            print(f"\nWe just seeded a mock project, injected 2 work items, validated the local ledger implicitly, and ran the executive handoff synthesis.\n")
+            print("To see the magic, copy and run this command:\n")
+            print(f"  cat {out_dir}/boot_brief.md\n")
+            print("-" * 50)
+            print("Ready to integrate Rekall with your agents or team?")
+            print("  1. Run `rekall init ./project-state` in your repo.")
+            print("  2. Boot the MCP server: `python -m rekall.server.mcp_server`.")
+            print("-" * 50 + "\n")
 
 def cmd_validate(args):
     """Validate StateStore schema and invariants."""
