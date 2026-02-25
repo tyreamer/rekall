@@ -55,7 +55,16 @@ Use:
 - `examples/demo_scripts/builder_demo.md`
 - `examples/demo_scripts/demo_prompt_pack.md`
 
-### 3) Validation & DX
+### 3) Try Rekall in 3 commands (Zero-Friction Onboarding)
+If you want to feel the magic in 30 seconds:
+```bash
+pip install -e .
+rekall demo
+rekall init ./my-project-state
+```
+This installs the tool, runs a fully mocked `demo` lifecycle (creating items, validating, generating a handoff pack), and then prepares an empty project artifact directory for you to test with.
+
+### 4) Validation & DX
 - **Run the CLI**:
   - `rekall validate` (checks invariants and links)
   - `rekall export --out snapshot.json` (creates portable dump)

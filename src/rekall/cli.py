@@ -9,8 +9,94 @@ from rekall.core.handoff_generator import generate_boot_brief
 
 logger = logging.getLogger(__name__)
 
-def setup_logging():
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+def setup_logging(json_mode: bool = False):
+    if json_mode:
+        logging.basicConfig(level=logging.ERROR, format="%(message)s")
+    else:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+def cmd_init(args):
+    """Initializes a new Rekall project state directory."""
+    base_dir = Path(args.store_dir)
+    
+    if base_dir.exists() and any(base_dir.iterdir()):
+        logger.error(f"Directory {base_dir} is not empty.")
+        if args.json: print(json.dumps({"error": f"Directory {base_dir} is not empty."}))
+        sys.exit(1)
+        
+    try:
+        base_dir.mkdir(parents=True, exist_ok=True)
+        (base_dir / "schema-version.txt").write_text("0.1")
+        
+        import yaml
+        with open(base_dir / "project.yaml", "w", encoding="utf-8") as f:
+            yaml.dump({
+                "project_id": "new_project_123",
+                "description": "A new Rekall project",
+                "repo_url": "https://github.com/your-org/repo",
+                "links": []
+            }, f, sort_keys=False)
+            
+        with open(base_dir / "envs.yaml", "w", encoding="utf-8") as f:
+            yaml.dump({"dev": {"type": "local"}}, f)
+            
+        with open(base_dir / "access.yaml", "w", encoding="utf-8") as f:
+            yaml.dump({"roles": {}}, f)
+            
+        for name in ["work-items.jsonl", "activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"]:
+            (base_dir / name).touch()
+            
+        if args.json:
+            print(json.dumps({"status": "success", "store_dir": str(base_dir)}))
+        else:
+            logger.info(f"Initialized empty Rekall state at {base_dir}/")
+            
+    except Exception as e:
+        logger.error(f"Init failed: {str(e)}")
+        if args.json: print(json.dumps({"error": str(e)}))
+        sys.exit(1)
+
+def cmd_demo(args):
+    """One-click experience that sets up a temporary project, validates it, and generates handoff."""
+    import tempfile
+    import shutil
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        args.store_dir = temp_dir
+        
+        if not args.json:
+            logger.info(f"Setting up demo in temporary directory: {temp_dir}")
+            
+        # Re-use init logic to stage the directory
+        cmd_init(args)
+        
+        # Mock some events for the demo
+        store = StateStore(temp_path)
+        actor = {"actor_id": "demo_user"}
+        wi_1 = store.create_work_item({"title": "Design Demo Project", "status": "todo"}, actor)
+        wi_2 = store.create_work_item({"title": "Fix Onboarding Issue", "status": "in_progress"}, actor)
+        store.claim_work_item(wi_2["work_item_id"], 1, actor)
+        
+        if not args.json:
+            logger.info("Created sample work items. Running validation...")
+            
+        # Re-use validate
+        cmd_validate(args)
+        
+        if not args.json:
+            logger.info("Validation passed. Running handoff...")
+            
+        # Re-use handoff
+        out_dir = temp_path / "handoff"
+        args.out = str(out_dir)
+        args.project_id = store.project_config.get("project_id")
+        cmd_handoff(args)
+        
+        if args.json:
+            print(json.dumps({"status": "success", "demo_dir": temp_dir}))
+        else:
+            logger.info("Demo complete! To try Rekall yourself, run `rekall init ./project-state`")
 
 def cmd_validate(args):
     """Validate StateStore schema and invariants."""
@@ -200,7 +286,17 @@ def cmd_handoff(args):
 def main():
     setup_logging()
     parser = argparse.ArgumentParser(description="Rekall CLI utility for portability and validation.")
+    parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    
+    # init
+    parser_init = subparsers.add_parser("init", help="Initialize a new Rekall project-state directory.")
+    parser_init.add_argument("store_dir", nargs="?", default="project-state", help="Directory to initialize (default: project-state/)")
+    parser_init.set_defaults(func=cmd_init)
+    
+    # demo
+    parser_demo = subparsers.add_parser("demo", help="Run a quick 1-click demo to see Rekall in action.")
+    parser_demo.set_defaults(func=cmd_demo)
     
     # validate
     parser_validate = subparsers.add_parser("validate", help="Validate the StateStore invariants and schema.")
@@ -227,6 +323,7 @@ def main():
     parser_handoff.set_defaults(func=cmd_handoff)
     
     args = parser.parse_args()
+    setup_logging(args.json)
     args.func(args)
     
 if __name__ == "__main__":
