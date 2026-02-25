@@ -305,8 +305,8 @@ def exec_query(args: dict) -> list:
         raise ValueError("project_id and query_type are required")
         
     store = get_store()
-    work_items = list(store.work_items.values())
-    
+    # The original line `work_items = list(store.work_items.values())` was not used in the original exec_query logic.
+    # The provided change redefines exec_query, so I'm using the new definition.
     from rekall.core.executive_queries import query_executive_status, ExecutiveQueryType
     import dataclasses
     
@@ -316,6 +316,16 @@ def exec_query(args: dict) -> list:
         return [{"executive_response": dataclasses.asdict(resp)}]
     except ValueError as e:
         return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
+
+def guard_query(args: dict) -> list:
+    """Read-only preflight guard query returning the same payload as `rekall guard --json`."""
+    project_id = args.get("project_id") # Added project_id for consistency with other tools
+    if not project_id:
+        raise ValueError("project_id is required")
+    store = get_store()
+    from rekall.cli import build_guard_payload
+    payload = build_guard_payload(store)
+    return [{"ok": True, "guard": "PASS", **payload}]
 
 # --- MCP JSON-RPC Server Core ---
 
@@ -454,6 +464,17 @@ TOOLS_DEF = [
                 "since": {"type": "string", "description": "ISO timestamp for CHANGED_SINCE queries"}
             }
         }
+    },
+    {
+        "name": "guard.query",
+        "description": "Preflight drift guard. Returns project constraints, recent decisions, recent attempts, risks/blockers, and environment pointers. Read-only.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id"],
+            "properties": {
+                "project_id": {"type": "string"}
+            }
+        }
     }
 ]
 
@@ -477,7 +498,8 @@ TOOL_REGISTRY = {
     "decision.propose": decision_propose,
     "decision.approve": decision_approve,
     "timeline.append": timeline_append,
-    "exec.query": exec_query
+    "exec.query": exec_query,
+    "guard.query": guard_query
 }
 
 def send_response(response: dict):

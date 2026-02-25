@@ -140,6 +140,7 @@ def cmd_demo(args):
             print("-" * 50)
             print("Next, initialize your own project:")
             print("  rekall init ./project-state")
+            print("  rekall guard --store-dir ./project-state   # preflight check")
             print("  rekall validate ./project-state --strict")
             print("-" * 50 + "\n")
 
@@ -407,6 +408,223 @@ def cmd_alias_status(args): execute_alias_query(args, ExecutiveQueryType.ON_TRAC
 def cmd_alias_blockers(args): execute_alias_query(args, ExecutiveQueryType.BLOCKERS)
 def cmd_alias_resume(args): execute_alias_query(args, ExecutiveQueryType.RESUME_IN_30)
 
+
+def build_guard_payload(store: StateStore) -> dict:
+    """Build the structured preflight guard payload from a StateStore."""
+    import datetime
+    
+    # Project identity
+    proj = store.project_config or {}
+    project_info = {
+        "name": proj.get("project_id", "unknown"),
+        "description": proj.get("description", ""),
+        "repo_url": proj.get("repo_url", ""),
+        "phase": proj.get("phase", "not set"),
+        "current_goal": proj.get("current_goal", "not set"),
+        "status": proj.get("status", "unknown"),
+        "confidence": proj.get("confidence", "not set"),
+    }
+    
+    # Constraints / invariants
+    constraints = proj.get("constraints", proj.get("invariants", []))
+    if isinstance(constraints, dict):
+        constraints = [f"{k}: {v}" for k, v in constraints.items()]
+    constraints = constraints[:10] if constraints else []
+    
+    # Recent approved decisions (last 3)
+    all_decisions = sorted(
+        store._load_jsonl("decisions.jsonl"),
+        key=lambda d: d.get("timestamp", ""),
+        reverse=True
+    )
+    approved = [d for d in all_decisions if d.get("status") == "approved"][:3]
+    proposed_if_none = [d for d in all_decisions if d.get("status") == "proposed"][:3] if not approved else []
+    recent_decisions = approved or proposed_if_none
+    decisions_out = []
+    for d in recent_decisions:
+        decisions_out.append({
+            "decision_id": d.get("decision_id"),
+            "title": d.get("title", ""),
+            "status": d.get("status", ""),
+            "tradeoffs": d.get("tradeoffs", ""),
+            "rationale": d.get("rationale", ""),
+            "evidence_refs": d.get("evidence_links", d.get("evidence", [])),
+        })
+    
+    # Recent failed attempts (last 3)
+    all_attempts = sorted(
+        store._load_jsonl("attempts.jsonl"),
+        key=lambda a: a.get("timestamp", ""),
+        reverse=True
+    )
+    # Filter for outcome == "failed" or just show last 3 if no outcome field
+    failed = [a for a in all_attempts if a.get("outcome") == "failed"][:3]
+    recent_attempts = failed if failed else all_attempts[:3]
+    attempts_out = []
+    for a in recent_attempts:
+        attempts_out.append({
+            "attempt_id": a.get("attempt_id"),
+            "title": a.get("title", ""),
+            "work_item_id": a.get("work_item_id", ""),
+            "hypothesis": a.get("hypothesis", a.get("title", "")),
+            "outcome": a.get("outcome", "recorded"),
+            "evidence_refs": a.get("evidence_links", a.get("evidence", [])),
+        })
+    
+    # Top risks / blockers from work items
+    now = datetime.datetime.now(datetime.timezone.utc)
+    risks = []
+    for wid, item in store.work_items.items():
+        status = item.get("status", "")
+        deps = item.get("dependencies", {})
+        blocked_by = deps.get("blocked_by", [])
+        if blocked_by or status in ("blocked", "at_risk"):
+            risks.append({
+                "work_item_id": wid,
+                "title": item.get("title", ""),
+                "status": status,
+                "blocked_by": blocked_by,
+                "evidence_refs": item.get("evidence_links", []),
+            })
+        elif status == "in_progress":
+            claim = item.get("claim")
+            if claim:
+                lease_str = claim.get("lease_until", "")
+                try:
+                    lease_dt = datetime.datetime.fromisoformat(lease_str.replace('Z', '+00:00'))
+                    if now > lease_dt:
+                        risks.append({
+                            "work_item_id": wid,
+                            "title": item.get("title", ""),
+                            "status": "in_progress (lease expired)",
+                            "blocked_by": [],
+                            "evidence_refs": item.get("evidence_links", []),
+                        })
+                except (ValueError, AttributeError):
+                    pass
+    
+    # Environments + access (no secrets)
+    envs = store.envs_config or {}
+    access = store.access_config or {}
+    operate = {
+        "environments": {k: {kk: vv for kk, vv in (v if isinstance(v, dict) else {}).items() if "secret" not in kk.lower() and "key" not in kk.lower() and "token" not in kk.lower()} for k, v in envs.items()},
+        "access_roles": list(access.get("roles", {}).keys()) if isinstance(access.get("roles"), dict) else [],
+    }
+    
+    return {
+        "project": project_info,
+        "constraints": constraints,
+        "recent_decisions": decisions_out,
+        "recent_attempts": attempts_out,
+        "risks_blockers": risks,
+        "operate": operate,
+    }
+
+
+def cmd_guard(args):
+    """Drift guard / invariant preflight check."""
+    base_dir = Path(args.store_dir)
+    if not base_dir.exists():
+        die(ExitCode.NOT_FOUND, f"Directory {base_dir} does not exist.", args.json)
+    
+    try:
+        store = StateStore(base_dir)
+        payload = build_guard_payload(store)
+        
+        # Strict checks
+        if args.strict:
+            problems = []
+            if not payload["constraints"]:
+                problems.append("No constraints/invariants defined in project.yaml")
+            if not payload["recent_decisions"]:
+                problems.append("No decisions found in decisions.jsonl")
+            if problems:
+                if args.json:
+                    print(json.dumps({"ok": False, "guard": "FAIL", "problems": problems, **payload}))
+                else:
+                    print("\n❌ GUARD PREFLIGHT FAILED")
+                    for p in problems:
+                        print(f"  ✗ {p}")
+                sys.exit(ExitCode.VALIDATION_FAILED.value)
+        
+        # Emit timeline
+        if getattr(args, "emit_timeline", False):
+            import hashlib
+            actor = {"actor_id": getattr(args, "actor", "cli_user")}
+            event_id = hashlib.sha256(f"guard-preflight-{base_dir.resolve()}".encode()).hexdigest()[:16]
+            store.append_timeline(
+                {"event_id": event_id, "type": "note", "summary": "Preflight guard run"},
+                actor=actor
+            )
+        
+        # Output
+        if args.json:
+            print(json.dumps({"ok": True, "guard": "PASS", **payload}, indent=2, default=str))
+        else:
+            p = payload["project"]
+            print("\n" + "="*55)
+            print("🛡  REKALL PREFLIGHT GUARD")
+            print("="*55)
+            print(f"  Project   : {p['name']}")
+            print(f"  Goal      : {p['current_goal']}")
+            print(f"  Phase     : {p['phase']}")
+            print(f"  Status    : {p['status']}")
+            print(f"  Confidence: {p['confidence']}")
+            
+            # Constraints
+            cs = payload["constraints"]
+            print(f"\n📌 Constraints/Invariants ({len(cs)}):")
+            if cs:
+                for c in cs:
+                    print(f"  • {c}")
+            else:
+                print("  (none defined — add 'constraints' to project.yaml)")
+            
+            # Decisions
+            ds = payload["recent_decisions"]
+            print(f"\n📜 Most Recent Decisions ({len(ds)}):")
+            for d in ds:
+                print(f"  [{d['decision_id'][:8]}] {d['title']}")
+                print(f"    status: {d['status']}  tradeoffs: {d['tradeoffs']}")
+                if d['evidence_refs']:
+                    print(f"    evidence: {d['evidence_refs']}")
+            if not ds:
+                print("  (no decisions recorded yet)")
+            
+            # Attempts
+            ats = payload["recent_attempts"]
+            print(f"\n🧪 Most Recent Attempts ({len(ats)}):")
+            for a in ats:
+                print(f"  [{a['attempt_id'][:8]}] {a['title']}")
+                print(f"    outcome: {a['outcome']}  item: {a['work_item_id']}")
+                if a['evidence_refs']:
+                    print(f"    evidence: {a['evidence_refs']}")
+            if not ats:
+                print("  (no attempts recorded yet)")
+            
+            # Risks
+            rs = payload["risks_blockers"]
+            print(f"\n⚠️  Top Risks/Blockers ({len(rs)}):")
+            for r in rs:
+                print(f"  [{r['work_item_id']}] {r['title']} ({r['status']})")
+                if r['blocked_by']:
+                    print(f"    blocked_by: {r['blocked_by']}")
+            if not rs:
+                print("  (none)")
+            
+            # Operate
+            op = payload["operate"]
+            print(f"\n🔧 Operate:")
+            print(f"  Environments: {list(op['environments'].keys())}")
+            print(f"  Access roles: {op['access_roles']}")
+            
+            print("\n" + "="*55 + "\n")
+    
+    except SystemExit:
+        raise
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Guard failed: {str(e)}", args.json)
+
 def cmd_attempts_add(args):
     base_dir = Path(args.store_dir)
     try:
@@ -558,6 +776,14 @@ EXAMPLES:
     parser_resume = subparsers.add_parser("resume", help="[Status] Query actions to RESUME.")
     parser_resume.add_argument("--store-dir", default=".", help="Directory of the current StateStore")
     parser_resume.set_defaults(func=cmd_alias_resume)
+
+    # Guard
+    parser_guard = subparsers.add_parser("guard", help="[Preflight] Drift guard / invariant preflight check.")
+    parser_guard.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_guard.add_argument("--strict", action="store_true", help="Exit non-zero if constraints or decisions missing")
+    parser_guard.add_argument("--emit-timeline", action="store_true", help="Append a timeline event recording this guard run")
+    parser_guard.add_argument("--actor", default="cli_user", help="Actor ID for timeline events")
+    parser_guard.set_defaults(func=cmd_guard)
 
     # Grievance Closeout Commands: Nested subparsers
     parser_attempts = subparsers.add_parser("attempts", help="[Log] Manage attempt logs.")

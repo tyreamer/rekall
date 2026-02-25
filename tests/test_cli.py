@@ -263,3 +263,64 @@ def test_cmd_lock(temp_store):
         data = f.read()
         assert "WORK_ITEM_CLAIMED" in data
         assert "user1" in data
+
+def test_cmd_guard_human_output(temp_store, capfd):
+    """Guard output contains constraints + evidence refs section headers."""
+    from rekall.cli import cmd_guard, cmd_attempts_add, cmd_decisions_propose
+    # Seed an attempt and decision so sections aren't empty
+    cmd_attempts_add(Namespace(store_dir=str(temp_store), json=False, work_item_id="wi_1", title="A1", evidence="link1", actor="u1"))
+    cmd_decisions_propose(Namespace(store_dir=str(temp_store), json=False, title="D1", rationale="R1", tradeoffs="T1", actor="u1"))
+    
+    args = Namespace(store_dir=str(temp_store), json=False, strict=False, emit_timeline=False, actor="cli_user")
+    cmd_guard(args)
+    captured = capfd.readouterr()
+    
+    assert "REKALL PREFLIGHT GUARD" in captured.out
+    assert "Constraints/Invariants" in captured.out
+    assert "Most Recent Decisions" in captured.out
+    assert "Most Recent Attempts" in captured.out
+    assert "Risks/Blockers" in captured.out
+    assert "Operate" in captured.out
+
+def test_cmd_guard_json_output(temp_store, capfd):
+    """--json outputs valid JSON with required keys."""
+    from rekall.cli import cmd_guard
+    args = Namespace(store_dir=str(temp_store), json=True, strict=False, emit_timeline=False, actor="cli_user")
+    cmd_guard(args)
+    captured = capfd.readouterr()
+    data = json.loads(captured.out)
+    
+    assert data["ok"] is True
+    assert data["guard"] == "PASS"
+    assert "project" in data
+    assert "constraints" in data
+    assert "recent_decisions" in data
+    assert "recent_attempts" in data
+    assert "risks_blockers" in data
+    assert "operate" in data
+
+def test_cmd_guard_strict_fails_no_constraints(temp_store):
+    """--strict exits non-zero when no constraints defined."""
+    from rekall.cli import cmd_guard
+    args = Namespace(store_dir=str(temp_store), json=False, strict=True, emit_timeline=False, actor="cli_user")
+    with pytest.raises(SystemExit) as excinfo:
+        cmd_guard(args)
+    assert excinfo.value.code == 2  # ExitCode.VALIDATION_FAILED
+
+def test_cmd_guard_emit_timeline_idempotent(temp_store):
+    """--emit-timeline appends exactly one event and is idempotent on repeat."""
+    from rekall.cli import cmd_guard
+    args = Namespace(store_dir=str(temp_store), json=True, strict=False, emit_timeline=True, actor="cli_user")
+    
+    cmd_guard(args)
+    with open(temp_store / "timeline.jsonl") as f:
+        lines1 = [l for l in f.readlines() if l.strip()]
+    
+    cmd_guard(args)
+    with open(temp_store / "timeline.jsonl") as f:
+        lines2 = [l for l in f.readlines() if l.strip()]
+    
+    # Should be exactly 1 event (idempotent by event_id)
+    assert len(lines1) == 1
+    assert len(lines2) == 1
+    assert "Preflight guard run" in lines1[0]
