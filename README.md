@@ -66,6 +66,8 @@ This installs the tool, runs a fully mocked `demo` lifecycle (creating items, va
 
 ### 4) Validation & DX
 - **Run the CLI**:
+  - `rekall features` (shows capability map and "Not Kanban" explainer)
+  - `rekall status` / `rekall blockers` / `rekall resume` (executive queries)
   - `rekall validate` (checks invariants and links)
   - `rekall export --out snapshot.json` (creates portable dump)
   - `rekall import snapshot.json` (idempotent ingestion)

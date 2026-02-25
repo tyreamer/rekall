@@ -3,7 +3,7 @@ import tempfile
 import json
 import pytest
 from pathlib import Path
-from rekall.cli import cmd_validate, cmd_export, cmd_import, cmd_handoff
+from rekall.cli import cmd_validate, cmd_export, cmd_import, cmd_handoff, ExitCode
 from argparse import Namespace
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def test_cmd_validate_missing_dir(capfd):
     args = Namespace(store_dir="/nonexistent/path", json=False, strict=False)
     with pytest.raises(SystemExit) as excinfo:
         cmd_validate(args)
-    assert excinfo.value.code == 1
+    assert excinfo.value.code == ExitCode.NOT_FOUND.value
 
 def test_cmd_validate_failure():
     with tempfile.TemporaryDirectory() as d:
@@ -63,7 +63,7 @@ def test_cmd_validate_failure():
         args = Namespace(store_dir=d, json=False, strict=False)
         with pytest.raises(SystemExit) as excinfo:
             cmd_validate(args)
-        assert excinfo.value.code == 1
+        assert excinfo.value.code == ExitCode.VALIDATION_FAILED.value
 
 def test_cmd_export(temp_store):
     out_dir = temp_store / "output_dir"
@@ -113,7 +113,7 @@ def test_validate_regression_missing_files(temp_store, capfd):
     args = Namespace(store_dir=str(temp_store), json=False, strict=True)
     with pytest.raises(SystemExit) as excinfo:
         cmd_validate(args)
-    assert excinfo.value.code == 1
+    assert excinfo.value.code == ExitCode.VALIDATION_FAILED.value
     captured = capfd.readouterr()
     assert "missing" in captured.out.lower()
     
@@ -131,7 +131,7 @@ def test_validate_regression_malformed_jsonl():
         args = Namespace(store_dir=d, json=False, strict=False)
         with pytest.raises(SystemExit) as excinfo:
             cmd_validate(args)
-        assert excinfo.value.code == 1
+        assert excinfo.value.code == ExitCode.VALIDATION_FAILED.value
 
 def test_validate_regression_duplicate_ids():
     with tempfile.TemporaryDirectory() as d:
@@ -153,7 +153,7 @@ def test_validate_regression_duplicate_ids():
         args = Namespace(store_dir=d, json=False, strict=True)
         with pytest.raises(SystemExit) as excinfo:
             cmd_validate(args)
-        assert excinfo.value.code == 1
+        assert excinfo.value.code == ExitCode.VALIDATION_FAILED.value
 
 def test_validate_regression_expired_claim(temp_store, capfd):
     import datetime
@@ -175,7 +175,7 @@ def test_validate_regression_expired_claim(temp_store, capfd):
     args = Namespace(store_dir=str(store), json=False, strict=True)
     with pytest.raises(SystemExit) as excinfo:
         cmd_validate(args)
-    assert excinfo.value.code == 1
+    assert excinfo.value.code == ExitCode.VALIDATION_FAILED.value
     captured = capfd.readouterr()
     assert "expired" in captured.out.lower()
 

@@ -3,11 +3,36 @@ import sys
 import json
 from pathlib import Path
 import logging
+from enum import IntEnum
 
 from rekall.core.state_store import StateStore
 from rekall.core.handoff_generator import generate_boot_brief
+from rekall.core.executive_queries import query_executive_status, ExecutiveQueryType
 
 logger = logging.getLogger(__name__)
+
+class ExitCode(IntEnum):
+    SUCCESS = 0
+    INTERNAL_ERROR = 1
+    VALIDATION_FAILED = 2
+    STRICT_WARNINGS = 3
+    NOT_FOUND = 4
+    FORBIDDEN = 5
+    CONFLICT = 6
+    SECRET_DETECTED = 7
+    
+def die(code: ExitCode, message: str, is_json: bool, details: dict = None):
+    """Standardized exit formatter."""
+    if is_json:
+        payload = {"ok": False, "code": code.name, "message": message}
+        if details:
+            payload["details"] = details
+        print(json.dumps(payload))
+    else:
+        logger.error(f"[{code.name}] {message}")
+        if details:
+            print(f"Details: {details}")
+    sys.exit(code.value)
 
 def setup_logging(json_mode: bool = False):
     if json_mode:
@@ -20,9 +45,7 @@ def cmd_init(args):
     base_dir = Path(args.store_dir)
     
     if base_dir.exists() and any(base_dir.iterdir()):
-        logger.error(f"Directory {base_dir} is not empty.")
-        if args.json: print(json.dumps({"error": f"Directory {base_dir} is not empty."}))
-        sys.exit(1)
+        die(ExitCode.CONFLICT, f"Directory {base_dir} is not empty.", args.json)
         
     try:
         base_dir.mkdir(parents=True, exist_ok=True)
@@ -52,9 +75,7 @@ def cmd_init(args):
             logger.info(f"Initialized empty Rekall state at {base_dir}/")
             
     except Exception as e:
-        logger.error(f"Init failed: {str(e)}")
-        if args.json: print(json.dumps({"error": str(e)}))
-        sys.exit(1)
+        die(ExitCode.INTERNAL_ERROR, f"Init failed: {str(e)}", args.json)
 
 def cmd_demo(args):
     """One-click experience that sets up a temporary project, validates it, and generates handoff."""
@@ -113,9 +134,7 @@ def cmd_validate(args):
     """Validate StateStore schema and invariants."""
     base_dir = Path(args.store_dir)
     if not base_dir.exists():
-        logger.error(f"Directory {base_dir} does not exist.")
-        if args.json: print(json.dumps({"error": f"Directory {base_dir} does not exist."}))
-        sys.exit(1)
+        die(ExitCode.NOT_FOUND, f"Directory {base_dir} does not exist.", args.json)
         
     try:
         # We instantiate StateStore but don't want it to crash if schema-version is missing during init,
@@ -125,11 +144,7 @@ def cmd_validate(args):
         try:
             store = StateStore(base_dir)
         except Exception as e:
-            if args.json:
-                print(json.dumps({"summary": {"status": "❌", "errors": 1, "warnings": 0}, "init_error": str(e)}))
-            else:
-                logger.error(f"Validation failed during initialization: {str(e)}")
-            sys.exit(1)
+            die(ExitCode.INTERNAL_ERROR, f"Validation failed during initialization: {str(e)}", args.json)
             
         report = store.validate_all(strict=args.strict)
         
@@ -156,12 +171,12 @@ def cmd_validate(args):
             print("================================\n")
             
         if report["summary"]["status"] == "❌":
-            sys.exit(1)
+            sys.exit(ExitCode.VALIDATION_FAILED.value)
+        elif args.strict and report["summary"]["warnings"] > 0:
+            sys.exit(ExitCode.STRICT_WARNINGS.value)
             
     except Exception as e:
-        logger.error(f"Validation failed with exception: {str(e)}")
-        if args.json: print(json.dumps({"error": str(e)}))
-        sys.exit(1)
+        die(ExitCode.INTERNAL_ERROR, f"Validation failed with exception: {str(e)}", args.json)
 
 def cmd_snapshot(args):
     """Compile the state store into a single standalone snapshot.json (compact format)."""
@@ -202,9 +217,7 @@ def cmd_snapshot(args):
             print(json.dumps(snapshot, indent=2))
             
     except Exception as e:
-        logger.error(f"Snapshot failed: {str(e)}")
-        if args.json: print(json.dumps({"error": str(e)}))
-        sys.exit(1)
+        die(ExitCode.INTERNAL_ERROR, f"Snapshot failed: {str(e)}", args.json)
 
 def cmd_export(args):
     """Copies the StateStore entirely to a requested output directory matching v0.1 Spec."""
@@ -234,9 +247,7 @@ def cmd_export(args):
             logger.info(f"Exported project state to {out_dir}")
             
     except Exception as e:
-        logger.error(f"Export failed: {str(e)}")
-        if args.json: print(json.dumps({"error": str(e)}))
-        sys.exit(1)
+        die(ExitCode.INTERNAL_ERROR, f"Export failed: {str(e)}", args.json)
 
 def cmd_import(args):
     """Reads from a state store folder and imports events idempotently to the target directory."""
@@ -244,9 +255,7 @@ def cmd_import(args):
     source_dir = Path(args.source)
     
     if not source_dir.exists() or not (source_dir / "schema-version.txt").exists():
-        logger.error(f"Source directory {source_dir} is not a valid state store.")
-        if args.json: print(json.dumps({"error": "Invalid source directory."}))
-        sys.exit(1)
+        die(ExitCode.NOT_FOUND, f"Source directory {source_dir} is not a valid state store.", args.json)
         
     try:
         # Initialize target if it doesn't exist
@@ -284,9 +293,7 @@ def cmd_import(args):
             logger.info(f"Import from folder {source_dir} to {target_dir} successful.")
             
     except Exception as e:
-        logger.error(f"Import failed: {str(e)}")
-        if args.json: print(json.dumps({"error": str(e)}))
-        sys.exit(1)
+        die(ExitCode.INTERNAL_ERROR, f"Import failed: {str(e)}", args.json)
 
 def cmd_handoff(args):
     """Synthesizes project state to create boot_brief.md and exports snapshot.json."""
@@ -339,58 +346,146 @@ def cmd_handoff(args):
         logger.info(f" - {snapshot_file}")
         
     except Exception as e:
-        logger.error(f"Handoff failed: {str(e)}")
-        sys.exit(1)
+        die(ExitCode.INTERNAL_ERROR, f"Handoff failed: {str(e)}", False)
+
+def cmd_features(args):
+    """Print the capability map and positioning."""
+    print("\nRekall: The Project Reality Blackboard + Ledger (Not Kanban)")
+    print("-" * 60)
+    print("FEATURES:")
+    print("  * Typed Link Matrix       : Bridges Jira, Notion, Figma into a single machine-readable layer.")
+    print("  * Immutable Ledgers       : JSONL ledgers for decisions, attempts, and work-item state.")
+    print("  * Agent Context injection : `handoff` pack aggregates blocks, history, and goals into a boot brief.")
+    print("  * MCP Server Native       : Direct read/write bindings for Claude Desktop.")
+    print("\nWHY NOT KANBAN?")
+    print("  Kanban boards track what humans are assigned to.")
+    print("  Rekall tracks what the project IS, what was TRIED, and WHY decisions were made.")
+    print("  See: docs/WHY_NOT_KANBAN.md\n")
+
+def execute_alias_query(args, qtype: ExecutiveQueryType):
+    """Wrapper to run existing ExecutiveQueries directly from CLI."""
+    base_dir = Path(args.store_dir)
+    if not base_dir.exists():
+        die(ExitCode.NOT_FOUND, f"Directory {base_dir} does not exist.", args.json)
+        
+    try:
+        store = StateStore(base_dir)
+        resp = query_executive_status(store, qtype)
+        
+        if args.json:
+            import dataclasses
+            print(json.dumps(dataclasses.asdict(resp), indent=2))
+        else:
+            print(f"\n[{qtype.name}] Target: {resp.target_project_id}")
+            print(f"Items Match: {len(resp.work_items)}")
+            if resp.blockers:
+                print("BLOCKERS:")
+                for b in resp.blockers:
+                    print(f" - {b}")
+            if resp.next_steps:
+                print("NEXT STEPS:")
+                for s in resp.next_steps:
+                    print(f" - {s}")
+            print("")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Query failed: {str(e)}", args.json)
+
+def cmd_alias_status(args): execute_alias_query(args, ExecutiveQueryType.ON_TRACK)
+def cmd_alias_blockers(args): execute_alias_query(args, ExecutiveQueryType.BLOCKERS)
+def cmd_alias_resume(args): execute_alias_query(args, ExecutiveQueryType.RESUME_IN_30)
 
 def main():
     setup_logging()
-    parser = argparse.ArgumentParser(description="Rekall CLI utility for portability and validation.")
+    
+    desc = """Rekall: project reality blackboard + ledger (not Kanban)
+    
+EXAMPLES:
+  # Try it out
+  rekall demo
+  
+  # Check status & what's blocking you
+  rekall status
+  rekall blockers
+  
+  # Validate system state before AI integration
+  rekall validate --strict
+  
+  # Dump standalone snapshots
+  rekall export -o ./backup-state/
+  
+  # Generate AI context prompts
+  rekall handoff my_project -o ./handoff_test/
+"""
+    
+    parser = argparse.ArgumentParser(
+        description=desc,
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command", required=True, title="Commands", metavar="")
     
-    # init
-    parser_init = subparsers.add_parser("init", help="Initialize a new Rekall project-state directory.")
-    parser_init.add_argument("store_dir", nargs="?", default="project-state", help="Directory to initialize (default: project-state/)")
-    parser_init.set_defaults(func=cmd_init)
-    
-    # demo
-    parser_demo = subparsers.add_parser("demo", help="Run a quick 1-click demo to see Rekall in action.")
+    # Try It
+    parser_demo = subparsers.add_parser("demo", help="[Try] Run a 1-click demo to see Rekall in action.")
     parser_demo.set_defaults(func=cmd_demo)
     
-    # validate
-    parser_validate = subparsers.add_parser("validate", help="Validate the StateStore invariants and schema.")
-    parser_validate.add_argument("--store-dir", default=".", help="Directory of the StateStore (default: current directory)")
-    parser_validate.add_argument("--strict", action="store_true", help="Fail with non-zero exit code on warnings as well as errors")
+    parser_features = subparsers.add_parser("features", help="[Try] Print capability map and 'Not Kanban' explainer.")
+    parser_features.set_defaults(func=cmd_features)
+    
+    # Init
+    parser_init = subparsers.add_parser("init", help="[Portability] Initialize a new Rekall directory.")
+    parser_init.add_argument("store_dir", nargs="?", default="project-state", help="Directory to initialize")
+    parser_init.set_defaults(func=cmd_init)
+    
+    # Validate
+    parser_validate = subparsers.add_parser("validate", help="[Status] Validate the StateStore invariants.")
+    parser_validate.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_validate.add_argument("--strict", action="store_true", help="Fail with ExitCode 3 on warnings")
     parser_validate.set_defaults(func=cmd_validate)
     
-    # export
-    parser_export = subparsers.add_parser("export", help="Export StateStore to a new directory (YAML+JSONL folder format).")
+    # Portability
+    parser_export = subparsers.add_parser("export", help="[Portability] Export to a new directory.")
     parser_export.add_argument("--store-dir", default=".", help="Directory of the StateStore")
     parser_export.add_argument("--out", "-o", required=True, help="Output directory path")
     parser_export.set_defaults(func=cmd_export)
     
-    # snapshot
-    parser_snapshot = subparsers.add_parser("snapshot", help="Export StateStore to a single snapshot.json blob.")
+    parser_snapshot = subparsers.add_parser("snapshot", help="[Portability] Export to a single snapshot.json blob.")
     parser_snapshot.add_argument("--store-dir", default=".", help="Directory of the StateStore")
-    parser_snapshot.add_argument("--out", "-o", help="Output JSON file path (default: stdout)")
+    parser_snapshot.add_argument("--out", "-o", help="Output JSON file path")
     parser_snapshot.set_defaults(func=cmd_snapshot)
     
-    # import
-    parser_import = subparsers.add_parser("import", help="Import events from a source state store folder into the target folder.")
+    parser_import = subparsers.add_parser("import", help="[Portability] Import events from a source folder.")
     parser_import.add_argument("source", help="Path to source state store folder")
     parser_import.add_argument("--store-dir", default=".", help="Target Directory of the StateStore")
     parser_import.set_defaults(func=cmd_import)
     
-    # handoff
-    parser_handoff = subparsers.add_parser("handoff", help="Create a handoff pack (boot_brief.md and snapshot.json)")
+    # Handoff
+    parser_handoff = subparsers.add_parser("handoff", help="[Handoff] Create a boot_brief.md context pack.")
     parser_handoff.add_argument("project_id", help="The Project ID being handed off")
     parser_handoff.add_argument("--store-dir", default=".", help="Directory of the current StateStore")
-    parser_handoff.add_argument("--out", "-o", required=True, help="Output directory for the handoff pack")
+    parser_handoff.add_argument("--out", "-o", required=True, help="Output directory")
     parser_handoff.set_defaults(func=cmd_handoff)
     
+    # Aliases
+    parser_status = subparsers.add_parser("status", help="[Status] Query items ON_TRACK.")
+    parser_status.add_argument("--store-dir", default=".", help="Directory of the current StateStore")
+    parser_status.set_defaults(func=cmd_alias_status)
+    
+    parser_blockers = subparsers.add_parser("blockers", help="[Status] Query items BLOCKERS.")
+    parser_blockers.add_argument("--store-dir", default=".", help="Directory of the current StateStore")
+    parser_blockers.set_defaults(func=cmd_alias_blockers)
+    
+    parser_resume = subparsers.add_parser("resume", help="[Status] Query actions to RESUME.")
+    parser_resume.add_argument("--store-dir", default=".", help="Directory of the current StateStore")
+    parser_resume.set_defaults(func=cmd_alias_resume)
+
     args = parser.parse_args()
     setup_logging(args.json)
-    args.func(args)
+    
+    try:
+        args.func(args)
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, str(e), args.json)
     
 if __name__ == "__main__":
     main()

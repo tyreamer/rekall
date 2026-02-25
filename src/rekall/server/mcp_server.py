@@ -307,128 +307,15 @@ def exec_query(args: dict) -> list:
     store = get_store()
     work_items = list(store.work_items.values())
     
-    import datetime
-    now = datetime.datetime.now(datetime.timezone.utc)
+    from rekall.core.executive_queries import query_executive_status, ExecutiveQueryType
+    import dataclasses
     
-    # Helper to check if an iso string is older than X days
-    def is_stale(iso_str: str, days: int) -> bool:
-        if not iso_str: return True
-        try:
-            dt = datetime.datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
-            return (now - dt).days >= days
-        except ValueError:
-            return True
-
-    res = {
-        "summary": [],
-        "confidence": "high",
-        "evidence": []
-    }
-    
-    if query_type == "ON_TRACK":
-        blockers = [w for w in work_items if w.get("status") == "blocked"]
-        stale_blockers = [w for w in blockers if is_stale(w.get("updated_at", ""), 7)]
-        
-        if stale_blockers:
-            res["summary"].append(f"Status computed as AT_RISK or OFF_TRACK due to {len(stale_blockers)} stale blockers.")
-            res["confidence"] = "medium"
-            res["evidence"].extend([f"work_item: {w['work_item_id']}" for w in stale_blockers[:5]])
-        elif blockers:
-            res["summary"].append(f"Status computed as AT_RISK due to {len(blockers)} active blockers.")
-            res["confidence"] = "high"
-            res["evidence"].extend([f"work_item: {w['work_item_id']}" for w in blockers[:5]])
-        else:
-            in_prog = [w for w in work_items if w.get("status") == "in_progress"]
-            if not in_prog:
-                res["summary"].append("Status computed as PAUSED or LOW ACTIVITY (no active work).")
-                res["confidence"] = "low"
-            else:
-                res["summary"].append("Status computed as ON_TRACK. Work is progressing with no recorded blockers.")
-                res["evidence"].extend([f"work_item: {w['work_item_id']}" for w in in_prog[:3]])
-                
-    elif query_type == "BLOCKERS":
-        blockers = [w for w in work_items if w.get("status") == "blocked"]
-        if not blockers:
-            res["summary"].append("No active blockers recorded.")
-            res["confidence"] = "high"
-        else:
-            res["summary"].append(f"Found {len(blockers)} blocked work items.")
-            # Sort by priority, then age
-            blockers.sort(key=lambda x: (x.get("priority", "p9"), x.get("updated_at", "")))
-            res["evidence"].extend([f"work_item: {w['work_item_id']}" for w in blockers[:10]])
-            if any(is_stale(w.get("updated_at", ""), 7) for w in blockers):
-                res["confidence"] = "medium"
-                res["summary"].append("Warning: Some blockers are stale (>7 days).")
-                
-    elif query_type == "CHANGED_SINCE":
-        if not since:
-            return [{"error": {"code": "VALIDATION_ERROR", "message": "CHANGED_SINCE requires 'since' timestamp"}}]
-            
-        acts = store._load_jsonl("activity.jsonl")
-        recent = [a for a in acts if a.get("timestamp", "") >= since]
-        recent.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-        
-        if not recent:
-            res["summary"].append(f"No activity recorded since {since}.")
-            res["confidence"] = "high"
-        else:
-            res["summary"].append(f"Found {len(recent)} activities since {since}.")
-            res["evidence"].extend([f"activity: {a['activity_id']} (target_type: {a.get('target_type')})" for a in recent[:10]])
-            
-    elif query_type == "NEXT_7_DAYS":
-        priorities = [w for w in work_items if w.get("status") in ["todo", "in_progress"] and w.get("priority") in ["p0", "p1"]]
-        if priorities:
-            res["summary"].append(f"Focusing on {len(priorities)} high-priority (p0/p1) work items.")
-            res["evidence"].extend([f"work_item: {w['work_item_id']}" for w in priorities[:5]])
-        else:
-            res["summary"].append("No high-priority work items found. Execution plan unclear.")
-            res["confidence"] = "low"
-            
-    elif query_type == "RECENT_DECISIONS":
-        decs = store._load_jsonl("decisions.jsonl")
-        decs.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-        if not decs:
-            res["summary"].append("No decisions recorded.")
-        else:
-            res["summary"].append(f"Found {len(decs)} total decisions.")
-            res["evidence"].extend([f"decision: {d['decision_id']} ({d.get('title', 'untitled')})" for d in decs[:5]])
-
-    elif query_type == "FAILED_ATTEMPTS":
-        atts = store._load_jsonl("attempts.jsonl")
-        failed = [a for a in atts if str(a.get("outcome", "")).lower() == "failed"]
-        failed.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-        if not failed:
-            res["summary"].append("No failed attempts recorded.")
-        else:
-            res["summary"].append(f"Found {len(failed)} failed attempts.")
-            res["evidence"].extend([f"attempt: {a['attempt_id']}" for a in failed[:5]])
-
-    elif query_type == "WHERE_RUNNING_ACCESS":
-        envs = store.envs_config.get("environments", [])
-        refs = store.access_config.get("access_refs", [])
-        res["summary"].append(f"Project defines {len(envs)} environments and {len(refs)} access references.")
-        res["evidence"].extend([f"env: {e.get('env_id')}" for e in envs[:3]])
-        res["evidence"].extend([f"access_ref: {r.get('access_ref_id')}" for r in refs[:3]])
-
-    elif query_type == "RESUME_IN_30":
-        # Synthesize multiple things
-        in_prog = [w for w in work_items if w.get("status") == "in_progress"]
-        blockers = [w for w in work_items if w.get("status") == "blocked"]
-        
-        res["summary"].append(f"Project has {len(in_prog)} items in-progress and {len(blockers)} active blockers.")
-        res["summary"].append(f"Goal: {store.project_config.get('one_liner', 'Unknown')}.")
-        
-        res["evidence"].extend([f"work_item: {w['work_item_id']}" for w in in_prog[:2]])
-        res["evidence"].extend([f"work_item: {w['work_item_id']}" for w in blockers[:2]])
-        
-        envs = store.envs_config.get("environments", [])
-        if envs:
-            res["evidence"].append(f"env: {envs[0].get('env_id')}")
-            
-    else:
-        return [{"error": {"code": "VALIDATION_ERROR", "message": f"Unsupported query_type: {query_type}"}}]
-
-    return [{"executive_response": res}]
+    try:
+        q_type = ExecutiveQueryType(query_type)
+        resp = query_executive_status(store, q_type, since)
+        return [{"executive_response": dataclasses.asdict(resp)}]
+    except ValueError as e:
+        return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
 
 # --- MCP JSON-RPC Server Core ---
 
