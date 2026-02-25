@@ -403,17 +403,18 @@ def cmd_handoff(args):
 
 def cmd_features(args):
     """Print the capability map and positioning."""
-    print("\nRekall: The Project Reality Blackboard + Ledger (Not Kanban)")
+    print("\nRekall: The Project Reality Blackboard + Ledger")
     print("-" * 60)
     print("FEATURES:")
     print("  * Typed Link Matrix       : Bridges Jira, Notion, Figma into a single machine-readable layer.")
     print("  * Immutable Ledgers       : JSONL ledgers for decisions, attempts, and work-item state.")
     print("  * Agent Context injection : `handoff` pack aggregates blocks, history, and goals into a boot brief.")
     print("  * MCP Server Native       : Direct read/write bindings for Claude Desktop.")
-    print("\nWHY NOT KANBAN?")
-    print("  Kanban boards track what humans are assigned to.")
-    print("  Rekall tracks what the project IS, what was TRIED, and WHY decisions were made.")
-    print("  See: docs/WHY_NOT_KANBAN.md\n")
+    print("\nPRIMITIVES:")
+    print("  * ATTEMPTS : A typed ledger of what has been tried and why it failed.")
+    print("  * DECISIONS: Explicit records of trade-offs and architectural choices.")
+    print("  * TIMELINE : An immutable event log of milestones and state changes.")
+    print("  * POINTERS : Typed pointers to external environments and access methods.\n")
 
 def execute_alias_query(args, qtype: ExecutiveQueryType):
     """Wrapper to run existing ExecutiveQueries directly from CLI."""

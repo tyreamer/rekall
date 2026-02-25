@@ -6,7 +6,33 @@
 
 Rekall is a **ledger for your project state**. Everything lives in a portable `project-state/` folder (YAML + JSONL). It's the shared source of truth that helps you and your AI agents stay on the same page about what's actually happening, what failed, and what's next.
 
-Rekall is NOT "Kanban for agents." (Read: [Why Rekall is Not Kanban](docs/WHY_NOT_KANBAN.md))
+
+Rekall is a project reality blackboard + ledger, not a board or task manager.
+
+AI agents don't need another place to drag tickets from "To Do" to "Done." They need a machine-readable, irrefutable source of truth about what the project is, what constraints exist, and what has already failed. Rekall provides the missing state layer that agents and technical leaders actually need.
+
+## The 4 Differentiating Primitives
+- **Attempts**: A typed ledger of what has been tried, the result, and why it failed. Agents learn from past mistakes instead of repeating them.
+- **Decisions**: Explicit records of trade-offs and architectural choices. Context is preserved permanently.
+- **Timeline**: An immutable event log of milestones, commits, and state changes.
+- **Env + Access Pointers**: Typed pointers to where the project is running and how to access it (without storing secrets directly).
+
+### Evidence-First Exec Queries
+Status in Rekall is trustworthy because it is derived from evidence. When you ask Rekall what is blocking a project, it doesn't just read a string; it queries the graph of failed attempts and unresolved decisions. This ensures that the "status" actually reflects the reality of the codebase and environment.
+
+### Complements Jira / GitHub / Notion
+Rekall does not replace your existing task trackers or wikis. Instead, it links out to them via typed links. You keep high-level epics in Jira, product requirements in Notion, and code in GitHub. Rekall acts as the local, portable tissue connecting these systems for the agent, standardizing the immediate context required to execute autonomous work.
+
+### When to Use Rekall (and When Not To)
+**Use Rekall when:**
+- You are operating autonomous AI coding agents (or pair-programming heavily).
+- You frequently lose context between sessions or team members.
+- You need a portable, local-first artifact that can be committed to Git.
+
+**Do NOT use Rekall when:**
+- You just want a visual board to track tasks for a non-technical team.
+- You want two-way syncing with Jira or Linear.
+- You need deep, human-centric sprint planning mechanics.
 
 ---
 
@@ -14,16 +40,6 @@ Rekall is NOT "Kanban for agents." (Read: [Why Rekall is Not Kanban](docs/WHY_NO
 
 ![Rekall demo](assets/demo/rekall_demo.gif)
 
-It's a "project brain" you can share with your agents to answer the hard stuff:
-- **What is this?** (Project context)
-- **What's the status?** (Are we actually on track?)
-- **What's blocking?** (And how do we fix it?)
-- **What have we already tried?** (So we don't repeat mistakes)
-- **What did we decide?** (The trade-offs and rationale)
-
-Rekall doesn't replace Jira, Notion, or Slack. It **links to them** while providing the machine-readable state that agents actually need to be useful without drifting.
-
----
 
 ## Try it
 
@@ -87,8 +103,7 @@ Once initialized, point the CLI or MCP server at your directory:
 
 1) [Quickstart](docs/QUICKSTART.md)
 2) [Beta Guide](docs/BETA.md)
-3) [Why Rekall is Not Kanban](docs/WHY_NOT_KANBAN.md)
-4) [Connecting Clients](docs/CONNECTING_CLIENTS.md)
+3) [Connecting Clients](docs/CONNECTING_CLIENTS.md)
 5) `specs/00_overview.md`  
 6) `specs/01_non_negotiables.md`  
 7) `specs/02_invariants_and_operating_rules.md`  
