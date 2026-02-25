@@ -112,6 +112,25 @@ Rekall can still brand the experience (UI, CLI, MCP server, templates) without f
 
 ---
 
+## Checkpointing
+
+Crashes and lost context are the #1 agent grievance. `rekall checkpoint` is a local-first "save game"—a durable export of project state with a timeline marker so you always know when and why you saved.
+
+```powershell
+# Save a checkpoint before a risky change
+rekall checkpoint my_project -o ./checkpoints/pre-deploy --store-dir ./project-state --label "pre-deploy v2.1"
+
+# JSON output for automation
+rekall --json checkpoint my_project -o ./checkpoints/pre-deploy --store-dir ./project-state --label "pre-deploy v2.1"
+```
+
+Each checkpoint:
+1. Exports the full state folder to `<out_dir>` (passes `rekall validate`)
+2. Appends a `milestone` timeline event with the label, export path, and evidence ref
+3. Supports `--event-id` for idempotent re-runs (same event_id → no duplicate timeline entries)
+
+---
+
 ## MCP Self-Check
 
 Verify the MCP server's tool surface is contract-aligned before wiring it into Claude Desktop or any agent runtime:

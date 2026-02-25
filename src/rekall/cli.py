@@ -691,6 +691,64 @@ def cmd_decisions_propose(args):
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Failed to propose decision: {str(e)}", args.json)
 
+def cmd_checkpoint(args):
+    """Create a durable checkpoint: export state + append timeline milestone."""
+    import shutil
+    import datetime
+
+    base_dir = Path(args.store_dir)
+    out_dir = Path(args.out)
+    label = getattr(args, "label", None) or "checkpoint"
+    actor_id = getattr(args, "actor", "cli_user")
+    event_id = getattr(args, "event_id", None)
+
+    if not base_dir.exists():
+        die(ExitCode.NOT_FOUND, f"Directory {base_dir} does not exist.", args.json)
+
+    try:
+        store = StateStore(base_dir)
+
+        # 1. Folder-based export (reuse export logic)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        files_to_copy = [
+            "schema-version.txt", "project.yaml", "envs.yaml", "access.yaml",
+            "work-items.jsonl", "activity.jsonl", "attempts.jsonl",
+            "decisions.jsonl", "timeline.jsonl"
+        ]
+        for f in files_to_copy:
+            src = base_dir / f
+            if src.exists():
+                shutil.copy2(src, out_dir / f)
+
+        export_path = str(out_dir.resolve())
+
+        # 2. Append timeline milestone
+        actor = {"actor_id": actor_id}
+        event = {
+            "type": "milestone",
+            "summary": f"Checkpoint created: {label}",
+            "details": f"Exported to {export_path}",
+            "evidence_links": [{"kind": "link", "id": export_path, "note": "checkpoint export path"}],
+        }
+        if event_id:
+            event["event_id"] = event_id
+
+        result = store.append_timeline(event, actor=actor)
+        tid = result.get("event_id", "unknown")
+
+        # 3. Output
+        if args.json:
+            print(json.dumps({"ok": True, "export_path": export_path, "timeline_event_id": tid}))
+        else:
+            print(f"\n✅ Checkpoint saved")
+            print(f"   Export path : {export_path}")
+            print(f"   Timeline ID : {tid}")
+            print(f"   Label       : {label}\n")
+
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Checkpoint failed: {str(e)}", args.json)
+
+
 def cmd_lock(args):
     base_dir = Path(args.store_dir)
     try:
@@ -850,6 +908,16 @@ EXAMPLES:
     parser_lock.add_argument("--store-dir", default=".", help="Directory of the StateStore")
     parser_lock.add_argument("--actor", default="cli_user", help="Actor ID")
     parser_lock.set_defaults(func=cmd_lock)
+
+    # Checkpoint
+    parser_checkpoint = subparsers.add_parser("checkpoint", help="[Resilience] Export state + mark timeline milestone (local save-game).")
+    parser_checkpoint.add_argument("project_id", help="The Project ID being checkpointed")
+    parser_checkpoint.add_argument("--out", "-o", required=True, help="Output directory for the checkpoint export")
+    parser_checkpoint.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_checkpoint.add_argument("--label", default="checkpoint", help="Human-readable label for this checkpoint")
+    parser_checkpoint.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_checkpoint.add_argument("--event-id", default=None, help="Explicit event_id for idempotent timeline append")
+    parser_checkpoint.set_defaults(func=cmd_checkpoint)
 
     args = parser.parse_args()
     setup_logging(args.json, getattr(args, "quiet", False))
