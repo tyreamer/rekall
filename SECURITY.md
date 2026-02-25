@@ -1,8 +1,20 @@
 # Security Policy
 
-## Supported Versions
+## Core Principle
 
-Currently, the `v0.1.X` initial release tree is being maintained with security updates.
+**Rekall must never store secrets.** API keys, tokens, passwords, and other credentials must not appear in state artifacts, JSONL files, YAML manifests, or any file committed to a Rekall project-state folder. The `env_pointers` spec is explicitly designed to reference *where* credentials live (e.g., a vault path or env var name) without containing the credentials themselves.
+
+Run the secret scanner before every commit:
+
+```powershell
+# Windows
+powershell -ExecutionPolicy Bypass -File scripts/scan_secrets.ps1
+
+# macOS / Linux
+bash scripts/scan_secrets.sh
+```
+
+## Supported Versions
 
 | Version | Supported          |
 | ------- | ------------------ |
@@ -10,13 +22,15 @@ Currently, the `v0.1.X` initial release tree is being maintained with security u
 
 ## Reporting a Vulnerability
 
-Please DO NOT report security issues via public GitHub issues. 
+**Do NOT report security issues via public GitHub issues.**
 
-If you discover a vulnerability in Rekall's validation logic, state machine architecture, or CLI (specifically the heuristic `detect_secrets` logic, directory traversals, or similar issues) please email your report directly to the project team. 
+If you discover a vulnerability in Rekall's validation logic, state machine architecture, CLI, directory traversal handling, or secret-detection heuristics, please email:
 
-Please provide as much information as possible, including:
-* The steps required to reproduce the vulnerability.
-* The expected behavior versus the actual behavior.
-* A description of the potential impact.
+**security@rekall.io**
 
-We will try to acknowledge receipt of your vulnerability report within 72 hours.
+Include:
+- Steps to reproduce
+- Expected vs. actual behavior
+- Potential impact assessment
+
+We will acknowledge receipt within **72 hours** and provide a timeline for remediation.

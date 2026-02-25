@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-beta.1] - 2026-02-25
+
+### Added
+- **`rekall guard`**: Drift guard / preflight check. Surfaces project constraints, recent decisions, recent attempts, risks/blockers, and operational environment. Supports `--strict`, `--json`, and `--emit-timeline`.
+- **`rekall checkpoint`**: Local "save game" — exports full state folder + appends a `milestone` timeline event. Supports `--label` and `--event-id` for idempotent re-runs.
+- **Idempotency keys**: Optional `idempotency_key` on `attempt.append`, `timeline.append`, and `decision.propose` to prevent duplicate high-impact actions.
+- **MCP self-check**: `rekall validate --mcp --server-cmd "..."` launches server as subprocess, validates `tools/list`, schemas, and runs read-only probe calls.
+- **`rekall validate` positional arg**: `rekall validate ./project-state` now works (positional store_dir, matches `init` UX).
+- **CLI sub-commands**: `rekall attempts add`, `rekall decisions propose`, `rekall timeline add` with `--idempotency-key`.
+- **Beta feedback issue template**: Structured GitHub template enforcing OS, Python version, client, and `validate --json` output.
+- **`docs/BETA.md`**: One-page beta guide — 3 tasks, out-of-scope list, filing instructions.
+- **CI matrix**: GitHub Actions on `ubuntu-latest`, `macos-latest`, `windows-latest` × Python 3.10–3.13 with `rekall demo` smoke test.
+
+### Changed
+- `rekall demo` output now includes `rekall guard` recommendation as next step.
+- `QUICKSTART.md` tightened for the 5-minute success path.
+
 ## [0.1.0] - 2026-02-25
 
 ### Added

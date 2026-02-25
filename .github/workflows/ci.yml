@@ -1,10 +1,13 @@
-name: Tests
+name: CI
 
 on:
   push:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -23,18 +26,28 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install build tools and pytest
+    - name: Install dependencies
       run: python -m pip install --upgrade pip build pytest
 
-    - name: Build project
+    - name: Build wheel
       run: python -m build
 
-    - name: Install project from wheel
+    - name: Install from wheel
       shell: bash
       run: python -m pip install dist/*.whl
 
-    - name: Run rekall demo
-      run: rekall demo
+    - name: Smoke test — rekall demo
+      run: rekall demo --quiet
 
-    - name: Run tests
-      run: pytest
+    - name: Run unit tests
+      run: pytest tests/ -v --tb=short
+
+    - name: Upload test logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-logs-${{ matrix.os }}-py${{ matrix.python-version }}
+        path: |
+          test_out.txt
+          test_tmp/
+        retention-days: 7

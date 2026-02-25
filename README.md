@@ -1,7 +1,18 @@
 # Rekall (rekall.io) — Project State Layer
 
+[![CI](https://github.com/anthropic-labs/rekall/actions/workflows/ci.yml/badge.svg)](https://github.com/anthropic-labs/rekall/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-brightgreen.svg)](https://www.python.org/downloads/)
+
 Rekall is a **project reality blackboard + ledger**—the irrefutable truth of what a project is, what failed, and what's blocking.  
 *(Note: Rekall includes work tracking, but it is **NOT** "Kanban for agents.")*
+
+---
+
+### Demo
+
+<!-- Demo GIF goes here — replace the placeholder below with an actual recording -->
+> **🎬 Demo GIF goes here.** Record `rekall demo` → `rekall guard` → `rekall handoff` and drop the GIF in this section.
 
 It gives humans and AI agents a shared, portable “project brain” that answers:
 - What is this project?
@@ -15,6 +26,8 @@ Rekall **does not replace** Jira/Notion/GitHub/Slack/Figma. It **links out** to 
 ---
 
 ## Try it
+
+![Rekall demo](assets/demo/rekall_demo.gif)
 
 ### 3) Try Rekall (Zero-Friction Onboarding)
 Run the fully mocked demo lifecycle to feel the magic in 30 seconds:
@@ -75,13 +88,15 @@ Once initialized, point the CLI or MCP server at your directory:
 ## Start here (reading order)
 
 1) [Quickstart](docs/QUICKSTART.md)
-2) [Why Rekall is Not Kanban](docs/WHY_NOT_KANBAN.md)
-3) `specs/00_overview.md`  
-4) `specs/01_non_negotiables.md`  
-5) `specs/02_invariants_and_operating_rules.md`  
-6) `specs/03_executive_status_query_contract.md`  
-7) `specs/04_state_spec_schema_v0.1.md`  
-8) `specs/05_mcp_tool_contract_v0.1.md`
+2) [Beta Guide](docs/BETA.md)
+3) [Why Rekall is Not Kanban](docs/WHY_NOT_KANBAN.md)
+4) [Connecting Clients](docs/CONNECTING_CLIENTS.md)
+5) `specs/00_overview.md`  
+6) `specs/01_non_negotiables.md`  
+7) `specs/02_invariants_and_operating_rules.md`  
+8) `specs/03_executive_status_query_contract.md`  
+9) `specs/04_state_spec_schema_v0.1.md`  
+10) `specs/05_mcp_tool_contract_v0.1.md`
 
 ---
 
@@ -220,4 +235,4 @@ If a work item is leased by another actor, you cannot mutate its state. Either w
 ---
 
 ## Status
-POC specs and contracts are at **v0.1** (2026-02-25).
+`v0.1.0-beta.1` — Private beta (2026-02-25). See [CHANGELOG.md](CHANGELOG.md) for details.

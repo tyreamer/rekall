@@ -1,0 +1,102 @@
+name: Beta Feedback
+description: Structured feedback from Rekall private-beta participants
+title: "[Beta]: "
+labels: ["beta-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing Rekall! Please fill out every section so we can reproduce and prioritize quickly.
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: "e.g. Windows 11, macOS Sonoma 14.2, Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python Version
+      description: "Run `python --version` and paste the output"
+    validations:
+      required: true
+
+  - type: input
+    id: rekall-version
+    attributes:
+      label: Rekall Version / Commit
+      description: "e.g. v0.1.0-beta.1 or commit hash"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: client
+    attributes:
+      label: AI Client Used
+      description: Which AI coding client were you using?
+      options:
+        - Cursor
+        - Codex App
+        - Claude Code
+        - Antigravity
+        - CLI only (no agent)
+        - Other (specify in description)
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-you-tried
+    attributes:
+      label: What You Tried
+      description: Describe the task / workflow you attempted (e.g. "ran `rekall demo`, then `rekall validate`").
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What Happened
+      description: Describe actual behavior, including any error output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: validate-json
+    attributes:
+      label: "`rekall validate --json` output"
+      description: |
+        Paste the full output of:
+        ```
+        rekall validate ./project-state --strict --json
+        ```
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: state-folder
+    attributes:
+      label: State Folder Snapshot
+      description: |
+        Attach (or paste) the contents of `schema-version.txt` and any relevant JSONL files from your `project-state/` directory.
+        You can zip the entire folder:
+        ```
+        # PowerShell
+        Compress-Archive -Path ./project-state -DestinationPath ./project-state.zip
+        # bash
+        zip -r project-state.zip ./project-state
+        ```
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: suggestions
+    attributes:
+      label: Suggestions / Impressions
+      description: Anything else — rough edges, confusing output, missing features, things you liked.
+    validations:
+      required: false

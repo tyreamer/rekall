@@ -146,6 +146,13 @@ def cmd_demo(args):
 
 def cmd_validate(args):
     """Validate StateStore schema and invariants, or MCP server surface."""
+    # Resolve store_dir: positional arg takes precedence over --store-dir flag
+    if args.store_dir is not None:
+        resolved_store = args.store_dir
+    else:
+        resolved_store = getattr(args, "store_dir_flag", ".")
+    args.store_dir = resolved_store
+
     # Dispatch to MCP validation if --mcp flag is set
     if getattr(args, "mcp", False):
         cmd_validate_mcp(args)
@@ -829,67 +836,73 @@ EXAMPLES:
     
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     parser.add_argument("--quiet", "-q", action="store_true", help="Suppress internal logs")
+    
+    # Shared flags parent so --json/--quiet work after subcommand args too
+    shared_flags = argparse.ArgumentParser(add_help=False)
+    shared_flags.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+    shared_flags.add_argument("--quiet", "-q", action="store_true", help=argparse.SUPPRESS)
+    
     subparsers = parser.add_subparsers(dest="command", required=True, title="Commands", metavar="")
     
     # Try It
-    parser_demo = subparsers.add_parser("demo", help="[Try] Run a 1-click demo to see Rekall in action.")
-    parser_demo.add_argument("--quiet", "-q", action="store_true", help="Suppress internal logs")
+    parser_demo = subparsers.add_parser("demo", help="[Try] Run a 1-click demo to see Rekall in action.", parents=[shared_flags])
     parser_demo.set_defaults(func=cmd_demo)
     
-    parser_features = subparsers.add_parser("features", help="[Try] Print capability map and 'Not Kanban' explainer.")
+    parser_features = subparsers.add_parser("features", help="[Try] Print capability map and 'Not Kanban' explainer.", parents=[shared_flags])
     parser_features.set_defaults(func=cmd_features)
     
     # Init
-    parser_init = subparsers.add_parser("init", help="[Portability] Initialize a new Rekall directory.")
+    parser_init = subparsers.add_parser("init", help="[Portability] Initialize a new Rekall directory.", parents=[shared_flags])
     parser_init.add_argument("store_dir", nargs="?", default="project-state", help="Directory to initialize")
     parser_init.set_defaults(func=cmd_init)
     
     # Validate
-    parser_validate = subparsers.add_parser("validate", help="[Status] Validate the StateStore invariants (or MCP surface with --mcp).")
-    parser_validate.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_validate = subparsers.add_parser("validate", help="[Status] Validate the StateStore invariants (or MCP surface with --mcp).", parents=[shared_flags])
+    parser_validate.add_argument("store_dir", nargs="?", default=None, help="Directory of the StateStore (positional, or use --store-dir)")
+    parser_validate.add_argument("--store-dir", dest="store_dir_flag", default=".", help="Directory of the StateStore")
     parser_validate.add_argument("--strict", action="store_true", help="Fail with ExitCode 3 on warnings")
     parser_validate.add_argument("--mcp", action="store_true", help="Run MCP server self-check instead of StateStore validation")
     parser_validate.add_argument("--server-cmd", default=None, help="Server launch command for MCP validation (required with --mcp)")
     parser_validate.set_defaults(func=cmd_validate)
     
     # Portability
-    parser_export = subparsers.add_parser("export", help="[Portability] Export to a new directory.")
+    parser_export = subparsers.add_parser("export", help="[Portability] Export to a new directory.", parents=[shared_flags])
     parser_export.add_argument("--store-dir", default=".", help="Directory of the StateStore")
     parser_export.add_argument("--out", "-o", required=True, help="Output directory path")
     parser_export.set_defaults(func=cmd_export)
     
-    parser_snapshot = subparsers.add_parser("snapshot", help="[Portability] Export to a single snapshot.json blob.")
+    parser_snapshot = subparsers.add_parser("snapshot", help="[Portability] Export to a single snapshot.json blob.", parents=[shared_flags])
     parser_snapshot.add_argument("--store-dir", default=".", help="Directory of the StateStore")
     parser_snapshot.add_argument("--out", "-o", help="Output JSON file path")
     parser_snapshot.set_defaults(func=cmd_snapshot)
     
-    parser_import = subparsers.add_parser("import", help="[Portability] Import events from a source folder.")
+    parser_import = subparsers.add_parser("import", help="[Portability] Import events from a source folder.", parents=[shared_flags])
     parser_import.add_argument("source", help="Path to source state store folder")
     parser_import.add_argument("--store-dir", default=".", help="Target Directory of the StateStore")
     parser_import.set_defaults(func=cmd_import)
     
     # Handoff
-    parser_handoff = subparsers.add_parser("handoff", help="[Handoff] Create a boot_brief.md context pack.")
+    parser_handoff = subparsers.add_parser("handoff", help="[Handoff] Create a boot_brief.md context pack.", parents=[shared_flags])
     parser_handoff.add_argument("project_id", help="The Project ID being handed off")
     parser_handoff.add_argument("--store-dir", default=".", help="Directory of the current StateStore")
     parser_handoff.add_argument("--out", "-o", required=True, help="Output directory")
     parser_handoff.set_defaults(func=cmd_handoff)
     
     # Aliases
-    parser_status = subparsers.add_parser("status", help="[Status] Query items ON_TRACK.")
+    parser_status = subparsers.add_parser("status", help="[Status] Query items ON_TRACK.", parents=[shared_flags])
     parser_status.add_argument("--store-dir", default=".", help="Directory of the current StateStore")
     parser_status.set_defaults(func=cmd_alias_status)
     
-    parser_blockers = subparsers.add_parser("blockers", help="[Status] Query items BLOCKERS.")
+    parser_blockers = subparsers.add_parser("blockers", help="[Status] Query items BLOCKERS.", parents=[shared_flags])
     parser_blockers.add_argument("--store-dir", default=".", help="Directory of the current StateStore")
     parser_blockers.set_defaults(func=cmd_alias_blockers)
     
-    parser_resume = subparsers.add_parser("resume", help="[Status] Query actions to RESUME.")
+    parser_resume = subparsers.add_parser("resume", help="[Status] Query actions to RESUME.", parents=[shared_flags])
     parser_resume.add_argument("--store-dir", default=".", help="Directory of the current StateStore")
     parser_resume.set_defaults(func=cmd_alias_resume)
 
     # Guard
-    parser_guard = subparsers.add_parser("guard", help="[Preflight] Drift guard / invariant preflight check.")
+    parser_guard = subparsers.add_parser("guard", help="[Preflight] Drift guard / invariant preflight check.", parents=[shared_flags])
     parser_guard.add_argument("--store-dir", default=".", help="Directory of the StateStore")
     parser_guard.add_argument("--strict", action="store_true", help="Exit non-zero if constraints or decisions missing")
     parser_guard.add_argument("--emit-timeline", action="store_true", help="Append a timeline event recording this guard run")
@@ -897,7 +910,7 @@ EXAMPLES:
     parser_guard.set_defaults(func=cmd_guard)
 
     # Grievance Closeout Commands: Nested subparsers
-    parser_attempts = subparsers.add_parser("attempts", help="[Log] Manage attempt logs.")
+    parser_attempts = subparsers.add_parser("attempts", help="[Log] Manage attempt logs.", parents=[shared_flags])
     attempts_subparsers = parser_attempts.add_subparsers(dest="subcommand", required=True)
     
     parser_attempts_add = attempts_subparsers.add_parser("add", help="Add an attempt with evidence.")
@@ -909,7 +922,7 @@ EXAMPLES:
     parser_attempts_add.add_argument("--idempotency-key", default=None, help="Optional string to deduplicate records")
     parser_attempts_add.set_defaults(func=cmd_attempts_add)
     
-    parser_decisions = subparsers.add_parser("decisions", help="[Log] Manage project decisions.")
+    parser_decisions = subparsers.add_parser("decisions", help="[Log] Manage project decisions.", parents=[shared_flags])
     decisions_subparsers = parser_decisions.add_subparsers(dest="subcommand", required=True)
     
     parser_decisions_propose = decisions_subparsers.add_parser("propose", help="Propose a decision with rationale and tradeoffs.")
@@ -921,7 +934,7 @@ EXAMPLES:
     parser_decisions_propose.add_argument("--idempotency-key", default=None, help="Optional string to deduplicate records")
     parser_decisions_propose.set_defaults(func=cmd_decisions_propose)
     
-    parser_timeline = subparsers.add_parser("timeline", help="[Log] Manage timeline events.")
+    parser_timeline = subparsers.add_parser("timeline", help="[Log] Manage timeline events.", parents=[shared_flags])
     timeline_subparsers = parser_timeline.add_subparsers(dest="subcommand", required=True)
     
     parser_timeline_add = timeline_subparsers.add_parser("add", help="Add a timeline event.")
@@ -931,7 +944,7 @@ EXAMPLES:
     parser_timeline_add.add_argument("--idempotency-key", default=None, help="Optional string to deduplicate records")
     parser_timeline_add.set_defaults(func=cmd_timeline_add)
     
-    parser_lock = subparsers.add_parser("lock", help="[Workflow] Acquire an exclusive lease/lock on a work item.")
+    parser_lock = subparsers.add_parser("lock", help="[Workflow] Acquire an exclusive lease/lock on a work item.", parents=[shared_flags])
     parser_lock.add_argument("work_item_id", help="The Work Item ID")
     parser_lock.add_argument("--expected-version", type=int, required=True, help="Expected version of the item")
     parser_lock.add_argument("--ttl", default="5m", help="Time to live (lease duration), e.g. 5m, 1h. Default 5m.")
@@ -941,7 +954,7 @@ EXAMPLES:
     parser_lock.set_defaults(func=cmd_lock)
 
     # Checkpoint
-    parser_checkpoint = subparsers.add_parser("checkpoint", help="[Resilience] Export state + mark timeline milestone (local save-game).")
+    parser_checkpoint = subparsers.add_parser("checkpoint", help="[Resilience] Export state + mark timeline milestone (local save-game).", parents=[shared_flags])
     parser_checkpoint.add_argument("project_id", help="The Project ID being checkpointed")
     parser_checkpoint.add_argument("--out", "-o", required=True, help="Output directory for the checkpoint export")
     parser_checkpoint.add_argument("--store-dir", default=".", help="Directory of the StateStore")
