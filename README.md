@@ -112,6 +112,31 @@ Rekall can still brand the experience (UI, CLI, MCP server, templates) without f
 
 ---
 
+## MCP Self-Check
+
+Verify the MCP server's tool surface is contract-aligned before wiring it into Claude Desktop or any agent runtime:
+
+```bash
+# Human-readable report (✅/⚠️/❌ per tool)
+rekall validate --mcp --server-cmd "python -m rekall.server.mcp_server"
+
+# Machine-readable JSON
+rekall validate --mcp --server-cmd "python -m rekall.server.mcp_server" --json
+
+# Strict mode (non-zero exit on any issue)
+rekall validate --mcp --server-cmd "python -m rekall.server.mcp_server" --strict
+```
+
+**What it checks:**
+- Launches the server as a subprocess (stdio JSON-RPC)
+- Calls `tools/list` and verifies all required tool names exist (per `specs/05_mcp_tool_contract_v0.1.md`)
+- Validates `inputSchema` is valid JSON Schema (type/object/properties/required)
+- Runs safe read-only probe calls (`project.list`, `work.list`, `exec.query ON_TRACK`)
+
+**`--json` output keys:** `ok`, `summary`, `missing_tools`, `schema_errors`, `call_failures`
+
+---
+
 ## Troubleshooting
 
 ### "Unsupported schema version"

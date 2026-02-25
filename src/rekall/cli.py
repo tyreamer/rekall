@@ -145,7 +145,12 @@ def cmd_demo(args):
             print("-" * 50 + "\n")
 
 def cmd_validate(args):
-    """Validate StateStore schema and invariants."""
+    """Validate StateStore schema and invariants, or MCP server surface."""
+    # Dispatch to MCP validation if --mcp flag is set
+    if getattr(args, "mcp", False):
+        cmd_validate_mcp(args)
+        return
+
     base_dir = Path(args.store_dir)
     if not base_dir.exists():
         die(ExitCode.NOT_FOUND, f"Directory {base_dir} does not exist.", args.json)
@@ -191,6 +196,33 @@ def cmd_validate(args):
             
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Validation failed with exception: {str(e)}", args.json)
+
+
+def cmd_validate_mcp(args):
+    """MCP self-check: launch server, validate tools/list, schemas, and probe calls."""
+    from rekall.core.mcp_validator import run_mcp_validation, format_human_report
+
+    server_cmd = getattr(args, "server_cmd", None)
+    if not server_cmd:
+        die(ExitCode.VALIDATION_FAILED, "--server-cmd is required when using --mcp", args.json)
+
+    try:
+        report = run_mcp_validation(
+            server_cmd=server_cmd,
+            strict=args.strict,
+            run_probes=True,
+        )
+
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            print(format_human_report(report))
+
+        if not report["ok"]:
+            sys.exit(ExitCode.VALIDATION_FAILED.value)
+
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"MCP validation failed: {str(e)}", args.json)
 
 def cmd_snapshot(args):
     """Compile the state store into a single standalone snapshot.json (compact format)."""
@@ -736,9 +768,11 @@ EXAMPLES:
     parser_init.set_defaults(func=cmd_init)
     
     # Validate
-    parser_validate = subparsers.add_parser("validate", help="[Status] Validate the StateStore invariants.")
+    parser_validate = subparsers.add_parser("validate", help="[Status] Validate the StateStore invariants (or MCP surface with --mcp).")
     parser_validate.add_argument("--store-dir", default=".", help="Directory of the StateStore")
     parser_validate.add_argument("--strict", action="store_true", help="Fail with ExitCode 3 on warnings")
+    parser_validate.add_argument("--mcp", action="store_true", help="Run MCP server self-check instead of StateStore validation")
+    parser_validate.add_argument("--server-cmd", default=None, help="Server launch command for MCP validation (required with --mcp)")
     parser_validate.set_defaults(func=cmd_validate)
     
     # Portability
