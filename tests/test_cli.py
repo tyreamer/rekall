@@ -194,3 +194,41 @@ def test_validate_json_schema(temp_store, capfd):
     assert "references" in report
     assert "secrets" in report
     assert "claims" in report
+
+def test_cmd_demo_os_output_windows(capfd, monkeypatch):
+    import platform
+    from rekall.cli import cmd_demo
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    
+    args = Namespace(json=False, quiet=True)
+    cmd_demo(args)
+    captured = capfd.readouterr()
+    
+    assert "✅ Demo Complete — Next Steps" in captured.out
+    assert "Get-Content" in captured.out
+    assert "rekall init ./project-state" in captured.out
+
+def test_cmd_demo_os_output_mac(capfd, monkeypatch):
+    import platform
+    from rekall.cli import cmd_demo
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    
+    args = Namespace(json=False, quiet=True)
+    cmd_demo(args)
+    captured = capfd.readouterr()
+    
+    assert "✅ Demo Complete — Next Steps" in captured.out
+    assert "open " in captured.out
+    assert "rekall validate ./project-state --strict" in captured.out
+
+def test_cmd_demo_os_output_linux(capfd, monkeypatch):
+    import platform
+    from rekall.cli import cmd_demo
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    
+    args = Namespace(json=False, quiet=True)
+    cmd_demo(args)
+    captured = capfd.readouterr()
+    
+    assert "✅ Demo Complete — Next Steps" in captured.out
+    assert "xdg-open" in captured.out

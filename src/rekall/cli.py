@@ -34,11 +34,11 @@ def die(code: ExitCode, message: str, is_json: bool, details: dict = None):
             print(f"Details: {details}")
     sys.exit(code.value)
 
-def setup_logging(json_mode: bool = False):
-    if json_mode:
-        logging.basicConfig(level=logging.ERROR, format="%(message)s")
+def setup_logging(json_mode: bool = False, quiet_mode: bool = False):
+    if json_mode or quiet_mode:
+        logging.basicConfig(level=logging.ERROR, format="%(message)s", force=True)
     else:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", force=True)
 
 def cmd_init(args):
     """Initializes a new Rekall project state directory."""
@@ -118,16 +118,29 @@ def cmd_demo(args):
         if args.json:
             print(json.dumps({"status": "success", "demo_dir": temp_dir}))
         else:
+            import platform
+            system = platform.system()
+            brief_file = (out_dir / "boot_brief.md").resolve()
+            state_dir = temp_path.resolve()
+            
+            if system == "Windows":
+                view_cmd = f'Get-Content "{brief_file}"'
+            elif system == "Darwin":
+                view_cmd = f'open "{brief_file}"'
+            else:
+                view_cmd = f'xdg-open "{brief_file}"'
+
             print("\n" + "="*50)
-            print("🚀 DEMO COMPLETE: REKALL PROJECT STATE GENERATED 🚀")
+            print("✅ Demo Complete — Next Steps")
             print("="*50)
-            print(f"\nWe just seeded a mock project, injected 2 work items, validated the local ledger implicitly, and ran the executive handoff synthesis.\n")
-            print("To see the magic, copy and run this command:\n")
-            print(f"  cat {out_dir}/boot_brief.md\n")
+            print(f"\nYour boot brief is ready: {brief_file}")
+            print(f"Your state artifact is dumped at: {state_dir}")
+            print("\nView it now:")
+            print(f"  {view_cmd}\n")
             print("-" * 50)
-            print("Ready to integrate Rekall with your agents or team?")
-            print("  1. Run `rekall init ./project-state` in your repo.")
-            print("  2. Boot the MCP server: `python -m rekall.server.mcp_server`.")
+            print("Next, initialize your own project:")
+            print("  rekall init ./project-state")
+            print("  rekall validate ./project-state --strict")
             print("-" * 50 + "\n")
 
 def cmd_validate(args):
@@ -150,7 +163,7 @@ def cmd_validate(args):
         
         if args.json:
             print(json.dumps(report, indent=2))
-        else:
+        elif not getattr(args, "quiet", False):
             print("\n=== Rekall Validation Report ===")
             print(f"Status: {report['summary']['status']} ({report['summary']['errors']} errors, {report['summary']['warnings']} warnings)")
             
@@ -423,10 +436,12 @@ EXAMPLES:
     )
     
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Suppress internal logs")
     subparsers = parser.add_subparsers(dest="command", required=True, title="Commands", metavar="")
     
     # Try It
     parser_demo = subparsers.add_parser("demo", help="[Try] Run a 1-click demo to see Rekall in action.")
+    parser_demo.add_argument("--quiet", "-q", action="store_true", help="Suppress internal logs")
     parser_demo.set_defaults(func=cmd_demo)
     
     parser_features = subparsers.add_parser("features", help="[Try] Print capability map and 'Not Kanban' explainer.")
@@ -480,7 +495,7 @@ EXAMPLES:
     parser_resume.set_defaults(func=cmd_alias_resume)
 
     args = parser.parse_args()
-    setup_logging(args.json)
+    setup_logging(args.json, getattr(args, "quiet", False))
     
     try:
         args.func(args)
