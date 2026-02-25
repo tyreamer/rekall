@@ -1,6 +1,7 @@
 # Rekall (rekall.io) — Project State Layer
 
-Rekall is a **state-first, agent-native project truth layer**.
+Rekall is a **project reality blackboard + ledger**—the irrefutable truth of what a project is, what failed, and what's blocking.  
+*(Note: Rekall includes work tracking, but it is **NOT** "Kanban for agents.")*
 
 It gives humans and AI agents a shared, portable “project brain” that answers:
 - What is this project?
@@ -15,15 +16,21 @@ Rekall **does not replace** Jira/Notion/GitHub/Slack/Figma. It **links out** to 
 
 ## Try it
 
-### Tier 1: “Try it in 30 seconds”
-If you want to feel the magic immediately:
+### 3) Try Rekall (Zero-Friction Onboarding)
+Run the fully mocked demo lifecycle to feel the magic in 30 seconds:
 ```bash
+python -m venv venv
+source venv/bin/activate  # or `venv\Scripts\activate` on Windows
 pip install -e .
 rekall demo
-rekall init ./my-project-state
 ```
-This installs the tool and runs a fully mocked `demo` lifecycle (recording work items / appending attempts / proposing decisions, validating, and generating a handoff pack). 
-Finally, `rekall init ./my-project-state` is called because the demo executes in a temporary directory. The `init` command explicitly scaffolds an empty, valid project reality folder so you have a blank slate to begin testing with your own agents natively.
+*Note: `rekall demo` creates a temporal snapshot and will print a `cat` command to view the executive handoff. Run that command!*
+
+Once you understand what Rekall does, initialize an empty project state:
+```bash
+rekall init ./project-state
+```
+This prepares a fresh artifact directory for your own project.
 
 ### Tier 2: “Use it on your own project-state folder”
 Once initialized, point the CLI or MCP server at your directory:
