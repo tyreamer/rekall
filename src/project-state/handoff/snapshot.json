@@ -1,0 +1,90 @@
+{
+  "project": {
+    "project_id": "new_project_123",
+    "description": "A new Rekall project",
+    "repo_url": "https://github.com/your-org/repo",
+    "links": []
+  },
+  "envs": {
+    "dev": {
+      "type": "local"
+    }
+  },
+  "access": {
+    "roles": {}
+  },
+  "work_items": {},
+  "events": [],
+  "activity": [
+    {
+      "action": "propose",
+      "activity_id": "99bed8dd-acce-4e7f-b065-ef658a97692a",
+      "actor": {
+        "actor_id": "cli_user"
+      },
+      "project_id": "new_project_123",
+      "target_id": "0e160afb-9d9a-4db4-b047-5af0d3b1be90",
+      "target_type": "decision",
+      "timestamp": "2026-02-25T23:06:50.850576+00:00"
+    },
+    {
+      "action": "propose",
+      "activity_id": "f3e4911c-e276-4b3b-ba60-3f2c7f23ad16",
+      "actor": {
+        "actor_id": "cli_user"
+      },
+      "project_id": "new_project_123",
+      "target_id": "2b101172-3d44-430d-854e-79d9382d8dbb",
+      "target_type": "decision",
+      "timestamp": "2026-02-25T23:06:50.958780+00:00"
+    },
+    {
+      "action": "append",
+      "activity_id": "c18b8583-5da3-4ddc-9d37-ff8ddbf51361",
+      "actor": {
+        "actor_id": "cli_user"
+      },
+      "project_id": "new_project_123",
+      "target_id": "e3d8e39a-e725-41fc-93b3-decf7244601e",
+      "target_type": "timeline",
+      "timestamp": "2026-02-25T23:06:51.067604+00:00"
+    }
+  ],
+  "attempts": [],
+  "decisions": [
+    {
+      "decided_by": {
+        "actor_id": "cli_user"
+      },
+      "decision_id": "0e160afb-9d9a-4db4-b047-5af0d3b1be90",
+      "rationale": "Engineering-first description of the state layer",
+      "status": "proposed",
+      "timestamp": "2026-02-25T23:06:50.849576+00:00",
+      "title": "Pivot to Reality Blackboard Positioning",
+      "tradeoffs": "Clearer value prop but less generic than Kanban"
+    },
+    {
+      "decided_by": {
+        "actor_id": "cli_user"
+      },
+      "decision_id": "2b101172-3d44-430d-854e-79d9382d8dbb",
+      "rationale": "Simpler to commit alongside code",
+      "status": "proposed",
+      "timestamp": "2026-02-25T23:06:50.953760+00:00",
+      "title": "Local-first On-disk Storage",
+      "tradeoffs": "Portability over real-time UI"
+    }
+  ],
+  "timeline": [
+    {
+      "created_by": {
+        "actor_id": "cli_user"
+      },
+      "event_id": "e3d8e39a-e725-41fc-93b3-decf7244601e",
+      "summary": "Initialized project-state for Rekall repo",
+      "timestamp": "2026-02-25T23:06:51.066093+00:00",
+      "type": "note"
+    }
+  ],
+  "schema_version": "0.1"
+}

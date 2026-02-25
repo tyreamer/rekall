@@ -1,238 +1,89 @@
-# Rekall (rekall.io) — Project State Layer
+# Rekall — Project State Layer for AI Agents
 
 [![CI](https://github.com/tyreamer/rekall/actions/workflows/ci.yml/badge.svg)](https://github.com/tyreamer/rekall/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-brightgreen.svg)](https://www.python.org/downloads/)
 
-Rekall is a **ledger for your project state**. Everything lives in a portable `project-state/` folder (YAML + JSONL). It's the shared source of truth that helps you and your AI agents stay on the same page about what's actually happening, what failed, and what's next.
+**Rekall gives your autonomous coding agents a persistent, machine-readable memory.**
 
+Everything lives in a simple, git-friendly `project-state/` folder (YAML + JSONL). No more hallucinations about what was already tried, what decisions were made, or where the running services actually are.
 
-Rekall is a project reality blackboard + ledger, not a board or task manager.
-
-AI agents don't need another place to drag tickets from "To Do" to "Done." They need a machine-readable, irrefutable source of truth about what the project is, what constraints exist, and what has already failed. Rekall provides the missing state layer that agents and technical leaders actually need.
-
-## The 4 Differentiating Primitives
-- **Attempts**: A typed ledger of what has been tried, the result, and why it failed. Agents learn from past mistakes instead of repeating them.
-- **Decisions**: Explicit records of trade-offs and architectural choices. Context is preserved permanently.
-- **Timeline**: An immutable event log of milestones, commits, and state changes.
-- **Env + Access Pointers**: Typed pointers to where the project is running and how to access it (without storing secrets directly).
-
-### Evidence-First Exec Queries
-Status in Rekall is trustworthy because it is derived from evidence. When you ask Rekall what is blocking a project, it doesn't just read a string; it queries the graph of failed attempts and unresolved decisions. This ensures that the "status" actually reflects the reality of the codebase and environment.
-
-### Complements Jira / GitHub / Notion
-Rekall does not replace your existing task trackers or wikis. Instead, it links out to them via typed links. You keep high-level epics in Jira, product requirements in Notion, and code in GitHub. Rekall acts as the local, portable tissue connecting these systems for the agent, standardizing the immediate context required to execute autonomous work.
-
-### When to Use Rekall (and When Not To)
-**Use Rekall when:**
-- You are operating autonomous AI coding agents (or pair-programming heavily).
-- You frequently lose context between sessions or team members.
-- You need a portable, local-first artifact that can be committed to Git.
-
-**Do NOT use Rekall when:**
-- You just want a visual board to track tasks for a non-technical team.
-- You want two-way syncing with Jira or Linear.
-- You need deep, human-centric sprint planning mechanics.
+*Private beta v0.1.0-beta.1 — Feb 25 2026. Coming to PyPI soon.*
 
 ---
-
-### Demo
 
 ![Rekall demo](assets/demo/rekall_demo.gif)
 
+---
 
-## Try it
-
-
-### 1) See it in action
-Run the demo to see how a project lifecycle looks in 30 seconds:
-
-**Using pipx (Recommended for CLI apps):**
+## See it in 30 seconds
 ```bash
-pipx install .
+# Install directly from GitHub
+pipx install git+https://github.com/tyreamer/rekall.git
+
+# Run the mocked demo lifecycle
 rekall demo
 ```
 
-**Using venv:**
-```bash
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-pip install -e .
-rekall demo
+### What does the actual state look like?
+Rekall is just a folder of human-readable files that agents can easily parse and update. No complex database, no hidden state.
+
+```text
+project-state/
+├── project.yaml       # Metadata, goals, and constraints
+├── activity.jsonl     # High-level work items (Todo/In-Progress)
+├── attempts.jsonl     # Typed ledger of what has been tried
+├── decisions.jsonl    # Explicit architectural trade-offs
+└── timeline.jsonl     # Immutable event log
 ```
-*Note: `rekall demo` creates a temporal snapshot and will print an OS-specific open command (notepad/open/xdg-open) to view the executive handoff. Run that command!*
 
-Once you understand what Rekall does, initialize an empty project state:
-```bash
-rekall init ./project-state
-```
-This prepares a fresh artifact directory for your own project.
-
-### 2) Use it on your own project-state folder
-Once initialized, point the CLI or MCP server at your directory:
-
-- **CLI Operations**:
-  - `rekall guard` (preflight: summarized goals, risks, and recent work)
-  - `rekall status` (quick executive summary of the current reality)
-  - `rekall blockers` (list active blockers and their impact)
-  - `rekall validate --strict` (verify invariants and links)
-  - `rekall checkpoint --label "pre-deploy"` (save game: durable state export)
-  - `rekall handoff <project_id> -o ./pack` (generate `boot_brief.md` + snapshot)
-
-- **MCP Server**: `python -m rekall.server.mcp_server` (reads from stdin/stdout)
-
-### Explore the Samples
-- **Sample Artifact**: See `examples/sample_state_artifact/` to see how `project.yaml`, `work-items.jsonl`, `attempts.jsonl`, `decisions.jsonl`, etc., are structured.
-- **Demo Scripts**: Check `examples/demo_scripts/` for simulated interactions.
-- **Run the tests**: `python -m pytest tests/`
-- **Smoke Client**: `python scripts/smoke_client.py` (verifies MCP tool contract)
-
----
-
-## Repository layout
-
-- `specs/` — the constitution (contracts + schema)
-- `reference/` — shared definitions (glossary, link catalog, errors, security)
-- `examples/` — sample state artifact + demo scripts + prompt pack
-- `assets/` — diagrams (Mermaid)
-- `roadmap/` — phases, open questions, design partner plan
-
----
-
-## Start here (reading order)
-
-1) [Quickstart](docs/QUICKSTART.md)
-2) [Beta Guide](docs/BETA.md)
-3) [Connecting Clients](docs/CONNECTING_CLIENTS.md)
-5) `specs/00_overview.md`  
-6) `specs/01_non_negotiables.md`  
-7) `specs/02_invariants_and_operating_rules.md`  
-8) `specs/03_executive_status_query_contract.md`  
-9) `specs/04_state_spec_schema_v0.1.md`  
-10) `specs/05_mcp_tool_contract_v0.1.md`
-
----
-
-## Diagrams
-
-Mermaid diagrams live under `assets/diagrams/`:
-- `system_overview.mmd`
-- `state_artifact_model.mmd`
-- `coordination_flow.mmd`
-- `exec_query_flow.mmd`
-
-
----
-
-## Idempotency Keys
-
-Agents crash. Networks fail. Idempotency keys make sure high-impact actions—like sending an email or running a migration—only happen **exactly once**, even if the agent retries.
-
-**How it works:** If you try to write a record with a key that already exists, Rekall just returns the existing record instead of creating a duplicate.
-
-**Example JSON-RPC call:**
+**Example Record (attempts.jsonl):**
 ```json
 {
-  "method": "tools/call",
-  "params": {
-    "name": "attempt.append",
-    "arguments": {
-      "project_id": "my_project",
-      "idempotency_key": "send-deploy-email-v2.1",
-      "attempt": { "work_item_id": "wi_1", "title": "Send deploy notification", "outcome": "success" },
-      "actor": { "actor_id": "deploy_agent" }
-    }
-  }
+  "attempt_id": "a1b2c3d4",
+  "work_item_id": "wi_105",
+  "title": "Migrate DB to Postgres",
+  "outcome": "failed",
+  "rationale": "RDS instance was not reachable in subnet 'sn-99'",
+  "evidence_refs": ["logs/deploy_error.log"]
 }
 ```
 
-**CLI:**
-```powershell
-rekall attempts add wi_1 --title "Deploy email" --evidence "logs/out.log" --idempotency-key "send-deploy-email-v2.1"
-rekall timeline add --summary "Migration complete" --idempotency-key "run-migration-001"
-```
+---
 
-`rekall validate` warns (or fails with `--strict`) if duplicate idempotency keys are detected in JSONL files.
+## Core Concepts (The Blackstone/Reality Layer)
+Rekall is a **project reality blackboard + ledger**, not a task manager. It provides the missing state layer that agents need:
+
+- **Attempts**: A typed ledger of what has been tried. Agents learn from past failures instead of repeating them.
+- **Decisions**: Explicit records of trade-offs. Context is preserved permanently.
+- **Timeline**: An immutable event log of milestones and state changes.
+- **Pointers**: Typed references to environments, access methods, and external docs.
 
 ---
 
-## Naming: State Artifact folder in real projects
-
-**Recommendation:** use `project-state/` as the default folder name in projects.
-
-Why:
-- instantly understandable to anyone
-- vendor/brand-neutral (better for adoption)
-- works whether the tool is Rekall today or something else later
-
-Rekall can still brand the experience (UI, CLI, MCP server, templates) without forcing a branded folder name.
-
-**Optional:** support `.rekall/` as an implementation detail (cache, indexes, local metadata), but keep the canonical artifact folder human-readable and shareable.
+## Core Commands
+- `rekall status` — Quick executive summary of the current reality.
+- `rekall guard` — Preflight check: summarized goals, risks, and recent work.
+- `rekall blockers` — List active blockers and their estimated impact.
+- `rekall handoff <project_id>` — Generate a `boot_brief.md` for the next agent session.
 
 ---
 
-## Checkpointing
-
-Losing agent context mid-task is painful. `rekall checkpoint` is a "save game" for your project. It creates a durable export of your current state so you can roll back or branch off if things go sideways.
-
-```powershell
-# Save a checkpoint before a risky change
-rekall checkpoint my_project -o ./checkpoints/pre-deploy --store-dir ./project-state --label "pre-deploy v2.1"
-
-# JSON output for automation
-rekall --json checkpoint my_project -o ./checkpoints/pre-deploy --store-dir ./project-state --label "pre-deploy v2.1"
-```
-
-Each checkpoint:
-1. Exports the full state folder to `<out_dir>` (passes `rekall validate`)
-2. Appends a `milestone` timeline event with the label, export path, and evidence ref
-3. Supports `--event-id` for idempotent re-runs (same event_id → no duplicate timeline entries)
+## When to use Rekall
+| Use Rekall when... | Do NOT use Rekall when... |
+| :--- | :--- |
+| Operating autonomous AI agents | You just need a visual Trello board |
+| Losing context between pair-sessions | You want two-way sync with Jira/Linear |
+| You need a local, git-portable state | You are building non-technical products |
 
 ---
 
-## MCP Self-Check
-
-Verify the MCP server's tool surface is contract-aligned before wiring it into Claude Desktop or any agent runtime:
-
-```bash
-# Human-readable report (✅/⚠️/❌ per tool)
-rekall validate --mcp --server-cmd "python -m rekall.server.mcp_server"
-
-# Machine-readable JSON
-rekall validate --mcp --server-cmd "python -m rekall.server.mcp_server" --json
-
-# Strict mode (non-zero exit on any issue)
-rekall validate --mcp --server-cmd "python -m rekall.server.mcp_server" --strict
-```
-
-**What it checks:**
-- Launches the server as a subprocess (stdio JSON-RPC)
-- Calls `tools/list` and verifies all required tool names exist (per `specs/05_mcp_tool_contract_v0.1.md`)
-- Validates `inputSchema` is valid JSON Schema (type/object/properties/required)
-- Runs safe read-only probe calls (`project.list`, `work.list`, `exec.query ON_TRACK`)
-
-**`--json` output keys:** `ok`, `summary`, `missing_tools`, `schema_errors`, `call_failures`
+## Go Deeper
+1. [Quickstart](docs/QUICKSTART.md) — Initialize your own project.
+2. [Beta Guide](docs/BETA.md) — What to try and how to provide feedback.
+3. [Connecting Clients](docs/CONNECTING_CLIENTS.md) — Claude Desktop, Cursor, and more.
+4. [Advanced Docs](docs/) — Idempotency, Checkpointing, and MCP Validation.
 
 ---
 
-## Troubleshooting
-
-### Reporting Issues
-
-If you find a bug, please use our [GitHub Issue Templates](.github/ISSUE_TEMPLATE/). 
-
-**Note:** To help us debug, please run `rekall validate --json` and attach the output. If it's an MCP issue, use `rekall validate --mcp --json`.
-
-### "Unsupported schema version"
-Ensure your `schema-version.txt` exists at the root of the state directory and contains exactly `0.1`.
-
-### "Validation failed during initialization"
-Rekall enforces structural guarantees on load. If your JSONL files are malformed or missing required IDs, `rekall validate` will output the exact line number of the error. Run `rekall validate --strict --json` to get a structured diagnostic payload to pipe into jq or your agent.
-
-### "Work item is claimed"
-If a work item is leased by another actor, you cannot mutate its state. Either wait for the `lease_until` time to expire, or if you hold administrative privileges, use the `force` flag in the API.
-
----
-
-## Status
-`v0.1.0-beta.1` — Private beta (2026-02-25). See [CHANGELOG.md](CHANGELOG.md) for details.
+*Note: Rekall is currently in early beta. `rekall.io` domain is reserved for future hosted services.*
