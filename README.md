@@ -5,7 +5,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-brightgreen.svg)](https://www.python.org/downloads/)
 
 Rekall is a **project reality blackboard + ledger**—the irrefutable truth of what a project is, what failed, and what's blocking.  
-*(Note: Rekall includes work tracking, but it is **NOT** "Kanban for agents.")*
+Rekall is NOT "Kanban for agents." (Read: [Why Rekall is Not Kanban](docs/WHY_NOT_KANBAN.md))
 
 ---
 
@@ -26,7 +26,6 @@ Rekall **does not replace** Jira/Notion/GitHub/Slack/Figma. It **links out** to 
 
 ## Try it
 
-![Rekall demo](assets/demo/rekall_demo.gif)
 
 ### 3) Try Rekall (Zero-Friction Onboarding)
 Run the fully mocked demo lifecycle to feel the magic in 30 seconds:
@@ -107,18 +106,6 @@ Mermaid diagrams live under `assets/diagrams/`:
 - `coordination_flow.mmd`
 - `exec_query_flow.mmd`
 
----
-
-## Positioning (important)
-
-Rekall includes work tracking, but it is **not** “Kanban for agents.”
-
-Rekall is a **project reality blackboard + ledger**. It records the irrefutable truth of what the project is, what was decided, what failed, and what is currently happening. It links out to your Jira, Notion, and Figma, but acts as the unified, machine-readable brain for your AI agents to consult before they act.
-
-- **Lead with:** project reality / shared blackboard / ledger / project memory layer  
-- **Avoid leading with:** “Kanban board”, “task management”, “tickets”, “issue tracker”
-
-Your demo should start with **exec Q&A + evidence**, then show attempts/decisions/timeline/env/access pointers.
 
 ---
 

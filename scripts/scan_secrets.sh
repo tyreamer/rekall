@@ -71,7 +71,7 @@ for pat in "${TOKEN_PATTERNS[@]}"; do
     --include="*.sh" --include="*.ps1" --include="*.txt" \
     -E "$pat" "$REPO_ROOT" \
     --exclude-dir=.git --exclude-dir=venv --exclude-dir=__pycache__ \
-    --exclude-dir=node_modules \
+    --exclude-dir=node_modules --exclude-dir=tests \
     --exclude="scan_secrets*" 2>/dev/null || true)
   if [ -n "$hits" ]; then
     echo -e "${RED}Potential secret match for pattern '$pat':${NC}"

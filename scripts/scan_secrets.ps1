@@ -62,7 +62,7 @@ $TokenPatterns = @(
 $Extensions = @("*.py","*.yaml","*.yml","*.json","*.md","*.toml","*.cfg","*.sh","*.ps1","*.txt")
 $AllFiles = foreach ($ext in $Extensions) {
     Get-ChildItem -Path $RepoRoot -Recurse -Filter $ext -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -notmatch '[\\/](\.git|venv|__pycache__|node_modules)[\\/]' -and $_.Name -notmatch 'scan_secrets' }
+        Where-Object { $_.FullName -notmatch '[\\/](\.git|venv|__pycache__|node_modules|tests)[\\/]' -and $_.Name -notmatch 'scan_secrets' }
 }
 
 $TokenIssues = $false

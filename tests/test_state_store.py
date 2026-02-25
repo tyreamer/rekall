@@ -29,7 +29,7 @@ def test_secret_detection(tmp_path):
         "event_id": "evt-malicious",
         "actor": {"actor_type": "human", "actor_id": "h-1"},
         "patch": {
-            "notes": "Here is my key sk-abcdefghijklmnopqrstuvwxyz123"
+            "notes": "Here is my key sk-A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0"
         }
     }
     
