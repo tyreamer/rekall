@@ -120,6 +120,10 @@ class StateStore:
                         existing = json.loads(line)
                         if existing.get(id_field) == record.get(id_field):
                             return existing # No-op, already exists
+                            
+                        if record.get("idempotency_key") and existing.get("idempotency_key") == record.get("idempotency_key"):
+                            return existing # No-op, already exists under this idempotency_key
+
                     except json.JSONDecodeError:
                         continue # Ignore malformed lines during dedupe check
                             
@@ -431,7 +435,7 @@ class StateStore:
         item["version"] += 1
         return item
 
-    def append_attempt(self, attempt: Dict[str, Any], actor: Dict[str, Any], reason: Optional[str] = None) -> Dict[str, Any]:
+    def append_attempt(self, attempt: Dict[str, Any], actor: Dict[str, Any], reason: Optional[str] = None, idempotency_key: Optional[str] = None) -> Dict[str, Any]:
         detect_secrets(attempt)
         import uuid
         import datetime
@@ -440,6 +444,8 @@ class StateStore:
         attempt_id = attempt.get("attempt_id") or str(uuid.uuid4())
         attempt["attempt_id"] = attempt_id
         attempt["performed_by"] = actor
+        if idempotency_key:
+            attempt["idempotency_key"] = idempotency_key
         if "timestamp" not in attempt:
             attempt["timestamp"] = now
             
@@ -451,7 +457,7 @@ class StateStore:
             
         return record
 
-    def propose_decision(self, decision: Dict[str, Any], actor: Dict[str, Any], reason: Optional[str] = None) -> Dict[str, Any]:
+    def propose_decision(self, decision: Dict[str, Any], actor: Dict[str, Any], reason: Optional[str] = None, idempotency_key: Optional[str] = None) -> Dict[str, Any]:
         detect_secrets(decision)
         import uuid
         import datetime
@@ -461,6 +467,8 @@ class StateStore:
         decision["decision_id"] = decision_id
         decision["decided_by"] = actor
         decision["status"] = "proposed"
+        if idempotency_key:
+            decision["idempotency_key"] = idempotency_key
         if "timestamp" not in decision:
             decision["timestamp"] = now
             
@@ -510,7 +518,7 @@ class StateStore:
         
         return approved_decision
 
-    def append_timeline(self, event: Dict[str, Any], actor: Dict[str, Any], reason: Optional[str] = None) -> Dict[str, Any]:
+    def append_timeline(self, event: Dict[str, Any], actor: Dict[str, Any], reason: Optional[str] = None, idempotency_key: Optional[str] = None) -> Dict[str, Any]:
         detect_secrets(event)
         import uuid
         import datetime
@@ -519,6 +527,8 @@ class StateStore:
         event_id = event.get("event_id") or str(uuid.uuid4())
         event["event_id"] = event_id
         event["created_by"] = actor
+        if idempotency_key:
+            event["idempotency_key"] = idempotency_key
         if "timestamp" not in event:
             event["timestamp"] = now
             
@@ -580,6 +590,7 @@ class StateStore:
                 
         # 3. JSONL Integrity & ID Uniqueness
         seen_ids = set()
+        seen_idemp_keys = set()
         for f in ["work-items.jsonl", "activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"]:
             filepath = self.base_dir / f
             if not filepath.exists():
@@ -593,6 +604,7 @@ class StateStore:
                 "timeline.jsonl": "event_id"
             }
             id_key = id_field_map[f]
+            seen_idemp_keys.clear()
             
             with open(filepath, "r", encoding="utf-8") as file:
                 for line_no, line in enumerate(file, 1):
@@ -600,6 +612,7 @@ class StateStore:
                     try:
                         record = json.loads(line)
                         rid = record.get(id_key)
+                        idemp_key = record.get("idempotency_key")
                         if rid:
                             if rid in seen_ids:
                                 add_warning("id_uniqueness", "duplicates", f"{f}:{line_no} Duplicate ID {rid}")
@@ -607,6 +620,13 @@ class StateStore:
                                 seen_ids.add(rid)
                         else:
                             add_error("jsonl_integrity", f"{f}:{line_no} Missing ID field '{id_key}'")
+                            
+                        if idemp_key:
+                            if idemp_key in seen_idemp_keys:
+                                add_warning("id_uniqueness", "duplicates", f"{f}:{line_no} Duplicate idempotency_key '{idemp_key}'")
+                            else:
+                                seen_idemp_keys.add(idemp_key)
+
                     except json.JSONDecodeError as e:
                         add_warning("jsonl_integrity", "malformed", f"{f}:{line_no} JSON Decode Error: {str(e)}")
                         add_error("jsonl_integrity", f"Fatal parse error in {f}")

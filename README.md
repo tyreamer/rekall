@@ -106,6 +106,41 @@ Rekall is a **project reality blackboard + ledger**. It records the irrefutable 
 
 Your demo should start with **exec Q&A + evidence**, then show attempts/decisions/timeline/env/access pointers.
 
+---
+
+## Idempotency Keys
+
+Idempotency keys let agents deduplicate high-impact, one-shot actions—"send this email once," "run this migration once," "create this ticket once"—without relying on external infrastructure.
+
+**Use when:** your agent might retry a call (crash/network) and the action must only execute once.
+
+**How it works:** if two records share the same `idempotency_key` within the same JSONL file, the second write is a no-op returning the first record. Primary `attempt_id`/`event_id`/`decision_id` dedup still applies.
+
+**Example JSON-RPC call:**
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "attempt.append",
+    "arguments": {
+      "project_id": "my_project",
+      "idempotency_key": "send-deploy-email-v2.1",
+      "attempt": { "work_item_id": "wi_1", "title": "Send deploy notification", "outcome": "success" },
+      "actor": { "actor_id": "deploy_agent" }
+    }
+  }
+}
+```
+
+**CLI:**
+```powershell
+rekall attempts add wi_1 --title "Deploy email" --evidence "logs/out.log" --idempotency-key "send-deploy-email-v2.1"
+rekall timeline add --summary "Migration complete" --idempotency-key "run-migration-001"
+```
+
+`rekall validate` warns (or fails with `--strict`) if duplicate idempotency keys are detected in JSONL files.
+
+---
 
 ## Naming: State Artifact folder in real projects
 

@@ -666,7 +666,8 @@ def cmd_attempts_add(args):
             "title": args.title,
             "evidence": args.evidence
         }
-        res = store.append_attempt(attempt, actor={"actor_id": args.actor})
+        idemp = getattr(args, "idempotency_key", None)
+        res = store.append_attempt(attempt, actor={"actor_id": args.actor}, idempotency_key=idemp)
         if args.json:
             print(json.dumps({"status": "success", "attempt": res}))
         else:
@@ -683,13 +684,31 @@ def cmd_decisions_propose(args):
             "rationale": args.rationale,
             "tradeoffs": args.tradeoffs
         }
-        res = store.propose_decision(decision, actor={"actor_id": args.actor})
+        idemp = getattr(args, "idempotency_key", None)
+        res = store.propose_decision(decision, actor={"actor_id": args.actor}, idempotency_key=idemp)
         if args.json:
             print(json.dumps({"status": "success", "decision": res}))
         else:
             logger.info(f"Decision proposed: {res['decision_id']}")
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Failed to propose decision: {str(e)}", args.json)
+
+def cmd_timeline_add(args):
+    base_dir = Path(args.store_dir)
+    try:
+        store = StateStore(base_dir)
+        event = {
+            "type": "note",
+            "summary": args.summary
+        }
+        idemp = getattr(args, "idempotency_key", None)
+        res = store.append_timeline(event, actor={"actor_id": args.actor}, idempotency_key=idemp)
+        if args.json:
+            print(json.dumps({"status": "success", "timeline_event_id": res['event_id']}))
+        else:
+            logger.info(f"Timeline event added: {res['event_id']}")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Failed to add timeline event: {str(e)}", args.json)
 
 def cmd_checkpoint(args):
     """Create a durable checkpoint: export state + append timeline milestone."""
@@ -887,6 +906,7 @@ EXAMPLES:
     parser_attempts_add.add_argument("--evidence", required=True, help="Evidence path or link")
     parser_attempts_add.add_argument("--store-dir", default=".", help="Directory of the StateStore")
     parser_attempts_add.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_attempts_add.add_argument("--idempotency-key", default=None, help="Optional string to deduplicate records")
     parser_attempts_add.set_defaults(func=cmd_attempts_add)
     
     parser_decisions = subparsers.add_parser("decisions", help="[Log] Manage project decisions.")
@@ -898,7 +918,18 @@ EXAMPLES:
     parser_decisions_propose.add_argument("--tradeoffs", required=True, help="Tradeoffs considered")
     parser_decisions_propose.add_argument("--store-dir", default=".", help="Directory of the StateStore")
     parser_decisions_propose.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_decisions_propose.add_argument("--idempotency-key", default=None, help="Optional string to deduplicate records")
     parser_decisions_propose.set_defaults(func=cmd_decisions_propose)
+    
+    parser_timeline = subparsers.add_parser("timeline", help="[Log] Manage timeline events.")
+    timeline_subparsers = parser_timeline.add_subparsers(dest="subcommand", required=True)
+    
+    parser_timeline_add = timeline_subparsers.add_parser("add", help="Add a timeline event.")
+    parser_timeline_add.add_argument("--summary", required=True, help="Summary of the timeline event")
+    parser_timeline_add.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_timeline_add.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_timeline_add.add_argument("--idempotency-key", default=None, help="Optional string to deduplicate records")
+    parser_timeline_add.set_defaults(func=cmd_timeline_add)
     
     parser_lock = subparsers.add_parser("lock", help="[Workflow] Acquire an exclusive lease/lock on a work item.")
     parser_lock.add_argument("work_item_id", help="The Work Item ID")

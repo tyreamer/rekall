@@ -237,11 +237,12 @@ def attempt_append(args: dict) -> list:
     attempt = args.get("attempt")
     actor = args.get("actor")
     reason = args.get("reason")
+    idempotency_key = args.get("idempotency_key")
     if not project_id or not attempt or not actor:
         raise ValueError("project_id, attempt, and actor are required")
     store = get_store()
     try:
-        updated = store.append_attempt(attempt, actor, reason=reason)
+        updated = store.append_attempt(attempt, actor, reason=reason, idempotency_key=idempotency_key)
         return [{"attempt": updated}]
     except Exception as e:
         err_code = "VALIDATION_ERROR"
@@ -253,11 +254,12 @@ def decision_propose(args: dict) -> list:
     decision = args.get("decision")
     actor = args.get("actor")
     reason = args.get("reason")
+    idempotency_key = args.get("idempotency_key")
     if not project_id or not decision or not actor:
         raise ValueError("project_id, decision, and actor are required")
     store = get_store()
     try:
-        updated = store.propose_decision(decision, actor, reason=reason)
+        updated = store.propose_decision(decision, actor, reason=reason, idempotency_key=idempotency_key)
         return [{"decision": updated}]
     except Exception as e:
         err_code = "VALIDATION_ERROR"
@@ -285,11 +287,12 @@ def timeline_append(args: dict) -> list:
     event = args.get("event")
     actor = args.get("actor")
     reason = args.get("reason")
+    idempotency_key = args.get("idempotency_key")
     if not project_id or not event or not actor:
         raise ValueError("project_id, event, and actor are required")
     store = get_store()
     try:
-        updated = store.append_timeline(event, actor, reason=reason)
+        updated = store.append_timeline(event, actor, reason=reason, idempotency_key=idempotency_key)
         return [{"event": updated}]
     except Exception as e:
         err_code = "VALIDATION_ERROR"
@@ -435,12 +438,12 @@ TOOLS_DEF = [
     {
         "name": "attempt.append",
         "description": "Append an attempt note.",
-        "inputSchema": {"type": "object", "required": ["project_id", "attempt", "actor"], "properties": {"project_id": {"type": "string"}, "attempt": {"type": "object"}, "actor": {"type": "object"}, "reason": {"type": "string"}}}
+        "inputSchema": {"type": "object", "required": ["project_id", "attempt", "actor"], "properties": {"project_id": {"type": "string"}, "attempt": {"type": "object"}, "actor": {"type": "object"}, "reason": {"type": "string"}, "idempotency_key": {"type": "string"}}}
     },
     {
         "name": "decision.propose",
         "description": "Propose a decision log.",
-        "inputSchema": {"type": "object", "required": ["project_id", "decision", "actor"], "properties": {"project_id": {"type": "string"}, "decision": {"type": "object"}, "actor": {"type": "object"}, "reason": {"type": "string"}}}
+        "inputSchema": {"type": "object", "required": ["project_id", "decision", "actor"], "properties": {"project_id": {"type": "string"}, "decision": {"type": "object"}, "actor": {"type": "object"}, "reason": {"type": "string"}, "idempotency_key": {"type": "string"}}}
     },
     {
         "name": "decision.approve",
@@ -450,7 +453,7 @@ TOOLS_DEF = [
     {
         "name": "timeline.append",
         "description": "Append a timeline event.",
-        "inputSchema": {"type": "object", "required": ["project_id", "event", "actor"], "properties": {"project_id": {"type": "string"}, "event": {"type": "object"}, "actor": {"type": "object"}, "reason": {"type": "string"}}}
+        "inputSchema": {"type": "object", "required": ["project_id", "event", "actor"], "properties": {"project_id": {"type": "string"}, "event": {"type": "object"}, "actor": {"type": "object"}, "reason": {"type": "string"}, "idempotency_key": {"type": "string"}}}
     },
     {
         "name": "exec.query",
