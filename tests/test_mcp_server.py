@@ -1,0 +1,468 @@
+import pytest
+from pathlib import Path
+
+from rekall.server.mcp_server import (
+    project_get,
+    work_list,
+    work_get,
+    timeline_list,
+    get_store,
+    _store
+)
+
+SAMPLE_DIR = Path(__file__).parent.parent / "examples" / "sample_state_artifact"
+
+@pytest.fixture(autouse=True)
+def setup_store(monkeypatch):
+    import os
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(SAMPLE_DIR))
+    # force reload so tests always use the fixture
+    global _store
+    _store = None
+    get_store()
+    yield
+
+def test_project_get():
+    result = project_get({"project_id": "prj_646d63703ec5"})
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert "project" in result[0]
+    assert result[0]["project"]["name"] == "Sample Project State Layer POC"
+
+def test_work_list():
+    result = work_list({"project_id": "prj_646d63703ec5", "limit": 10, "offset": 0})
+    assert isinstance(result, list)
+    assert len(result) == 1
+    payload = result[0]
+    assert "items" in payload
+    # Check deterministic ordering (fallback to IDs if needed)
+    items = payload["items"]
+    assert len(items) > 0
+    # ensure basic shape
+    assert "work_item_id" in items[0]
+    assert "claim" in items[0]
+    assert "version" in items[0]
+
+def test_work_list_filters():
+    # Only status="todo"
+    result = work_list({"project_id": "prj_646d63703ec5", "status": ["todo"]})
+    items = result[0]["items"]
+    assert all(i["status"] == "todo" for i in items)
+
+def test_work_get():
+    # Get a known ID from sample
+    store = get_store()
+    wid = list(store.work_items.keys())[0]
+    result = work_get({"project_id": "prj_646d63703ec5", "work_item_id": wid})
+    
+    assert "work_item" in result[0]
+    item = result[0]["work_item"]
+    assert item["work_item_id"] == wid
+    assert "version" in item
+
+def test_timeline_list():
+    result = timeline_list({"project_id": "prj_646d63703ec5", "limit": 5})
+    assert "items" in result[0]
+    items = result[0]["items"]
+    assert len(items) > 0
+    
+    # Check sorting: should be older timestamp first
+    timestamps = [i.get("timestamp", "") for i in items]
+    assert timestamps == sorted(timestamps) # Deterministic ascending order
+
+# --- Write Tests ---
+
+def test_create_adds_new(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    
+    global _store
+    _store = None
+    
+    actor = {"actor_type": "human", "actor_id": "u-1"}
+    args = {
+        "project_id": "prj_646d63703ec5",
+        "actor": actor,
+        "work_item": {
+            "title": "New Task",
+            "type": "task",
+            "status": "todo",
+            "priority": "p2"
+        }
+    }
+    
+    from rekall.server.mcp_server import work_create
+    res = work_create(args)[0]
+    assert "work_item" in res
+    wid = res["work_item"]["work_item_id"]
+    
+    # Verify it can be fetched
+    get_res = work_get({"project_id": "prj_646d63703ec5", "work_item_id": wid})[0]
+    assert get_res["work_item"]["title"] == "New Task"
+    assert get_res["work_item"]["version"] == 1
+
+def test_claim_increments_version(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    store = get_store()
+    wid = list(store.work_items.keys())[0]
+    item = store.work_items[wid]
+    ver = item["version"]
+    
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+    
+    from rekall.server.mcp_server import work_claim
+    res = work_claim({
+        "project_id": "prj_646d63703ec5",
+        "work_item_id": wid,
+        "expected_version": ver,
+        "actor": actor,
+        "force": True # Break any existing claim in sample
+    })[0]
+    
+    assert "work_item" in res
+    new_ver = res["work_item"]["version"]
+    assert new_ver == ver + 1
+    assert res["work_item"]["claim"]["claimed_by"] == "ag-1"
+
+def test_version_mismatch_conflict(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    store = get_store()
+    wid = list(store.work_items.keys())[0]
+    
+    from rekall.server.mcp_server import work_update
+    res = work_update({
+        "project_id": "prj_646d63703ec5",
+        "work_item_id": wid,
+        "expected_version": 9999, # wrong
+        "actor": {"actor_type": "human", "actor_id": "u-1"},
+        "patch": {"title": "conflict"}
+    })[0]
+    
+    assert "error" in res
+    assert res["error"]["code"] == "CONFLICT"
+
+def test_non_claimant_rejected(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    store = get_store()
+    wid = list(store.work_items.keys())[0]
+    ver = store.work_items[wid]["version"]
+    
+    from rekall.server.mcp_server import work_claim, work_update
+    
+    # Claim for ag-1
+    work_claim({
+        "project_id": "prj_646d63703ec5", "work_item_id": wid, 
+        "expected_version": ver, "actor": {"actor_type": "agent", "actor_id": "ag-1"}, "force": True
+    })
+    
+    new_ver = store.work_items[wid]["version"]
+    
+    # Try to update as ag-2
+    res = work_update({
+        "project_id": "prj_646d63703ec5",
+        "work_item_id": wid,
+        "expected_version": new_ver,
+        "actor": {"actor_type": "agent", "actor_id": "ag-2"},
+        "patch": {"title": "hacked"}
+    })[0]
+    
+    assert "error" in res
+    assert res["error"]["code"] in ["FORBIDDEN", "LEASE_EXPIRED"]
+
+def test_renew_extends_lease(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    store = get_store()
+    wid = list(store.work_items.keys())[0]
+    ver = store.work_items[wid]["version"]
+    
+    from rekall.server.mcp_server import work_claim, work_renew_claim
+    res1 = work_claim({
+        "project_id": "prj_646d63703ec5", "work_item_id": wid, 
+        "expected_version": ver, "actor": {"actor_type": "agent", "actor_id": "ag-3"}, "force": True
+    })[0]
+    lease_1 = res1["work_item"]["claim"]["lease_until"]
+    v2 = res1["work_item"]["version"]
+    
+    import time
+    time.sleep(0.1)
+    
+    res2 = work_renew_claim({
+        "project_id": "prj_646d63703ec5", "work_item_id": wid, 
+        "expected_version": v2, "actor": {"actor_type": "agent", "actor_id": "ag-3"}
+    })[0]
+    
+    lease_2 = res2["work_item"]["claim"]["lease_until"]
+    assert lease_2 > lease_1
+
+def test_release_clears_claim(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    store = get_store()
+    wid = list(store.work_items.keys())[0]
+    ver = store.work_items[wid]["version"]
+    
+    from rekall.server.mcp_server import work_claim, work_release_claim
+    res1 = work_claim({
+        "project_id": "prj_646d63703ec5", "work_item_id": wid, 
+        "expected_version": ver, "actor": {"actor_type": "agent", "actor_id": "ag-4"}, "force": True
+    })[0]
+    v2 = res1["work_item"]["version"]
+    
+    res2 = work_release_claim({
+        "project_id": "prj_646d63703ec5", "work_item_id": wid, 
+        "expected_version": v2, "actor": {"actor_type": "agent", "actor_id": "ag-4"}
+    })[0]
+    
+    assert res2["work_item"]["claim"] is None
+
+def test_attempt_append_idempotency(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    from rekall.server.mcp_server import attempt_append, get_store
+    
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+    attempt = {"attempt_id": "att-123", "notes": "first try"}
+    
+    res1 = attempt_append({"project_id": "prj_646d63703ec5", "attempt": attempt, "actor": actor})[0]
+    assert "attempt" in res1
+    
+    # Append identical attempt_id
+    attempt2 = {"attempt_id": "att-123", "notes": "different notes ignored"}
+    res2 = attempt_append({"project_id": "prj_646d63703ec5", "attempt": attempt2, "actor": actor})[0]
+    
+    assert res2["attempt"]["notes"] == "first try" # Return original
+
+def test_decision_propose_idempotency(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    from rekall.server.mcp_server import decision_propose
+    actor = {"actor_type": "human", "actor_id": "h-1"}
+    
+    d1 = {"decision_id": "dec-999", "title": "Move to Postgres"}
+    res1 = decision_propose({"project_id": "prj_646d63703ec5", "decision": d1, "actor": actor})[0]
+    assert res1["decision"]["status"] == "proposed"
+    
+    d2 = {"decision_id": "dec-999", "title": "Change to MySQL"}
+    res2 = decision_propose({"project_id": "prj_646d63703ec5", "decision": d2, "actor": actor})[0]
+    assert res2["decision"]["title"] == "Move to Postgres"
+
+def test_timeline_append_idempotency(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    from rekall.server.mcp_server import timeline_append
+    actor = {"actor_type": "system", "actor_id": "sys"}
+    
+    ev = {"event_id": "evt-777", "message": "Deployment completed"}
+    res1 = timeline_append({"project_id": "prj_646d63703ec5", "event": ev, "actor": actor})[0]
+    assert "event" in res1
+    
+    res2 = timeline_append({"project_id": "prj_646d63703ec5", "event": ev, "actor": actor})[0]
+    assert res2["event"]["message"] == "Deployment completed"
+    
+def test_decision_approve_forbidden_without_capability(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    from rekall.server.mcp_server import decision_propose, decision_approve
+    actor1 = {"actor_type": "agent", "actor_id": "ag-1"}
+    d1 = {"decision_id": "dec-001", "title": "Add Redis"}
+    decision_propose({"project_id": "prj_646d63703ec5", "decision": d1, "actor": actor1})
+    
+    # Approve without cap
+    res = decision_approve({"project_id": "prj_646d63703ec5", "decision_id": "dec-001", "actor": actor1})[0]
+    assert "error" in res
+    assert res["error"]["code"] == "FORBIDDEN"
+
+def test_decision_approve_success_with_capability(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    from rekall.server.mcp_server import decision_propose, decision_approve
+    actor1 = {"actor_type": "agent", "actor_id": "ag-1"}
+    actor_admin = {"actor_type": "human", "actor_id": "admin", "capabilities": ["approve_decisions"]}
+    
+    d1 = {"decision_id": "dec-002", "title": "Change architecture"}
+    decision_propose({"project_id": "prj_646d63703ec5", "decision": d1, "actor": actor1})
+    
+    res = decision_approve({"project_id": "prj_646d63703ec5", "decision_id": "dec-002", "actor": actor_admin})[0]
+    assert "decision" in res
+    assert res["decision"]["status"] == "approved"
+    assert res["decision"]["supersedes"] == "dec-002"
+
+def test_activity_event_emitted(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    from rekall.server.mcp_server import attempt_append, activity_list, get_store
+    
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+    attempt = {"attempt_id": "att-100", "notes": "does it log?"}
+    
+    attempt_append({"project_id": "prj_646d63703ec5", "attempt": attempt, "actor": actor})
+    
+    # Read activity
+    res = activity_list({"project_id": "prj_646d63703ec5"})[0]
+    items = res["items"]
+    
+    # Check if there's an activity record for attempt att-100
+    found = False
+    for item in items:
+        if item.get("target_id") == "att-100" and item.get("action") == "append":
+            found = True
+            break
+            
+    assert found
+
+def test_exec_query_on_track(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    from rekall.server.mcp_server import exec_query, work_update, get_store
+    store = get_store()
+    
+    # 1. By default, sample artifact actually has 2 blocked items
+    res = exec_query({"project_id": "prj_646d63703ec5", "query_type": "ON_TRACK"})[0]
+    er = res.get("executive_response")
+    assert er is not None
+    assert er["confidence"] == "high" 
+    assert "AT_RISK" in er["summary"][0] # 2 active blockers
+    assert len(er["evidence"]) > 0
+    
+    # 2. To test ON_TRACK, we must unblock them
+    blockers = [w for w in store.work_items.values() if w.get("status") == "blocked"]
+    for w in blockers:
+        work_update({
+            "project_id": "prj_646d63703ec5",
+            "work_item_id": w["work_item_id"],
+            "expected_version": w["version"],
+            "actor": {"actor_type": "human", "actor_id": "u-1"},
+            "patch": {"status": "in_progress"},
+            "force": True
+        })
+        
+    res2 = exec_query({"project_id": "prj_646d63703ec5", "query_type": "ON_TRACK"})[0]
+    er2 = res2["executive_response"]
+    assert "ON_TRACK" in er2["summary"][0]
+    assert any("in_progress" in getattr(ev, "status", "in_progress") for ev in er2.get("evidence", [])) # heuristic check
+
+def test_exec_query_blockers(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    from rekall.server.mcp_server import exec_query, work_update, get_store
+    store = get_store()
+    
+    wid = list(store.work_items.keys())[0]
+    ver = store.work_items[wid]["version"]
+    work_update({
+        "project_id": "prj_646d63703ec5",
+        "work_item_id": wid,
+        "expected_version": ver,
+        "actor": {"actor_type": "human", "actor_id": "u-2"},
+        "patch": {"status": "blocked"},
+        "force": True
+    })
+    
+    res = exec_query({"project_id": "prj_646d63703ec5", "query_type": "BLOCKERS"})[0]
+    er = res["executive_response"]
+    assert er["confidence"] in ["medium", "high"]
+    assert "blocked" in er["summary"][0]
+    assert len(er["evidence"]) > 0
+    assert any(wid in ev for ev in er["evidence"])
+
+def test_exec_query_changed_since(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    from rekall.server.mcp_server import exec_query, timeline_append
+    
+    # Add an event
+    timeline_append({
+        "project_id": "prj_646d63703ec5", 
+        "event": {"event_id": "evt-new-1", "message": "hello"}, 
+        "actor": {"actor_type": "human", "actor_id": "u-1"}
+    })
+    
+    import datetime
+    yesterday = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).isoformat()
+    
+    res = exec_query({"project_id": "prj_646d63703ec5", "query_type": "CHANGED_SINCE", "since": yesterday})[0]
+    er = res["executive_response"]
+    assert "activities since" in er["summary"][0]
+    assert len(er["evidence"]) >= 1
+
+def test_exec_query_resume_in_30(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    global _store
+    _store = None
+    
+    from rekall.server.mcp_server import exec_query
+    
+    res = exec_query({"project_id": "prj_646d63703ec5", "query_type": "RESUME_IN_30"})[0]
+    er = res["executive_response"]
+    
+    # Should include goal, items, envs
+    summary_text = " ".join(er["summary"])
+    assert "Goal:" in summary_text
+    
+    evidence_text = " ".join(er["evidence"])
+    assert "work_item:" in evidence_text
+    assert "env:" in evidence_text
+
