@@ -92,6 +92,8 @@ Mermaid diagrams live under `assets/diagrams/`:
 
 Rekall includes work tracking, but it is **not** “Kanban for agents.”
 
+Rekall is a **project reality blackboard + ledger**. It records the irrefutable truth of what the project is, what was decided, what failed, and what is currently happening. It links out to your Jira, Notion, and Figma, but acts as the unified, machine-readable brain for your AI agents to consult before they act.
+
 - **Lead with:** project reality / shared blackboard / ledger / project memory layer  
 - **Avoid leading with:** “Kanban board”, “task management”, “tickets”, “issue tracker”
 

@@ -59,25 +59,24 @@ def test_cmd_validate_failure():
         assert excinfo.value.code == 1
 
 def test_cmd_export(temp_store):
-    out_file = temp_store / "output.json"
-    args = Namespace(store_dir=str(temp_store), out=str(out_file))
+    out_dir = temp_store / "output_dir"
+    args = Namespace(store_dir=str(temp_store), out=str(out_dir), json=False)
     
     cmd_export(args)
     
-    assert out_file.exists()
-    data = json.loads(out_file.read_text())
-    assert data["project"]["project_id"] == "test_proj"
-    assert "wi_1" in data["work_items"]
-    assert len(data["events"]) == 1
+    assert out_dir.exists()
+    assert (out_dir / "project.yaml").exists()
+    assert (out_dir / "schema-version.txt").exists()
+    assert (out_dir / "work-items.jsonl").exists()
 
 def test_cmd_import(temp_store):
-    out_file = temp_store / "output.json"
-    args = Namespace(store_dir=str(temp_store), out=str(out_file))
+    out_dir = temp_store / "output_dir"
+    args = Namespace(store_dir=str(temp_store), out=str(out_dir), json=False)
     cmd_export(args)
     
     # Import into a new dir
     with tempfile.TemporaryDirectory() as import_d:
-        import_args = Namespace(snapshot=str(out_file), store_dir=import_d)
+        import_args = Namespace(source=str(out_dir), store_dir=import_d, json=False)
         cmd_import(import_args)
         
         imported_dir = Path(import_d)

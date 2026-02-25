@@ -12,6 +12,14 @@ def generate_boot_brief(store: StateStore) -> str:
     repo_url = store.project_config.get("repo_url", "N/A")
     lines.append(f"# Boot Brief: {project_id}")
     lines.append(f"**Repository**: {repo_url}")
+    
+    links = store.project_config.get("links", [])
+    if links:
+        lines.append("")
+        lines.append("## Project Links")
+        for link in links:
+            lines.append(f"- **{link.get('type', 'link')}**: [{link.get('label', 'URL')}]({link.get('url', '')})")
+    
     lines.append("")
     
     lines.append("## Project Goal")
@@ -45,7 +53,11 @@ def generate_boot_brief(store: StateStore) -> str:
             # Discover what it's blocked by
             deps = wi.get("dependencies", {}).get("blocked_by", [])
             dep_str = f" (*Blocked by*: {', '.join(deps)})" if deps else ""
-            lines.append(f"- **{wid}**: {title}{dep_str}")
+            ev_links = wi.get("evidence_links", [])
+            ev_str = f" [Evidence: {len(ev_links)}]" if ev_links else ""
+            lines.append(f"- **{wid}**: {title}{dep_str}{ev_str}")
+            for link in ev_links:
+                lines.append(f"  - {link.get('type', 'link')}: {link.get('url', '')}")
     else:
         lines.append("*No items are currently marked as blocked.*")
     lines.append("")
@@ -60,7 +72,11 @@ def generate_boot_brief(store: StateStore) -> str:
             owner = wi.get("owner", "Unassigned")
             claim = wi.get("claim", {})
             claimed_by = claim.get("claimed_by", "Nobody") if claim else "Nobody"
-            lines.append(f"- **{wid}**: {title} (Owner: {owner}, Claimed: {claimed_by})")
+            ev_links = wi.get("evidence_links", [])
+            ev_str = f" [Evidence: {len(ev_links)}]" if ev_links else ""
+            lines.append(f"- **{wid}**: {title} (Owner: {owner}, Claimed: {claimed_by}){ev_str}")
+            for link in ev_links:
+                lines.append(f"  - {link.get('type', 'link')}: {link.get('url', '')}")
     else:
         lines.append("*No items currently in progress.*")
     lines.append("")

@@ -135,14 +135,13 @@ def cmd_validate(args):
         logger.error(f"Validation failed with exception: {str(e)}")
         sys.exit(1)
 
-def cmd_export(args):
+def cmd_snapshot(args):
     """Compile the state store into a single standalone snapshot.json (compact format)."""
     base_dir = Path(args.store_dir)
     try:
         store = StateStore(base_dir)
         
         # Compile snapshot
-        # Load attempts, decisions, timeline as well for a complete snapshot
         activity = store._load_jsonl("activity.jsonl")
         attempts = store._load_jsonl("attempts.jsonl")
         decisions = store._load_jsonl("decisions.jsonl")
@@ -167,68 +166,95 @@ def cmd_export(args):
             out_file = Path(args.out)
             out_file.write_text(json.dumps(snapshot, indent=2))
             logger.info(f"Snapshot exported to {out_file}")
+            if args.json: print(json.dumps({"status": "success", "snapshot_file": str(out_file)}))
         else:
             print(json.dumps(snapshot, indent=2))
             
     except Exception as e:
+        logger.error(f"Snapshot failed: {str(e)}")
+        if args.json: print(json.dumps({"error": str(e)}))
+        sys.exit(1)
+
+def cmd_export(args):
+    """Copies the StateStore entirely to a requested output directory matching v0.1 Spec."""
+    import shutil
+    base_dir = Path(args.store_dir)
+    out_dir = Path(args.out)
+    
+    try:
+        store = StateStore(base_dir) # validates implicitly
+        
+        # If valid, just copy files over
+        out_dir.mkdir(parents=True, exist_ok=True)
+        
+        files_to_copy = [
+            "schema-version.txt", "project.yaml", "envs.yaml", "access.yaml",
+            "work-items.jsonl", "activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"
+        ]
+        
+        for f in files_to_copy:
+            src = base_dir / f
+            if src.exists():
+                shutil.copy2(src, out_dir / f)
+                
+        if args.json:
+            print(json.dumps({"status": "success", "export_dir": str(out_dir)}))
+        else:
+            logger.info(f"Exported project state to {out_dir}")
+            
+    except Exception as e:
         logger.error(f"Export failed: {str(e)}")
+        if args.json: print(json.dumps({"error": str(e)}))
         sys.exit(1)
 
 def cmd_import(args):
-    """Reads a snapshot.json and writes it to the local StateStore directory (idempotently)."""
-    base_dir = Path(args.store_dir)
-    snapshot_file = Path(args.snapshot)
+    """Reads from a state store folder and imports events idempotently to the target directory."""
+    target_dir = Path(args.store_dir)
+    source_dir = Path(args.source)
     
-    if not snapshot_file.exists():
-        logger.error(f"Snapshot file {snapshot_file} does not exist.")
+    if not source_dir.exists() or not (source_dir / "schema-version.txt").exists():
+        logger.error(f"Source directory {source_dir} is not a valid state store.")
+        if args.json: print(json.dumps({"error": "Invalid source directory."}))
         sys.exit(1)
         
     try:
-        base_dir.mkdir(parents=True, exist_ok=True)
-        snapshot = json.loads(snapshot_file.read_text())
+        # Initialize target if it doesn't exist
+        if not target_dir.exists() or not any(target_dir.iterdir()):
+            fake_args = argparse.Namespace(store_dir=args.store_dir, json=False)
+            cmd_init(fake_args)
+            
+        target_store = StateStore(target_dir)
+        source_store = StateStore(source_dir)
         
-        # Write schema version
-        schema_file = base_dir / "schema-version.txt"
-        schema_file.write_text(snapshot.get("schema_version", "0.1"))
+        # Merge YAMLs (in a real scenario we'd do smart merge, but let's replace for now if source has content)
+        import shutil
+        for yaml_file in ["project.yaml", "envs.yaml", "access.yaml"]:
+            if (source_dir / yaml_file).exists():
+                shutil.copy2(source_dir / yaml_file, target_dir / yaml_file)
+                
+        # Idempotent JSONL event injection
+        events_lists = [
+            ("work-items.jsonl", "event_id"),
+            ("activity.jsonl", "activity_id"),
+            ("attempts.jsonl", "attempt_id"),
+            ("decisions.jsonl", "decision_id"),
+            ("timeline.jsonl", "event_id")
+        ]
         
-        # Write yamls safely
-        import yaml
-        
-        def write_yaml(filename, data):
-            if data:
-                with open(base_dir / filename, "w", encoding="utf-8") as f:
-                    yaml.dump(data, f)
+        for file_name, id_field in events_lists:
+            if (source_dir / file_name).exists():
+                records = source_store._load_jsonl(file_name)
+                for record in records:
+                    target_store.append_jsonl_idempotent(file_name, record, id_field)
                     
-        write_yaml("project.yaml", snapshot.get("project", {}))
-        write_yaml("envs.yaml", snapshot.get("envs", {}))
-        write_yaml("access.yaml", snapshot.get("access", {}))
-        
-        # We need a StateStore to enforce invariants while appending jsonl, but we might just overwrite
-        # the entire store or use idempotent append. The instructions say "reads a snapshot.json and writes 
-        # it to the local StateStore directory (idempotently replacing or appending events)".
-        # Let's instantiate StateStore and use append_jsonl_idempotent
-        
-        store = StateStore(base_dir) # now valid because we wrote schema-version and yamls
-        
-        # Import work Item events safely
-        for event in snapshot.get("events", []):
-            store.append_jsonl_idempotent("work-items.jsonl", event, "event_id")
+        if args.json:
+            print(json.dumps({"status": "success", "imported_to": str(target_dir)}))
+        else:
+            logger.info(f"Import from folder {source_dir} to {target_dir} successful.")
             
-        for act in snapshot.get("activity", []):
-            store.append_jsonl_idempotent("activity.jsonl", act, "activity_id")
-            
-        for attempt in snapshot.get("attempts", []):
-            store.append_jsonl_idempotent("attempts.jsonl", attempt, "attempt_id")
-            
-        for dec in snapshot.get("decisions", []):
-            store.append_jsonl_idempotent("decisions.jsonl", dec, "decision_id")
-            
-        for t in snapshot.get("timeline", []):
-            store.append_jsonl_idempotent("timeline.jsonl", t, "event_id")
-            
-        logger.info(f"Import from {snapshot_file} to {base_dir} successful.")
     except Exception as e:
         logger.error(f"Import failed: {str(e)}")
+        if args.json: print(json.dumps({"error": str(e)}))
         sys.exit(1)
 
 def cmd_handoff(args):
@@ -304,14 +330,20 @@ def main():
     parser_validate.set_defaults(func=cmd_validate)
     
     # export
-    parser_export = subparsers.add_parser("export", help="Export StateStore to a single snapshot.json")
+    parser_export = subparsers.add_parser("export", help="Export StateStore to a new directory (YAML+JSONL folder format).")
     parser_export.add_argument("--store-dir", default=".", help="Directory of the StateStore")
-    parser_export.add_argument("--out", "-o", help="Output JSON file path (default: stdout)")
+    parser_export.add_argument("--out", "-o", required=True, help="Output directory path")
     parser_export.set_defaults(func=cmd_export)
     
+    # snapshot
+    parser_snapshot = subparsers.add_parser("snapshot", help="Export StateStore to a single snapshot.json blob.")
+    parser_snapshot.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_snapshot.add_argument("--out", "-o", help="Output JSON file path (default: stdout)")
+    parser_snapshot.set_defaults(func=cmd_snapshot)
+    
     # import
-    parser_import = subparsers.add_parser("import", help="Import a snapshot.json into a StateStore directory")
-    parser_import.add_argument("snapshot", help="Path to snapshot.json")
+    parser_import = subparsers.add_parser("import", help="Import events from a source state store folder into the target folder.")
+    parser_import.add_argument("source", help="Path to source state store folder")
     parser_import.add_argument("--store-dir", default=".", help="Target Directory of the StateStore")
     parser_import.set_defaults(func=cmd_import)
     
