@@ -1,10 +1,10 @@
 # Rekall (rekall.io) — Project State Layer
 
-[![CI](https://github.com/anthropic-labs/rekall/actions/workflows/ci.yml/badge.svg)](https://github.com/anthropic-labs/rekall/actions/workflows/ci.yml)
+[![CI](https://github.com/tyreamer/rekall/actions/workflows/ci.yml/badge.svg)](https://github.com/tyreamer/rekall/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-brightgreen.svg)](https://www.python.org/downloads/)
 
-Rekall is a **ledger for your project state**. It's the shared source of truth that helps you and your AI agents stay on the same page about what's actually happening, what failed, and what's next.
+Rekall is a **ledger for your project state**. Everything lives in a portable `project-state/` folder (YAML + JSONL). It's the shared source of truth that helps you and your AI agents stay on the same page about what's actually happening, what failed, and what's next.
 
 Rekall is NOT "Kanban for agents." (Read: [Why Rekall is Not Kanban](docs/WHY_NOT_KANBAN.md))
 
@@ -52,19 +52,18 @@ rekall init ./project-state
 ```
 This prepares a fresh artifact directory for your own project.
 
-### Tier 2: “Use it on your own project-state folder”
+### 2) Use it on your own project-state folder
 Once initialized, point the CLI or MCP server at your directory:
 
 - **CLI Operations**:
-  - `rekall features` (shows capability map and "Not Kanban" explainer)
-  - `rekall status --store-dir ./my-project-state` (quick executive summary)
-  - `rekall blockers --store-dir ./my-project-state` (fetch active blockers)
-  - `rekall validate --store-dir ./my-project-state` (checks invariants and links)
-  - `rekall export --store-dir ./my-project-state --out ./backup-state` (creates a portable state artifact export)
-  - `rekall import ./backup-state --store-dir ./my-project-state` (idempotent folder-based ingestion)
-  - `rekall handoff <project_id> --store-dir ./my-project-state -o ./pack` (generates `boot_brief.md` + snapshot)
+  - `rekall guard` (preflight: summarized goals, risks, and recent work)
+  - `rekall status` (quick executive summary of the current reality)
+  - `rekall blockers` (list active blockers and their impact)
+  - `rekall validate --strict` (verify invariants and links)
+  - `rekall checkpoint --label "pre-deploy"` (save game: durable state export)
+  - `rekall handoff <project_id> -o ./pack` (generate `boot_brief.md` + snapshot)
 
-- **MCP Server** (for Claude Desktop): `python -m rekall.server.mcp_server` (reads from stdin/stdout)
+- **MCP Server**: `python -m rekall.server.mcp_server` (reads from stdin/stdout)
 
 ### Explore the Samples
 - **Sample Artifact**: See `examples/sample_state_artifact/` to see how `project.yaml`, `work-items.jsonl`, `attempts.jsonl`, `decisions.jsonl`, etc., are structured.

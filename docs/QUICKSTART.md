@@ -62,6 +62,12 @@ Validate the MCP surface:
 rekall validate --mcp --server-cmd "rekall serve --store-dir ./project-state"
 ```
 
+## Advanced Operations
+- **`rekall checkpoint`**: Save a durable "save game" export of your state.
+- **`rekall export`**: Create a portable state artifact snapshot.
+- **`rekall import`**: Ingest state updates from another folder idempotently.
+- **`rekall features`**: See the capability map and "Not Kanban" philosophy.
+
 ## What you just got
 - **`project-state/` folder**: A portable ledger of truth (YAML/JSONL files) that agents can read and write.
 - **`boot_brief.md`**: An executive summary generated from state, perfect for agent system prompts.
