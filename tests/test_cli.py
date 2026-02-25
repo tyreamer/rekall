@@ -204,7 +204,8 @@ def test_cmd_demo_os_output_windows(capfd, monkeypatch):
     cmd_demo(args)
     captured = capfd.readouterr()
     
-    assert "✅ Demo Complete — Next Steps" in captured.out
+    assert "✅ DEMO COMPLETE — OPEN THIS NOW:" in captured.out
+    assert "notepad" in captured.out
     assert "Get-Content" in captured.out
     assert "rekall init ./project-state" in captured.out
 
@@ -217,7 +218,7 @@ def test_cmd_demo_os_output_mac(capfd, monkeypatch):
     cmd_demo(args)
     captured = capfd.readouterr()
     
-    assert "✅ Demo Complete — Next Steps" in captured.out
+    assert "✅ DEMO COMPLETE — OPEN THIS NOW:" in captured.out
     assert "open " in captured.out
     assert "rekall validate ./project-state --strict" in captured.out
 
@@ -230,5 +231,35 @@ def test_cmd_demo_os_output_linux(capfd, monkeypatch):
     cmd_demo(args)
     captured = capfd.readouterr()
     
-    assert "✅ Demo Complete — Next Steps" in captured.out
+    assert "✅ DEMO COMPLETE — OPEN THIS NOW:" in captured.out
     assert "xdg-open" in captured.out
+
+def test_cmd_attempts_add(temp_store):
+    from rekall.cli import cmd_attempts_add
+    args = Namespace(store_dir=str(temp_store), json=False, work_item_id="wi_1", title="Attempt 1", evidence="link.com", actor="user1")
+    cmd_attempts_add(args)
+    
+    with open(temp_store / "attempts.jsonl") as f:
+        data = f.read()
+        assert "Attempt 1" in data
+        assert "link.com" in data
+
+def test_cmd_decisions_propose(temp_store):
+    from rekall.cli import cmd_decisions_propose
+    args = Namespace(store_dir=str(temp_store), json=False, title="Decision 1", rationale="because", tradeoffs="speed", actor="user1")
+    cmd_decisions_propose(args)
+    
+    with open(temp_store / "decisions.jsonl") as f:
+        data = f.read()
+        assert "Decision 1" in data
+        assert "because" in data
+
+def test_cmd_lock(temp_store):
+    from rekall.cli import cmd_lock
+    args = Namespace(store_dir=str(temp_store), json=False, work_item_id="wi_1", expected_version=1, ttl="5m", force=False, actor="user1")
+    cmd_lock(args)
+    
+    with open(temp_store / "work-items.jsonl") as f:
+        data = f.read()
+        assert "WORK_ITEM_CLAIMED" in data
+        assert "user1" in data

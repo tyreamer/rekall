@@ -124,14 +124,14 @@ def cmd_demo(args):
             state_dir = temp_path.resolve()
             
             if system == "Windows":
-                view_cmd = f'Get-Content "{brief_file}"'
+                view_cmd = f'notepad "{brief_file}"\n  (or) Get-Content "{brief_file}"'
             elif system == "Darwin":
                 view_cmd = f'open "{brief_file}"'
             else:
                 view_cmd = f'xdg-open "{brief_file}"'
 
             print("\n" + "="*50)
-            print("✅ Demo Complete — Next Steps")
+            print("✅ DEMO COMPLETE — OPEN THIS NOW:")
             print("="*50)
             print(f"\nYour boot brief is ready: {brief_file}")
             print(f"Your state artifact is dumped at: {state_dir}")
@@ -407,6 +407,71 @@ def cmd_alias_status(args): execute_alias_query(args, ExecutiveQueryType.ON_TRAC
 def cmd_alias_blockers(args): execute_alias_query(args, ExecutiveQueryType.BLOCKERS)
 def cmd_alias_resume(args): execute_alias_query(args, ExecutiveQueryType.RESUME_IN_30)
 
+def cmd_attempts_add(args):
+    base_dir = Path(args.store_dir)
+    try:
+        store = StateStore(base_dir)
+        attempt = {
+            "work_item_id": args.work_item_id,
+            "title": args.title,
+            "evidence": args.evidence
+        }
+        res = store.append_attempt(attempt, actor={"actor_id": args.actor})
+        if args.json:
+            print(json.dumps({"status": "success", "attempt": res}))
+        else:
+            logger.info(f"Attempt added: {res['attempt_id']}")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Failed to add attempt: {str(e)}", args.json)
+
+def cmd_decisions_propose(args):
+    base_dir = Path(args.store_dir)
+    try:
+        store = StateStore(base_dir)
+        decision = {
+            "title": args.title,
+            "rationale": args.rationale,
+            "tradeoffs": args.tradeoffs
+        }
+        res = store.propose_decision(decision, actor={"actor_id": args.actor})
+        if args.json:
+            print(json.dumps({"status": "success", "decision": res}))
+        else:
+            logger.info(f"Decision proposed: {res['decision_id']}")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Failed to propose decision: {str(e)}", args.json)
+
+def cmd_lock(args):
+    base_dir = Path(args.store_dir)
+    try:
+        store = StateStore(base_dir)
+        
+        # Parse ttl like "5m" or just "300"
+        ttl_str = args.ttl
+        if ttl_str.endswith("m"):
+            lease_seconds = int(ttl_str[:-1]) * 60
+        elif ttl_str.endswith("h"):
+            lease_seconds = int(ttl_str[:-1]) * 3600
+        elif ttl_str.endswith("s"):
+            lease_seconds = int(ttl_str[:-1])
+        else:
+            lease_seconds = int(ttl_str) * 60 # default to minutes if no suffix
+            
+        res = store.claim_work_item(
+            args.work_item_id, 
+            expected_version=args.expected_version, 
+            actor={"actor_id": args.actor}, 
+            lease_seconds=lease_seconds,
+            force=args.force
+        )
+        if args.json:
+            print(json.dumps({"status": "success", "work_item": res}))
+        else:
+            claim = res.get("claim", {})
+            logger.info(f"Lock acquired for {args.work_item_id} by {claim.get('claimed_by')} until {claim.get('lease_until')}")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Failed to acquire lock: {str(e)}", args.json)
+
 def main():
     setup_logging()
     
@@ -493,6 +558,38 @@ EXAMPLES:
     parser_resume = subparsers.add_parser("resume", help="[Status] Query actions to RESUME.")
     parser_resume.add_argument("--store-dir", default=".", help="Directory of the current StateStore")
     parser_resume.set_defaults(func=cmd_alias_resume)
+
+    # Grievance Closeout Commands: Nested subparsers
+    parser_attempts = subparsers.add_parser("attempts", help="[Log] Manage attempt logs.")
+    attempts_subparsers = parser_attempts.add_subparsers(dest="subcommand", required=True)
+    
+    parser_attempts_add = attempts_subparsers.add_parser("add", help="Add an attempt with evidence.")
+    parser_attempts_add.add_argument("work_item_id", help="The Work Item ID")
+    parser_attempts_add.add_argument("--title", required=True, help="Title of the attempt")
+    parser_attempts_add.add_argument("--evidence", required=True, help="Evidence path or link")
+    parser_attempts_add.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_attempts_add.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_attempts_add.set_defaults(func=cmd_attempts_add)
+    
+    parser_decisions = subparsers.add_parser("decisions", help="[Log] Manage project decisions.")
+    decisions_subparsers = parser_decisions.add_subparsers(dest="subcommand", required=True)
+    
+    parser_decisions_propose = decisions_subparsers.add_parser("propose", help="Propose a decision with rationale and tradeoffs.")
+    parser_decisions_propose.add_argument("--title", required=True, help="Title of the decision")
+    parser_decisions_propose.add_argument("--rationale", required=True, help="Why this decision is proposed")
+    parser_decisions_propose.add_argument("--tradeoffs", required=True, help="Tradeoffs considered")
+    parser_decisions_propose.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_decisions_propose.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_decisions_propose.set_defaults(func=cmd_decisions_propose)
+    
+    parser_lock = subparsers.add_parser("lock", help="[Workflow] Acquire an exclusive lease/lock on a work item.")
+    parser_lock.add_argument("work_item_id", help="The Work Item ID")
+    parser_lock.add_argument("--expected-version", type=int, required=True, help="Expected version of the item")
+    parser_lock.add_argument("--ttl", default="5m", help="Time to live (lease duration), e.g. 5m, 1h. Default 5m.")
+    parser_lock.add_argument("--force", action="store_true", help="Force acquire the lock")
+    parser_lock.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_lock.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_lock.set_defaults(func=cmd_lock)
 
     args = parser.parse_args()
     setup_logging(args.json, getattr(args, "quiet", False))
