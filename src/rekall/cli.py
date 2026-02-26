@@ -5,7 +5,7 @@ import sys
 import tarfile
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, NoReturn, Optional
 
 from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
 from rekall.core.handoff_generator import generate_boot_brief
@@ -85,7 +85,7 @@ def die(
     is_json: bool,
     details: Optional[dict] = None,
     debug: bool = False,
-):
+) -> NoReturn:
     """Standardized exit formatter."""
     if is_json:
         payload = {"ok": False, "code": code.name, "message": message}
