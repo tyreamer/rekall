@@ -1062,30 +1062,30 @@ class StateStore:
         """
         import datetime
         report = {
-            "summary": {"status": "✅", "errors": 0, "warnings": 0},
-            "schema_version": {"status": "✅", "details": ""},
-            "files_present": {"status": "✅", "missing": []},
-            "jsonl_integrity": {"status": "✅", "malformed": []},
-            "id_uniqueness": {"status": "✅", "duplicates": []},
-            "references": {"status": "✅", "dangling": []},
-            "secrets": {"status": "✅", "detected": []},
-            "claims": {"status": "✅", "expired": []}
+            "summary": {"status": "\u2705", "errors": 0, "warnings": 0},
+            "schema_version": {"status": "\u2705", "details": ""},
+            "files_present": {"status": "\u2705", "missing": []},
+            "jsonl_integrity": {"status": "\u2705", "malformed": []},
+            "id_uniqueness": {"status": "\u2705", "duplicates": []},
+            "references": {"status": "\u2705", "dangling": []},
+            "secrets": {"status": "\u2705", "detected": []},
+            "claims": {"status": "\u2705", "expired": []}
         }
         
         def add_error(section: str, msg: str):
-            report[section]["status"] = "❌"
+            report[section]["status"] = "\u274c"
             if "errors" not in report[section]: report[section]["errors"] = []
             report[section]["errors"].append(msg)
             report["summary"]["errors"] += 1
-            report["summary"]["status"] = "❌"
+            report["summary"]["status"] = "\u274c"
             
         def add_warning(section: str, list_key: str, msg: str):
-            if report[section]["status"] == "✅":
-                report[section]["status"] = "⚠️"
+            if report[section]["status"] == "\u2705":
+                report[section]["status"] = "\u26a0\ufe0f"
             report[section][list_key].append(msg)
             report["summary"]["warnings"] += 1
-            if report["summary"]["status"] == "✅":
-                report["summary"]["status"] = "⚠️"
+            if report["summary"]["status"] == "\u2705":
+                report["summary"]["status"] = "\u26a0\ufe0f"
 
         # 1. Schema Version
         schema_file = self.base_dir / "schema-version.txt"
@@ -1192,7 +1192,7 @@ class StateStore:
                     add_error("claims", f"Work item {wid} has malformed claim date {claim['lease_until']}")
                     
         # 7. Corruption Recovery Guidance
-        if report["summary"]["status"] == "❌":
+        if report["summary"]["status"] == "\u274c":
             report["summary"]["recovery"] = (
                 "If a JSONL file is corrupted, you can: \n"
                 "1. Restore from a recent 'rekall checkpoint' or backup.\n"
@@ -1201,7 +1201,7 @@ class StateStore:
             )
                     
         if strict and report["summary"]["warnings"] > 0:
-            report["summary"]["status"] = "❌"
+            report["summary"]["status"] = "\u274c"
             
         return report
 
