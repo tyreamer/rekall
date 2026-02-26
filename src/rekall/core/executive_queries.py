@@ -49,6 +49,30 @@ def query_executive_status(
     now = datetime.datetime.now(datetime.timezone.utc)
     res = ExecutiveResponse(target_project_id=project_id, query_type=query_type)
 
+    # Consensus Primitives (The Evidence) - MUST LEAD EVERY RESPONSE
+    timeline = store._load_stream("timeline.jsonl")
+    activity = store._load_stream("activity.jsonl")
+    anchors = store._load_stream("anchors.jsonl")
+    
+    head_prefix = "[VERIFIABLE RECORD] "
+    if timeline:
+        last = max(timeline, key=lambda x: x.get("timestamp", ""))
+        l_hash = last.get("event_hash", "N/A")[:12]
+        head_prefix += f"HEAD: {l_hash}... "
+    else:
+        head_prefix += "Empty stream. "
+
+    policy_checks = [e for e in activity if e.get("type") == "PolicyCheck"]
+    if policy_checks:
+        effect = policy_checks[-1].get("effect", "unknown")
+        head_prefix += f"Policy: {effect.upper()}. "
+    
+    if anchors:
+        sig_s = "SIGNED" if anchors[-1].get("signature") else "UNSIGNED"
+        head_prefix += f"Anchor: {sig_s}."
+    
+    res.summary.append(head_prefix)
+
     if query_type == ExecutiveQueryType.ON_TRACK:
         blockers = [w for w in work_items if w.get("status") == "blocked"]
         stale_blockers = [

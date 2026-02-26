@@ -38,3 +38,7 @@ Grep must return zero matches in all `.md` files and CLI help text for:
 | local-first git-portable append-only execution ledger | long-term memory |
 | cryptographically signed provenance | chat transcript |
 | automated shadow audit trail | Jira replacement |
+| `WaitingOnHuman` consensus primitive | chat prompt |
+| `PolicyCheck` evidence-based safety | safety guardrail |
+| `HumanAnchor` (Proof of Physics) | user message |
+| `rekall verify` (Chain Integrity) | lint check |
