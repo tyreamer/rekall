@@ -1,14 +1,10 @@
 """Tests for MCP self-check validation (rekall validate --mcp)."""
 
 import json
-import os
-import subprocess
 import sys
-import tempfile
 import pytest
 from pathlib import Path
 from argparse import Namespace
-from unittest.mock import patch, MagicMock
 
 from rekall.core.mcp_validator import (
     validate_schema,
@@ -243,8 +239,14 @@ class TestRunMCPValidationIntegration:
 class TestCLIIntegration:
     def test_validate_mcp_missing_server_cmd(self, capfd):
         from rekall.cli import cmd_validate, ExitCode
+
         args = Namespace(
-            store_dir=".", json=False, strict=False, mcp=True, server_cmd=None, quiet=False
+            store_dir=".",
+            json=False,
+            strict=False,
+            mcp=True,
+            server_cmd=None,
+            quiet=False,
         )
         with pytest.raises(SystemExit) as excinfo:
             cmd_validate(args)
@@ -256,9 +258,14 @@ class TestCLIIntegration:
         server_cmd = f"{sys.executable} {server_script}"
 
         from rekall.cli import cmd_validate
+
         args = Namespace(
-            store_dir=".", json=True, strict=False, mcp=True,
-            server_cmd=server_cmd, quiet=False
+            store_dir=".",
+            json=True,
+            strict=False,
+            mcp=True,
+            server_cmd=server_cmd,
+            quiet=False,
         )
         try:
             cmd_validate(args)
@@ -279,9 +286,14 @@ class TestCLIIntegration:
         server_cmd = f"{sys.executable} {server_script}"
 
         from rekall.cli import cmd_validate
+
         args = Namespace(
-            store_dir=".", json=False, strict=False, mcp=True,
-            server_cmd=server_cmd, quiet=False
+            store_dir=".",
+            json=False,
+            strict=False,
+            mcp=True,
+            server_cmd=server_cmd,
+            quiet=False,
         )
         try:
             cmd_validate(args)

@@ -59,7 +59,9 @@ PROBE_CALLS = [
 ]
 
 
-def _send_jsonrpc(proc, method: str, params: Optional[dict] = None, timeout: float = 10.0) -> dict:
+def _send_jsonrpc(
+    proc, method: str, params: Optional[dict] = None, timeout: float = 10.0
+) -> dict:
     """Send a JSON-RPC request and read one response line."""
     req_id = str(uuid.uuid4())
     req = {"jsonrpc": "2.0", "id": req_id, "method": method}
@@ -102,7 +104,9 @@ def validate_schema(tool: dict) -> List[str]:
 
     # Must have type: object at top level
     if schema.get("type") != "object":
-        errors.append(f"{name}: inputSchema.type is not 'object' (got {schema.get('type')!r})")
+        errors.append(
+            f"{name}: inputSchema.type is not 'object' (got {schema.get('type')!r})"
+        )
 
     # Should have 'properties' (some tools have no required inputs but still define properties)
     if "properties" not in schema and schema.get("type") == "object":
@@ -153,7 +157,10 @@ def parse_tools_list(response: dict) -> Tuple[List[dict], Optional[str]]:
     if tools is None:
         return [], "tools/list result missing 'tools' array"
     if not isinstance(tools, list):
-        return [], f"tools/list result 'tools' is not an array (got {type(tools).__name__})"
+        return (
+            [],
+            f"tools/list result 'tools' is not an array (got {type(tools).__name__})",
+        )
 
     return tools, None
 
@@ -191,7 +198,7 @@ def run_mcp_validation(
 
     # Parse server command
     if sys.platform == "win32":
-        # On Windows, use shell=True for complex commands 
+        # On Windows, use shell=True for complex commands
         use_shell = True
         cmd = server_cmd
     else:
@@ -220,7 +227,9 @@ def run_mcp_validation(
         if "error" in init_resp and not isinstance(init_resp.get("result"), dict):
             # Some servers return error in their own format; if we got any result, continue
             if not init_resp.get("result"):
-                report["schema_errors"].append(f"Initialize failed: {init_resp.get('error')}")
+                report["schema_errors"].append(
+                    f"Initialize failed: {init_resp.get('error')}"
+                )
 
         # 2. tools/list
         tl_resp = _send_jsonrpc(proc, "tools/list")
@@ -269,17 +278,25 @@ def run_mcp_validation(
         if run_probes:
             for probe in PROBE_CALLS:
                 try:
-                    resp = _send_jsonrpc(proc, "tools/call", {
-                        "name": probe["name"],
-                        "arguments": probe["arguments"],
-                    })
+                    resp = _send_jsonrpc(
+                        proc,
+                        "tools/call",
+                        {
+                            "name": probe["name"],
+                            "arguments": probe["arguments"],
+                        },
+                    )
                     # Check for JSON-RPC level error
                     if "error" in resp and isinstance(resp["error"], dict):
-                        report["call_failures"].append({
-                            "tool": probe["name"],
-                            "description": probe["description"],
-                            "error": resp["error"].get("message", str(resp["error"])),
-                        })
+                        report["call_failures"].append(
+                            {
+                                "tool": probe["name"],
+                                "description": probe["description"],
+                                "error": resp["error"].get(
+                                    "message", str(resp["error"])
+                                ),
+                            }
+                        )
                         report["summary"]["errors"] += 1
                     else:
                         result = resp.get("result", {})
@@ -289,27 +306,39 @@ def run_mcp_validation(
                             text = content[0].get("text", "") if content else ""
                             # Probe calls with dummy project_id may fail with NOT_FOUND which is expected
                             report["summary"]["warnings"] += 1
-                            report["call_failures"].append({
-                                "tool": probe["name"],
-                                "description": probe["description"],
-                                "error": f"isError=true: {text}",
-                                "severity": "warning",
-                            })
+                            report["call_failures"].append(
+                                {
+                                    "tool": probe["name"],
+                                    "description": probe["description"],
+                                    "error": f"isError=true: {text}",
+                                    "severity": "warning",
+                                }
+                            )
                         # else: probe succeeded
                 except Exception as e:
-                    report["call_failures"].append({
-                        "tool": probe["name"],
-                        "description": probe["description"],
-                        "error": str(e),
-                    })
+                    report["call_failures"].append(
+                        {
+                            "tool": probe["name"],
+                            "description": probe["description"],
+                            "error": str(e),
+                        }
+                    )
                     report["summary"]["errors"] += 1
 
         # Final OK determination
-        has_critical = len(report["missing_tools"]) > 0 or len(report["schema_errors"]) > 0
-        has_call_errors = any(f.get("severity") != "warning" for f in report["call_failures"])
+        has_critical = (
+            len(report["missing_tools"]) > 0 or len(report["schema_errors"]) > 0
+        )
+        has_call_errors = any(
+            f.get("severity") != "warning" for f in report["call_failures"]
+        )
 
         if strict:
-            report["ok"] = not has_critical and not has_call_errors and report["summary"]["warnings"] == 0
+            report["ok"] = (
+                not has_critical
+                and not has_call_errors
+                and report["summary"]["warnings"] == 0
+            )
         else:
             report["ok"] = not has_critical and not has_call_errors
 
@@ -344,14 +373,16 @@ def format_human_report(report: dict) -> str:
 
     # Missing tools
     if report["missing_tools"]:
-        lines.append(f"\n\u274c Missing required tools ({len(report['missing_tools'])}):")
+        lines.append(
+            f"\n\u274c Missing required tools ({len(report['missing_tools'])}):"
+        )
         for t in report["missing_tools"]:
             lines.append(f"   \u2717 {t}")
     else:
         lines.append("\n\u2705 All required tools present")
 
     # Per-tool schema results
-    lines.append(f"\n--- Tool Schema Checks ---")
+    lines.append("\n--- Tool Schema Checks ---")
     for t in report["tools"]:
         lines.append(f"  {t['status']} {t['name']}")
         if t["errors"]:
@@ -360,31 +391,43 @@ def format_human_report(report: dict) -> str:
 
     # Extra tools
     if report["extra_tools"]:
-        lines.append(f"\n\u2139\ufe0f  Extra tools (not in contract): {', '.join(report['extra_tools'])}")
+        lines.append(
+            f"\n\u2139\ufe0f  Extra tools (not in contract): {', '.join(report['extra_tools'])}"
+        )
 
     # Schema-level errors
-    schema_only = [e for e in report["schema_errors"] if not any(e.startswith(t["name"]) for t in report["tools"])]
+    schema_only = [
+        e
+        for e in report["schema_errors"]
+        if not any(e.startswith(t["name"]) for t in report["tools"])
+    ]
     if schema_only:
-        lines.append(f"\n\u274c Schema errors:")
+        lines.append("\n\u274c Schema errors:")
         for e in schema_only:
             lines.append(f"   \u2717 {e}")
 
     # Probe call results
     if report["call_failures"]:
-        lines.append(f"\n--- Probe Call Results ---")
+        lines.append("\n--- Probe Call Results ---")
         for f in report["call_failures"]:
             severity = f.get("severity", "error")
             icon = "\u26a0\ufe0f" if severity == "warning" else "\u274c"
             lines.append(f"  {icon} {f['tool']}: {f['error']}")
     elif "call_failures" in report:
-        lines.append(f"\n\u2705 All probe calls passed")
+        lines.append("\n\u2705 All probe calls passed")
 
     # Success Criterion 3: Explicitly list checks
     lines.append("\n--- Standards & Integrity ---")
     lines.append(f"  \u2705 Discovered tools        : {s['total_tools']} tools found")
-    lines.append(f"  \u2705 Idempotency checks      : Verified via append_jsonl_idempotent")
-    lines.append(f"  \u2705 Capability checks       : Verified via approve_decision gates")
-    lines.append(f"  \u2705 Append-only integrity   : Verified via StateStore validators")
+    lines.append(
+        "  \u2705 Idempotency checks      : Verified via append_jsonl_idempotent"
+    )
+    lines.append(
+        "  \u2705 Capability checks       : Verified via approve_decision gates"
+    )
+    lines.append(
+        "  \u2705 Append-only integrity   : Verified via StateStore validators"
+    )
 
     # Summary
     lines.append("")

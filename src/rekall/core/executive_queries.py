@@ -1,8 +1,7 @@
 from typing import Any, Dict, List, Optional
-from enum import Enum, auto
+from enum import Enum
 from dataclasses import dataclass, field
 import datetime
-import json
 
 from rekall.core.state_store import StateStore
 
@@ -17,6 +16,7 @@ class ExecutiveQueryType(str, Enum):
     WHERE_RUNNING_ACCESS = "WHERE_RUNNING_ACCESS"
     RESUME_IN_30 = "RESUME_IN_30"
 
+
 @dataclass
 class ExecutiveResponse:
     target_project_id: str
@@ -30,47 +30,68 @@ class ExecutiveResponse:
 
 
 def is_stale(iso_str: str, days: int, now: datetime.datetime) -> bool:
-    if not iso_str: return True
+    if not iso_str:
+        return True
     try:
-        dt = datetime.datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
+        dt = datetime.datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
         return (now - dt).days >= days
     except ValueError:
         return True
 
 
-def query_executive_status(store: StateStore, query_type: ExecutiveQueryType, since: Optional[str] = None) -> ExecutiveResponse:
+def query_executive_status(
+    store: StateStore, query_type: ExecutiveQueryType, since: Optional[str] = None
+) -> ExecutiveResponse:
     """Executes a canonical executive status query against the state store."""
     work_items = list(store.work_items.values())
     project_id = store.project_config.get("project_id", "unknown")
-    
+
     now = datetime.datetime.now(datetime.timezone.utc)
     res = ExecutiveResponse(target_project_id=project_id, query_type=query_type)
-    
+
     if query_type == ExecutiveQueryType.ON_TRACK:
         blockers = [w for w in work_items if w.get("status") == "blocked"]
-        stale_blockers = [w for w in blockers if is_stale(w.get("updated_at", ""), 7, now)]
-        
+        stale_blockers = [
+            w for w in blockers if is_stale(w.get("updated_at", ""), 7, now)
+        ]
+
         if stale_blockers:
-            res.summary.append(f"Status computed as AT_RISK or OFF_TRACK due to {len(stale_blockers)} stale blockers.")
+            res.summary.append(
+                f"Status computed as AT_RISK or OFF_TRACK due to {len(stale_blockers)} stale blockers."
+            )
             res.confidence = "medium"
-            res.evidence.extend([f"work_item: {w['work_item_id']}" for w in stale_blockers[:5]])
+            res.evidence.extend(
+                [f"work_item: {w['work_item_id']}" for w in stale_blockers[:5]]
+            )
         elif blockers:
-            res.summary.append(f"Status computed as AT_RISK due to {len(blockers)} active blockers.")
+            res.summary.append(
+                f"Status computed as AT_RISK due to {len(blockers)} active blockers."
+            )
             res.confidence = "high"
-            res.evidence.extend([f"work_item: {w['work_item_id']}" for w in blockers[:5]])
+            res.evidence.extend(
+                [f"work_item: {w['work_item_id']}" for w in blockers[:5]]
+            )
         else:
             in_prog = [w for w in work_items if w.get("status") == "in_progress"]
             if not in_prog:
-                res.summary.append("Status computed as PAUSED or LOW ACTIVITY (no active work).")
+                res.summary.append(
+                    "Status computed as PAUSED or LOW ACTIVITY (no active work)."
+                )
                 res.confidence = "low"
             else:
-                res.summary.append("Status computed as ON_TRACK. Work is progressing with no recorded blockers.")
-                res.evidence.extend([f"work_item: {w['work_item_id']}" for w in in_prog[:3]])
-                
+                res.summary.append(
+                    "Status computed as ON_TRACK. Work is progressing with no recorded blockers."
+                )
+                res.evidence.extend(
+                    [f"work_item: {w['work_item_id']}" for w in in_prog[:3]]
+                )
+
         res.work_items = work_items
         res.blockers = [w for w in work_items if w.get("status") == "blocked"]
-        res.next_steps = [w for w in work_items if w.get("status") in ["todo", "in_progress"]]
-                
+        res.next_steps = [
+            w for w in work_items if w.get("status") in ["todo", "in_progress"]
+        ]
+
     elif query_type == ExecutiveQueryType.BLOCKERS:
         blockers = [w for w in work_items if w.get("status") == "blocked"]
         if not blockers:
@@ -79,39 +100,59 @@ def query_executive_status(store: StateStore, query_type: ExecutiveQueryType, si
         else:
             res.summary.append(f"Found {len(blockers)} blocked work items.")
             # Sort by priority, then age
-            blockers.sort(key=lambda x: (x.get("priority", "p9"), x.get("updated_at", "")))
-            res.evidence.extend([f"work_item: {w['work_item_id']}" for w in blockers[:10]])
+            blockers.sort(
+                key=lambda x: (x.get("priority", "p9"), x.get("updated_at", ""))
+            )
+            res.evidence.extend(
+                [f"work_item: {w['work_item_id']}" for w in blockers[:10]]
+            )
             if any(is_stale(w.get("updated_at", ""), 7, now) for w in blockers):
                 res.confidence = "medium"
                 res.summary.append("Warning: Some blockers are stale (>7 days).")
-                
+
         res.work_items = work_items
         res.blockers = blockers
-                
+
     elif query_type == ExecutiveQueryType.CHANGED_SINCE:
         if not since:
             raise ValueError("CHANGED_SINCE requires 'since' timestamp")
-            
+
         acts = store._load_jsonl("activity.jsonl")
         recent = [a for a in acts if a.get("timestamp", "") >= since]
         recent.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-        
+
         if not recent:
             res.summary.append(f"No activity recorded since {since}.")
             res.confidence = "high"
         else:
             res.summary.append(f"Found {len(recent)} activities since {since}.")
-            res.evidence.extend([f"activity: {a['activity_id']} (target_type: {a.get('target_type')})" for a in recent[:10]])
-            
+            res.evidence.extend(
+                [
+                    f"activity: {a['activity_id']} (target_type: {a.get('target_type')})"
+                    for a in recent[:10]
+                ]
+            )
+
     elif query_type == ExecutiveQueryType.NEXT_7_DAYS:
-        priorities = [w for w in work_items if w.get("status") in ["todo", "in_progress"] and w.get("priority") in ["p0", "p1"]]
+        priorities = [
+            w
+            for w in work_items
+            if w.get("status") in ["todo", "in_progress"]
+            and w.get("priority") in ["p0", "p1"]
+        ]
         if priorities:
-            res.summary.append(f"Focusing on {len(priorities)} high-priority (p0/p1) work items.")
-            res.evidence.extend([f"work_item: {w['work_item_id']}" for w in priorities[:5]])
+            res.summary.append(
+                f"Focusing on {len(priorities)} high-priority (p0/p1) work items."
+            )
+            res.evidence.extend(
+                [f"work_item: {w['work_item_id']}" for w in priorities[:5]]
+            )
         else:
-            res.summary.append("No high-priority work items found. Execution plan unclear.")
+            res.summary.append(
+                "No high-priority work items found. Execution plan unclear."
+            )
             res.confidence = "low"
-            
+
     elif query_type == ExecutiveQueryType.RECENT_DECISIONS:
         decs = store._load_jsonl("decisions.jsonl")
         decs.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
@@ -119,7 +160,12 @@ def query_executive_status(store: StateStore, query_type: ExecutiveQueryType, si
             res.summary.append("No decisions recorded.")
         else:
             res.summary.append(f"Found {len(decs)} total decisions.")
-            res.evidence.extend([f"decision: {d['decision_id']} ({d.get('title', 'untitled')})" for d in decs[:5]])
+            res.evidence.extend(
+                [
+                    f"decision: {d['decision_id']} ({d.get('title', 'untitled')})"
+                    for d in decs[:5]
+                ]
+            )
 
     elif query_type == ExecutiveQueryType.FAILED_ATTEMPTS:
         atts = store._load_jsonl("attempts.jsonl")
@@ -134,7 +180,9 @@ def query_executive_status(store: StateStore, query_type: ExecutiveQueryType, si
     elif query_type == ExecutiveQueryType.WHERE_RUNNING_ACCESS:
         envs = store.envs_config.get("environments", [])
         refs = store.access_config.get("access_refs", [])
-        res.summary.append(f"Project defines {len(envs)} environments and {len(refs)} access references.")
+        res.summary.append(
+            f"Project defines {len(envs)} environments and {len(refs)} access references."
+        )
         res.evidence.extend([f"env: {e.get('env_id')}" for e in envs[:3]])
         res.evidence.extend([f"access_ref: {r.get('access_ref_id')}" for r in refs[:3]])
 
@@ -142,21 +190,23 @@ def query_executive_status(store: StateStore, query_type: ExecutiveQueryType, si
         # Synthesize multiple things
         in_prog = [w for w in work_items if w.get("status") == "in_progress"]
         blockers = [w for w in work_items if w.get("status") == "blocked"]
-        
-        res.summary.append(f"Project has {len(in_prog)} items in-progress and {len(blockers)} active blockers.")
+
+        res.summary.append(
+            f"Project has {len(in_prog)} items in-progress and {len(blockers)} active blockers."
+        )
         res.summary.append(f"Goal: {store.project_config.get('one_liner', 'Unknown')}.")
-        
+
         res.evidence.extend([f"work_item: {w['work_item_id']}" for w in in_prog[:2]])
         res.evidence.extend([f"work_item: {w['work_item_id']}" for w in blockers[:2]])
-        
+
         envs = store.envs_config.get("environments", [])
         if envs:
             res.evidence.append(f"env: {envs[0].get('env_id')}")
-            
+
         res.work_items = work_items
         res.next_steps = in_prog
         res.blockers = blockers
-            
+
     else:
         raise ValueError(f"Unsupported query_type: {query_type}")
 
