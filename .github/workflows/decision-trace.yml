@@ -1,3 +1,6 @@
+# Posts a Rekall Decision Trace comment on PRs and on version-tag releases.
+# It does NOT run on every push to main — only on pull_request events or tag pushes.
+# This keeps the workflow purposeful and avoids rate-limit noise on main merges.
 name: "Decision Trace"
 
 on:
@@ -5,7 +8,6 @@ on:
     types: [opened, synchronize, reopened]
   push:
     tags: ["v*.*.*"]
-    branches: [main]
 
 permissions:
   contents: read
@@ -17,19 +19,32 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          
+          cache: 'pip'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install .
-          
+
       - name: Post Decision Trace to PR
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python scripts/post_decision_trace.py
+
+      - name: Comment on failure
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '⚠️ **Decision Trace failed** — check the [workflow run](' + context.serverUrl + '/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId + ') for details.'
+            })
