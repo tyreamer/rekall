@@ -3,6 +3,9 @@ name: "Decision Trace"
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  push:
+    tags: ["v*.*.*"]
+    branches: [main]
 
 permissions:
   contents: read
