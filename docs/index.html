@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rekall — Persistent Memory for AI Agents</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://buttons.github.io/buttons.js"></script>
+  <link rel="icon" href="https://github.com/tyreamer/rekall/raw/main/assets/icon.png" type="image/png">
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-white">
+  <nav class="border-b border-zinc-800">
+    <div class="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl font-bold text-emerald-400">rekall</span>
+        <span class="text-xs px-2 py-0.5 bg-emerald-900 text-emerald-300 rounded">beta</span>
+      </div>
+      <a href="https://github.com/tyreamer/rekall" target="_blank" 
+         class="text-sm hover:text-emerald-400 transition">View on GitHub →</a>
+    </div>
+  </nav>
+
+  <div class="max-w-5xl mx-auto px-6 py-20 text-center">
+    <h1 class="text-6xl font-bold tracking-tight mb-6">
+      Persistent memory<br>for your AI coding agents
+    </h1>
+    <p class="text-2xl text-zinc-400 mb-12 max-w-2xl mx-auto">
+      The reality blackboard + ledger.<br>
+      No more "what did we already try?" hallucinations.
+    </p>
+
+    <!-- Demo GIF -->
+    <div class="mx-auto max-w-3xl rounded-2xl overflow-hidden border border-zinc-800 mb-16 shadow-2xl">
+      <img src="https://raw.githubusercontent.com/tyreamer/rekall/main/assets/demo/rekall_demo.gif" 
+           alt="Rekall demo — 15 seconds" class="w-full">
+    </div>
+
+    <!-- Install button -->
+    <div class="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
+      <button onclick="copyInstall()" 
+              class="bg-emerald-500 hover:bg-emerald-600 transition text-black font-semibold text-xl px-10 py-6 rounded-2xl flex items-center gap-4">
+        <span>pipx install git+https://github.com/tyreamer/rekall.git</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16v-4m4 4v4m4-8v8m4-4v-4" />
+        </svg>
+      </button>
+      
+      <a href="https://github.com/tyreamer/rekall" target="_blank"
+         class="github-button" 
+         data-size="large" 
+         data-show-count="true" 
+         aria-label="Star tyreamer/rekall on GitHub">
+        Star
+      </a>
+    </div>
+
+    <p class="text-zinc-400">15 seconds to try the demo → <code class="bg-zinc-900 px-2 py-1 rounded">rekall onboard</code></p>
+  </div>
+
+  <!-- Quick links -->
+  <div class="bg-zinc-900 py-12">
+    <div class="max-w-5xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
+      <a href="https://github.com/tyreamer/rekall/blob/main/docs/QUICKSTART.md" class="block p-6 hover:bg-zinc-800 rounded-2xl transition">
+        <div class="text-emerald-400 text-2xl mb-3">🚀</div>
+        <div class="font-semibold">Quickstart</div>
+        <div class="text-sm text-zinc-400">Initialize in any repo</div>
+      </a>
+      <a href="https://github.com/tyreamer/rekall" class="block p-6 hover:bg-zinc-800 rounded-2xl transition">
+        <div class="text-emerald-400 text-2xl mb-3">📖</div>
+        <div class="font-semibold">Full Docs</div>
+        <div class="text-sm text-zinc-400">Specs, MCP, advanced</div>
+      </a>
+      <a href="https://github.com/tyreamer/rekall/issues" class="block p-6 hover:bg-zinc-800 rounded-2xl transition">
+        <div class="text-emerald-400 text-2xl mb-3">💬</div>
+        <div class="font-semibold">Give Feedback</div>
+        <div class="text-sm text-zinc-400">Help shape v0.2</div>
+      </a>
+    </div>
+  </div>
+
+  <footer class="text-center py-12 text-zinc-500 text-sm">
+    <p>rekall.tools • open source • MIT • Built for the 2026 agent wave</p>
+  </footer>
+
+  <script>
+    function copyInstall() {
+      navigator.clipboard.writeText('pipx install git+https://github.com/tyreamer/rekall.git');
+      const btn = document.querySelector('button');
+      const original = btn.innerHTML;
+      btn.innerHTML = '✅ Copied!';
+      setTimeout(() => btn.innerHTML = original, 2000);
+    }
+  </script>
+</body>
+</html>
