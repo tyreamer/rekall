@@ -2,19 +2,19 @@
 
 import json
 import sys
-import pytest
-from pathlib import Path
 from argparse import Namespace
+from pathlib import Path
+
+import pytest
 
 from rekall.core.mcp_validator import (
-    validate_schema,
-    parse_tools_list,
-    find_missing_tools,
-    run_mcp_validation,
-    format_human_report,
     REQUIRED_TOOLS,
+    find_missing_tools,
+    format_human_report,
+    parse_tools_list,
+    run_mcp_validation,
+    validate_schema,
 )
-
 
 # ── Unit: parse_tools_list ──────────────────────────────────────────────
 
@@ -238,7 +238,7 @@ class TestRunMCPValidationIntegration:
 
 class TestCLIIntegration:
     def test_validate_mcp_missing_server_cmd(self, capfd):
-        from rekall.cli import cmd_validate, ExitCode
+        from rekall.cli import ExitCode, cmd_validate
 
         args = Namespace(
             store_dir=".",

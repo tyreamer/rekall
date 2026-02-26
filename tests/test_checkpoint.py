@@ -2,11 +2,12 @@
 
 import json
 import tempfile
-import pytest
-from pathlib import Path
 from argparse import Namespace
+from pathlib import Path
 
-from rekall.cli import cmd_checkpoint, cmd_validate, ExitCode
+import pytest
+
+from rekall.cli import ExitCode, cmd_checkpoint, cmd_validate
 
 
 @pytest.fixture

@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Any
+from typing import Any, Dict
 
 
 def render_decision_trace(graph_result: Dict[str, Any]) -> str:

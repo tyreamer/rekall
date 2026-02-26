@@ -1,9 +1,10 @@
+import json
 import os
 import sys
-import json
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
+
 from rekall.core.state_store import StateStore
 from rekall.core.trace_renderer import render_decision_trace
 

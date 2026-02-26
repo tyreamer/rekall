@@ -1,14 +1,16 @@
+import datetime
+import hashlib
+import hmac
 import json
 import logging
 import re
 import shutil
 import uuid
-import datetime
-import hmac
-import hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+
 import yaml
+
 from .policy import PolicyEngine, get_default_policy
 
 logger = logging.getLogger(__name__)
@@ -133,7 +135,7 @@ class StateStore:
         policy_file = self.base_dir / "policy.yaml"
         if not policy_file.exists():
             policy_file.write_text(get_default_policy(), encoding="utf-8")
-        
+
         self.initialized = True
 
     def _load_manifest(self):
@@ -299,19 +301,19 @@ class StateStore:
         reverts = self._load_stream_raw("reverts", hot_only=False)
         if not reverts:
             return stream_records
-            
+
         combined = []
         for r in stream_records:
             t = r.get("timestamp") or r.get("created_at") or r.get("created", "")
             combined.append((t, "event", r))
-            
+
         for rev in reverts:
             t = rev.get("timestamp", "")
             combined.append((t, "revert", rev))
-            
+
         # Stable sort by timestamp
         combined.sort(key=lambda x: x[0])
-        
+
         active: List[Tuple[str, Dict[str, Any]]] = []
         for t, etype, obj in combined:
             if etype == "revert":
@@ -319,7 +321,7 @@ class StateStore:
                 active = [x for x in active if x[0] <= to_t]
             else:
                 active.append((t, obj))
-                
+
         return [obj for t, obj in active]
 
     def _load_stream(
@@ -337,7 +339,7 @@ class StateStore:
         secret_file = config_dir / "device-secret.txt"
         if secret_file.exists():
             return secret_file.read_text().strip()
-        
+
         config_dir.mkdir(parents=True, exist_ok=True)
         secret = uuid.uuid4().hex + uuid.uuid4().hex
         secret_file.write_text(secret)
@@ -356,23 +358,23 @@ class StateStore:
         records = self._load_stream_raw(stream_name, hot_only=False)
         errors = []
         last_hash = None
-        
+
         for i, record in enumerate(records):
             # 1. Check prev_hash matches last_hash
             if record.get("prev_hash") != last_hash:
                 errors.append(f"Record {i} prev_hash mismatch: expected {last_hash}, got {record.get('prev_hash')}")
-            
+
             # 2. Recalculate event_hash
             record_for_hash = record.copy()
             claimed_hash = record_for_hash.pop("event_hash", None)
             record_json_canonical = json.dumps(record_for_hash, sort_keys=True)
             actual_hash = hashlib.sha256(record_json_canonical.encode("utf-8")).hexdigest()
-            
+
             if claimed_hash != actual_hash:
                 errors.append(f"Record {i} event_hash mismatch: expected {claimed_hash}, got {actual_hash}")
-                
+
             last_hash = actual_hash
-            
+
         return {
             "stream": stream_name,
             "count": len(records),
@@ -456,16 +458,16 @@ class StateStore:
         import hashlib
         prev_hash = stream_info.get("latest_hash")
         record["prev_hash"] = prev_hash
-        
+
         # Canonical hash of everything in record except the hash field itself
         record_for_hash = record.copy()
         record_json_canonical = json.dumps(record_for_hash, sort_keys=True)
         event_hash = hashlib.sha256(record_json_canonical.encode("utf-8")).hexdigest()
         record["event_hash"] = event_hash
-        
+
         # Final JSON for writing
         record_json = json.dumps(record, sort_keys=True)
-        
+
         # Guardrail on final size
         if len(record_json.encode("utf-8")) > BloatConfig.MAX_RECORD_BYTES:
             raise ValueError(
@@ -1251,7 +1253,7 @@ class StateStore:
         detect_secrets(prompt)
         import datetime
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        
+
         wait_event = {
             "decision_id": decision_id,
             "type": "WaitingOnHuman",
@@ -1265,11 +1267,11 @@ class StateStore:
             wait_event["action_id"] = action_id
         if idempotency_key:
             wait_event["idempotency_key"] = idempotency_key
-            
+
         self.append_jsonl_idempotent("actions.jsonl", wait_event, "decision_id")
         return {
-            "status": "PAUSE_AND_EXIT", 
-            "message": f"Decision {decision_id} recorded. Please exit your loop and wait for human resume.", 
+            "status": "PAUSE_AND_EXIT",
+            "message": f"Decision {decision_id} recorded. Please exit your loop and wait for human resume.",
             "decision_id": decision_id,
             "action_id": action_id
         }
@@ -1284,7 +1286,7 @@ class StateStore:
         """Appends a StateRevert event to the reverts stream."""
         import datetime
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        
+
         revert_id = f"rev-{uuid.uuid4().hex[:8]}"
         revert = {
             "revert_id": revert_id,
@@ -1296,7 +1298,7 @@ class StateStore:
         }
         if idempotency_key:
             revert["idempotency_key"] = idempotency_key
-            
+
         record = self.append_jsonl_idempotent("reverts.jsonl", revert, "revert_id")
         return record
 
@@ -1305,7 +1307,7 @@ class StateStore:
         policy_file = self.base_dir / "policy.yaml"
         if not policy_file.exists():
             return {"effect": "allow", "rule_id": None, "reason": "No policy.yaml found"}
-            
+
         engine = PolicyEngine.from_file(str(policy_file))
         return engine.check_action(action_type, params, context)
 
@@ -1324,16 +1326,16 @@ class StateStore:
         import hashlib
 
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        
+
         # 1. Shadow Policy Check
         policy_res = self.check_policy(action_type, params, context)
-        
+
         # 2. Consistent hash of action content
         content_str = json.dumps({"action_type": action_type, "params": params}, sort_keys=True)
         action_hash = hashlib.sha256(content_str.encode("utf-8")).hexdigest()
 
         action_id = f"act-{uuid.uuid4().hex[:8]}"
-        
+
         # 3. Record Policy Check result
         check_event = {
             "check_id": f"chk-{uuid.uuid4().hex[:8]}",
@@ -1346,7 +1348,7 @@ class StateStore:
             "actor": actor
         }
         self.append_jsonl_idempotent("activity.jsonl", check_event, "check_id")
-        
+
         event = {
             "action_id": action_id,
             "type": "ActionProposed",
@@ -1381,7 +1383,7 @@ class StateStore:
     ) -> Dict[str, Any]:
         import datetime
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        
+
         decision_obj = {
             "decision_id": decision_id,
             "title": f"Approval response for decision {decision_id}",
@@ -1394,9 +1396,9 @@ class StateStore:
             decision_obj["action_id"] = action_id
         if idempotency_key:
             decision_obj["idempotency_key"] = idempotency_key
-            
+
         self.append_jsonl_idempotent("decisions.jsonl", decision_obj, "decision_id")
-        
+
         anchor_id = f"anch-{uuid.uuid4().hex[:8]}"
         anchor = {
             "anchor_id": anchor_id,
@@ -1408,7 +1410,7 @@ class StateStore:
         }
         if action_id:
             anchor["action_id"] = action_id
-            
+
         # Add a placeholder signature based on the event hash (which append_jsonl_idempotent will calculate)
         # But wait, append_jsonl_idempotent calculates the hash of the record PASSED to it.
         # So we can calculate the hash here, sign it, and THEN pass it.
@@ -1416,14 +1418,14 @@ class StateStore:
         # To simplify, we sign the concatenation of (decision_id, anchor_id, actor_id).
         sig_base = f"{decision_id}:{anchor_id}:{actor.get('actor_id', 'unknown')}"
         anchor["signature"] = self._sign_event(hashlib.sha256(sig_base.encode("utf-8")).hexdigest())
-            
+
         self.append_jsonl_idempotent("anchors.jsonl", anchor, "anchor_id")
-        
+
         if action_id:
             self._append_activity("approve", "action", action_id, actor, reason=reason)
         else:
             self._append_activity("approve", "decision", decision_id, actor, reason=reason)
-        
+
         return {"status": "success", "decision_id": decision_id, "anchor_id": anchor_id}
 
     def capture_outcome(
@@ -1437,7 +1439,7 @@ class StateStore:
         detect_secrets(outcome_metadata)
         import datetime
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        
+
         attempt_id = f"att-{uuid.uuid4().hex[:8]}"
         attempt = {
             "attempt_id": attempt_id,
@@ -1448,12 +1450,12 @@ class StateStore:
         }
         if idempotency_key:
             attempt["idempotency_key"] = idempotency_key
-            
+
         record = self.append_jsonl_idempotent("attempts.jsonl", attempt, "attempt_id")
-        
+
         if record is attempt:
             self._append_activity("execute", "action", action_id, actor, reason=reason)
-            
+
         return {"status": "success", "attempt_id": attempt_id, "action_id": action_id}
 
     def resume_anchor(self, anchor_id: Optional[str] = None) -> Dict[str, Any]:

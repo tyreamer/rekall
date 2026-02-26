@@ -4,7 +4,7 @@
       "active_file": "streams/work_items/active.jsonl",
       "segments": [],
       "id_field": "event_id",
-      "latest_hash": "8874b7eb4679a407eae9c49d73423565625540d88ba808424a6ad6fbc26138f6"
+      "latest_hash": "2d5a86a04224f027b17e2a866b1f0f642d066b3e1b437fa8735587cd6edb9f28"
     },
     "activity": {
       "active_file": "streams/activity/active.jsonl",
@@ -12,19 +12,19 @@
         "streams/activity/seg-0001.jsonl"
       ],
       "id_field": "activity_id",
-      "latest_hash": "04844120405a20bfd05e31478b1931b9b532c603448a441578f569a332603823"
+      "latest_hash": "94f43feec94e387f02457ee811c26735e783765350c78a35cf5e3befa4cbc173"
     },
     "attempts": {
       "active_file": "streams/attempts/active.jsonl",
       "segments": [],
       "id_field": "attempt_id",
-      "latest_hash": "0b266479f5d5fa53574e8ab7e0b53cc1953400827b02dcdf61a74ad311825258"
+      "latest_hash": "57a8da3fb3449b1d99d8fcea2a6db5352518e21178532152ccfbb5398fce0dcc"
     },
     "decisions": {
       "active_file": "streams/decisions/active.jsonl",
       "segments": [],
       "id_field": "decision_id",
-      "latest_hash": "f4778a60b2611647245b804de9047bf2cf622ba348e616300349c06a4a7a35b5"
+      "latest_hash": "e44a7f985a85dd243745ead2d384c937b9ec7054cdc63e591740dcceef606a31"
     },
     "timeline": {
       "active_file": "streams/timeline/active.jsonl",
@@ -50,13 +50,13 @@
       "active_file": "streams\\anchors\\active.jsonl",
       "segments": [],
       "id_field": "anchor_id",
-      "latest_hash": "f47294e8a225e1a21dae7f4c4161a41eb174c926b6161ea73d716b763020a90a"
+      "latest_hash": "3ed9f70530ca10e12c436f9b394bd41319c77605f759a5fd7ef6eff2deec5a6f"
     },
     "actions": {
       "active_file": "streams\\actions\\active.jsonl",
       "segments": [],
       "id_field": "action_id",
-      "latest_hash": "1347f91db08b3fbaa1ed6799b9ea30efc0a0574662aaae1a9bf1857dae21237d"
+      "latest_hash": "a0d2bdea72cbced9936f539fdfc7854aa5394fea1bccdd62fdcc7bf12ee1908c"
     }
   },
   "last_checkpoint": null,
