@@ -86,7 +86,7 @@ def main():
         sys.exit(0)
         
     state_dir = None
-    for p in [Path("project-state"), Path(".rekall")]:
+    for p in [Path("project-state")]:
         if (p / "manifest.json").exists():
             state_dir = p
             break

@@ -166,11 +166,11 @@ def cmd_doctor(args):
         "fix": "Ensure the current directory is writable or use --store-dir"
     })
     
-    # 3. .rekall / store_dir presence
+    # 3. project-state / store_dir presence
     store_dir = Path(getattr(args, "store_dir", "project-state"))
     exists = store_dir.exists()
     results.append({
-        "check": ".rekall / state store presence",
+        "check": "project-state / state store presence",
         "status": "✅" if exists else "⚠️",
         "detail": f"{store_dir} {'exists' if exists else 'not found'}",
         "fix": "Run 'rekall init' to create a state store" if not exists else None
@@ -1010,7 +1010,10 @@ def cmd_onboard(args):
     import datetime
     
     # Target state dir: default to project-state if not specified
-    store_dir = Path(args.store_dir)
+    if getattr(args, "dotdir", False):
+        store_dir = Path(".rekall")
+    else:
+        store_dir = Path(getattr(args, "store_dir", "project-state"))
     
     # Auto-init if missing
     ensure_state_initialized(store_dir, args.json)
@@ -1314,6 +1317,7 @@ EXAMPLES:
     # Onboard
     parser_onboard = subparsers.add_parser("onboard", help="[Handoff] Generate a repository onboarding cheat sheet.", parents=[shared_flags])
     parser_onboard.add_argument("--store-dir", default="project-state", help="Directory of the state store (default: project-state)")
+    parser_onboard.add_argument("--dotdir", action="store_true", help="Use .rekall/ instead of project-state/")
     parser_onboard.add_argument("--print", action="store_true", help="Also print the cheat sheet to stdout")
     parser_onboard.add_argument("--out", "-o", help="Custom output path for the cheat sheet")
     parser_onboard.add_argument("--force", action="store_true", help="Overwrite if file exists")

@@ -5,6 +5,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-brightgreen.svg)](https://www.python.org/downloads/)
 
 **Rekall gives your autonomous coding agents a persistent, machine-readable memory.**
+*Not related to Google’s Rekall memory forensics tool.*
 
 Everything lives in a simple, git-friendly `project-state/` folder (YAML + JSONL). No more hallucinations about what was already tried, what decisions were made, or where the running services actually are.
 

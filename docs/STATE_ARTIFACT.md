@@ -1,6 +1,6 @@
 # Rekall State Artifacts
 
-Rekall operates entirely on local, plain-text logs stored in a directory (typically `project-state/` or `.rekall/`) at the root of your repository. This design ensures that the **project memory lives with the code**.
+Rekall operates entirely on local, plain-text logs stored in a directory (typically `project-state/`) at the root of your repository. This design ensures that the **project memory lives with the code**.
 
 ## "Safe to Commit" Guarantee
 
