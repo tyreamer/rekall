@@ -25,7 +25,7 @@ jobs:
           cache: 'pip'
 
       - name: Install linters
-        run: pip install ruff mypy
+        run: pip install ruff mypy types-PyYAML
 
       - name: Run ruff
         run: ruff check .
