@@ -7,7 +7,6 @@ from pathlib import Path
 from argparse import Namespace
 
 from rekall.cli import cmd_checkpoint, cmd_validate, ExitCode
-from rekall.core.state_store import StateStore
 
 
 @pytest.fixture
@@ -28,7 +27,10 @@ def temp_store():
             "patch": {"title": "Test Item", "status": "todo", "priority": "p1"},
         }
         (base_dir / "streams/work_items").mkdir(parents=True, exist_ok=True)
-        (base_dir / "streams/work_items").mkdir(parents=True, exist_ok=True); (base_dir / "streams/work_items/active.jsonl").write_text(json.dumps(event) + "\n")
+        (base_dir / "streams/work_items").mkdir(parents=True, exist_ok=True)
+        (base_dir / "streams/work_items/active.jsonl").write_text(
+            json.dumps(event) + "\n"
+        )
         for f in ["activity", "attempts", "decisions", "timeline"]:
             d = base_dir / "streams" / f
             d.mkdir(parents=True, exist_ok=True)
@@ -41,8 +43,12 @@ class TestCheckpointExport:
         """Checkpoint creates an export folder that passes rekall validate."""
         out_dir = temp_store / "checkpoint_out"
         args = Namespace(
-            store_dir=str(temp_store), out=str(out_dir), json=False,
-            label="pre-deploy", actor="cli_user", event_id=None,
+            store_dir=str(temp_store),
+            out=str(out_dir),
+            json=False,
+            label="pre-deploy",
+            actor="cli_user",
+            event_id=None,
             project_id="test_proj",
         )
         cmd_checkpoint(args)
@@ -55,8 +61,12 @@ class TestCheckpointExport:
 
         # Exported folder must pass validation
         validate_args = Namespace(
-            store_dir=str(out_dir), json=False, strict=False,
-            mcp=False, server_cmd=None, quiet=True,
+            store_dir=str(out_dir),
+            json=False,
+            strict=False,
+            mcp=False,
+            server_cmd=None,
+            quiet=True,
         )
         # Should not raise (or exit 0)
         try:
@@ -71,14 +81,18 @@ class TestCheckpointTimeline:
         """Checkpoint appends exactly one timeline event per run."""
         out_dir = temp_store / "ckpt1"
         args = Namespace(
-            store_dir=str(temp_store), out=str(out_dir), json=False,
-            label="v1", actor="cli_user", event_id=None,
+            store_dir=str(temp_store),
+            out=str(out_dir),
+            json=False,
+            label="v1",
+            actor="cli_user",
+            event_id=None,
             project_id="test_proj",
         )
         cmd_checkpoint(args)
 
         with open(temp_store / "streams/timeline/active.jsonl") as f:
-            lines = [l for l in f.readlines() if l.strip()]
+            lines = [line for line in f.readlines() if line.strip()]
         assert len(lines) == 1
 
         evt = json.loads(lines[0])
@@ -89,8 +103,11 @@ class TestCheckpointTimeline:
         """If event_id is provided and command runs twice, only one timeline event."""
         out_dir = temp_store / "ckpt_idem"
         args = Namespace(
-            store_dir=str(temp_store), out=str(out_dir), json=False,
-            label="idempotent-test", actor="cli_user",
+            store_dir=str(temp_store),
+            out=str(out_dir),
+            json=False,
+            label="idempotent-test",
+            actor="cli_user",
             event_id="fixed_checkpoint_001",
             project_id="test_proj",
         )
@@ -99,7 +116,7 @@ class TestCheckpointTimeline:
         cmd_checkpoint(args)
 
         with open(temp_store / "streams/timeline/active.jsonl") as f:
-            lines = [l for l in f.readlines() if l.strip()]
+            lines = [line for line in f.readlines() if line.strip()]
         assert len(lines) == 1
         evt = json.loads(lines[0])
         assert evt["event_id"] == "fixed_checkpoint_001"
@@ -107,13 +124,21 @@ class TestCheckpointTimeline:
     def test_two_runs_without_event_id_create_two_events(self, temp_store):
         """Without explicit event_id, each run creates a new event."""
         args1 = Namespace(
-            store_dir=str(temp_store), out=str(temp_store / "ckpt_a"), json=False,
-            label="run1", actor="cli_user", event_id=None,
+            store_dir=str(temp_store),
+            out=str(temp_store / "ckpt_a"),
+            json=False,
+            label="run1",
+            actor="cli_user",
+            event_id=None,
             project_id="test_proj",
         )
         args2 = Namespace(
-            store_dir=str(temp_store), out=str(temp_store / "ckpt_b"), json=False,
-            label="run2", actor="cli_user", event_id=None,
+            store_dir=str(temp_store),
+            out=str(temp_store / "ckpt_b"),
+            json=False,
+            label="run2",
+            actor="cli_user",
+            event_id=None,
             project_id="test_proj",
         )
 
@@ -121,7 +146,7 @@ class TestCheckpointTimeline:
         cmd_checkpoint(args2)
 
         with open(temp_store / "streams/timeline/active.jsonl") as f:
-            lines = [l for l in f.readlines() if l.strip()]
+            lines = [line for line in f.readlines() if line.strip()]
         assert len(lines) == 2
 
 
@@ -130,8 +155,12 @@ class TestCheckpointJSON:
         """--json output is valid JSON with required keys."""
         out_dir = temp_store / "ckpt_json"
         args = Namespace(
-            store_dir=str(temp_store), out=str(out_dir), json=True,
-            label="json-test", actor="cli_user", event_id=None,
+            store_dir=str(temp_store),
+            out=str(out_dir),
+            json=True,
+            label="json-test",
+            actor="cli_user",
+            event_id=None,
             project_id="test_proj",
         )
         cmd_checkpoint(args)
@@ -147,8 +176,11 @@ class TestCheckpointJSON:
     def test_json_with_event_id(self, temp_store, capfd):
         out_dir = temp_store / "ckpt_json2"
         args = Namespace(
-            store_dir=str(temp_store), out=str(out_dir), json=True,
-            label="json-eid", actor="tester",
+            store_dir=str(temp_store),
+            out=str(out_dir),
+            json=True,
+            label="json-eid",
+            actor="tester",
             event_id="custom_evt_42",
             project_id="test_proj",
         )
@@ -162,8 +194,12 @@ class TestCheckpointJSON:
 class TestCheckpointEdgeCases:
     def test_missing_store_dir(self):
         args = Namespace(
-            store_dir="/nonexistent/path", out="/tmp/out", json=False,
-            label="x", actor="x", event_id=None,
+            store_dir="/nonexistent/path",
+            out="/tmp/out",
+            json=False,
+            label="x",
+            actor="x",
+            event_id=None,
             project_id="test_proj",
         )
         with pytest.raises(SystemExit) as excinfo:

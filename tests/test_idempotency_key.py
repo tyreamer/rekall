@@ -13,15 +13,16 @@ def store():
     with tempfile.TemporaryDirectory() as d:
         base_dir = Path(d)
         from rekall.cli import ensure_state_initialized
+
         ensure_state_initialized(base_dir, is_json=True)
-        
+
         event = {
             "event_id": "e1",
             "type": "WORK_ITEM_CREATED",
             "work_item_id": "wi_1",
             "patch": {"title": "Test Item", "status": "todo", "priority": "p1"},
         }
-        
+
         # Add a work item to ensure some state exists if needed
         store = StateStore(base_dir)
         store.append_jsonl_idempotent("work_items", event, "event_id")
@@ -36,7 +37,11 @@ class TestAttemptIdempotencyKey:
         """Same idempotency_key with different attempt_ids → only one record stored."""
         actor = {"actor_id": "agent_a"}
         attempt1 = {"work_item_id": "wi_1", "title": "First try", "outcome": "fail"}
-        attempt2 = {"work_item_id": "wi_1", "title": "Retry same action", "outcome": "fail"}
+        attempt2 = {
+            "work_item_id": "wi_1",
+            "title": "Retry same action",
+            "outcome": "fail",
+        }
 
         r1 = store.append_attempt(attempt1, actor, idempotency_key="send-email-v1")
         r2 = store.append_attempt(attempt2, actor, idempotency_key="send-email-v1")
@@ -45,24 +50,30 @@ class TestAttemptIdempotencyKey:
         assert r1["attempt_id"] == r2["attempt_id"]
 
         with open(store.base_dir / "streams/attempts/active.jsonl") as f:
-            lines = [l for l in f if l.strip()]
+            lines = [line for line in f if line.strip()]
         assert len(lines) == 1
 
     def test_different_idemp_keys_appended(self, store):
         """Different idempotency_keys result in two records."""
         actor = {"actor_id": "agent_a"}
-        store.append_attempt({"work_item_id": "wi_1", "title": "A"}, actor, idempotency_key="key-1")
-        store.append_attempt({"work_item_id": "wi_1", "title": "B"}, actor, idempotency_key="key-2")
+        store.append_attempt(
+            {"work_item_id": "wi_1", "title": "A"}, actor, idempotency_key="key-1"
+        )
+        store.append_attempt(
+            {"work_item_id": "wi_1", "title": "B"}, actor, idempotency_key="key-2"
+        )
 
         with open(store.base_dir / "streams/attempts/active.jsonl") as f:
-            lines = [l for l in f if l.strip()]
+            lines = [line for line in f if line.strip()]
         assert len(lines) == 2
 
     def test_idemp_key_stored_in_record(self, store):
         """idempotency_key is persisted in the record."""
         actor = {"actor_id": "agent_a"}
         r = store.append_attempt(
-            {"work_item_id": "wi_1", "title": "X"}, actor, idempotency_key="migrate-db-001"
+            {"work_item_id": "wi_1", "title": "X"},
+            actor,
+            idempotency_key="migrate-db-001",
         )
         assert r["idempotency_key"] == "migrate-db-001"
 
@@ -96,13 +107,15 @@ class TestTimelineIdempotencyKey:
         assert r1["event_id"] == r2["event_id"]
 
         with open(store.base_dir / "streams/timeline/active.jsonl") as f:
-            lines = [l for l in f if l.strip()]
+            lines = [line for line in f if line.strip()]
         assert len(lines) == 1
 
     def test_idemp_key_stored(self, store):
         actor = {"actor_id": "agent_a"}
         r = store.append_timeline(
-            {"type": "note", "summary": "Deploy"}, actor, idempotency_key="deploy-prod-v3"
+            {"type": "note", "summary": "Deploy"},
+            actor,
+            idempotency_key="deploy-prod-v3",
         )
         assert r["idempotency_key"] == "deploy-prod-v3"
 
@@ -119,7 +132,11 @@ class TestDecisionIdempotencyKey:
     def test_duplicate_idemp_key_no_op(self, store):
         actor = {"actor_id": "agent_a"}
         d1 = {"title": "Use Postgres", "rationale": "ACID", "tradeoffs": "ops cost"}
-        d2 = {"title": "Use Postgres (duplicate)", "rationale": "still ACID", "tradeoffs": "same"}
+        d2 = {
+            "title": "Use Postgres (duplicate)",
+            "rationale": "still ACID",
+            "tradeoffs": "same",
+        }
 
         r1 = store.propose_decision(d1, actor, idempotency_key="db-choice-2026")
         r2 = store.propose_decision(d2, actor, idempotency_key="db-choice-2026")
@@ -127,7 +144,7 @@ class TestDecisionIdempotencyKey:
         assert r1["decision_id"] == r2["decision_id"]
 
         with open(store.base_dir / "streams/decisions/active.jsonl") as f:
-            lines = [l for l in f if l.strip()]
+            lines = [line for line in f if line.strip()]
         assert len(lines) == 1
 
 
@@ -144,10 +161,22 @@ class TestBackwardCompatibility:
         """validate_all warns about duplicate idempotency_keys in strict mode."""
         actor = {"actor_id": "agent_a"}
         # Write two records with the same idempotency_key directly (bypass dedupe to set up test)
-        r1 = {"attempt_id": "a1", "idempotency_key": "dup-key", "work_item_id": "wi_1",
-              "title": "A", "performed_by": actor, "timestamp": "2026-01-01T00:00:00Z"}
-        r2 = {"attempt_id": "a2", "idempotency_key": "dup-key", "work_item_id": "wi_1",
-              "title": "B", "performed_by": actor, "timestamp": "2026-01-01T00:01:00Z"}
+        r1 = {
+            "attempt_id": "a1",
+            "idempotency_key": "dup-key",
+            "work_item_id": "wi_1",
+            "title": "A",
+            "performed_by": actor,
+            "timestamp": "2026-01-01T00:00:00Z",
+        }
+        r2 = {
+            "attempt_id": "a2",
+            "idempotency_key": "dup-key",
+            "work_item_id": "wi_1",
+            "title": "B",
+            "performed_by": actor,
+            "timestamp": "2026-01-01T00:01:00Z",
+        }
         with open(store.base_dir / "streams/attempts/active.jsonl", "a") as f:
             f.write(json.dumps(r1) + "\n")
             f.write(json.dumps(r2) + "\n")
