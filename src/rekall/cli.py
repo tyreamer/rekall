@@ -1901,14 +1901,7 @@ EXAMPLES:
     parser_handoff.add_argument("--out", "-o", required=True, help="Output directory")
     parser_handoff.set_defaults(func=cmd_handoff)
 
-    # Aliases
-    parser_status = subparsers.add_parser(
-        "status", help="[Status] Query items ON_TRACK.", parents=[shared_flags]
-    )
-    parser_status.add_argument(
-        "--store-dir", default=".", help="Directory of the current StateStore"
-    )
-    parser_status.set_defaults(func=cmd_alias_status)
+    # Executive Query Aliases
 
     parser_blockers = subparsers.add_parser(
         "blockers", help="[Status] Query items BLOCKERS.", parents=[shared_flags]
@@ -1919,7 +1912,7 @@ EXAMPLES:
     parser_blockers.set_defaults(func=cmd_alias_blockers)
 
     parser_resume = subparsers.add_parser(
-        "resume", help="[Status] Query actions to RESUME.", parents=[shared_flags]
+        "resume", help="[Executive] Query items to RESUME (open breakpoints/decisions).", parents=[shared_flags]
     )
     parser_resume.add_argument(
         "--store-dir", default=".", help="Directory of the current StateStore"
