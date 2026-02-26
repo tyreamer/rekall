@@ -424,3 +424,37 @@ def test_cmd_guard_emit_timeline_idempotent(temp_store):
     assert len(lines1) == 1
     assert len(lines2) == 1
     assert "Preflight guard run" in lines1[0]
+
+def test_cmd_decide_and_resume(temp_store, capfd):
+    from rekall.cli import cmd_decide, cmd_alias_resume
+    from rekall.core.state_store import StateStore
+    
+    store = StateStore(temp_store)
+    store.wait_for_approval(
+        "dec_123", 
+        "Approve?", 
+        ["yes", "no"], 
+        actor={"actor_id": "ag-1"}, 
+        action_id="action_123", 
+        reason="Need human review"
+    )
+    
+    # Check resume command sees unresolved breakpoint
+    args_resume = Namespace(store_dir=str(temp_store), json=False)
+    cmd_alias_resume(args_resume)
+    captured = capfd.readouterr()
+    assert "UNRESOLVED breakpoints" in captured.out
+    assert "action_123" in captured.out
+    
+    # Make a decision using the CLI
+    args_decide = Namespace(store_dir=str(temp_store), json=False, decision_id="dec_123", option="approve", note="looks good")
+    cmd_decide(args_decide)
+    captured = capfd.readouterr()
+    assert "Decision recorded" in captured.out
+    
+    # Check resume command sees resolved breakpoint
+    cmd_alias_resume(args_resume)
+    captured = capfd.readouterr()
+    assert "RESOLVED breakpoints" in captured.out
+    assert "action_123" in captured.out
+

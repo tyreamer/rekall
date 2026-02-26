@@ -1,4 +1,5 @@
 import pytest
+import uuid
 from pathlib import Path
 
 from rekall.server.mcp_server import (
@@ -475,7 +476,7 @@ def test_exec_query_on_track(monkeypatch, tmp_path):
     er = res.get("executive_response")
     assert er is not None
     assert er["confidence"] == "high"
-    assert "AT_RISK" in er["summary"][0]  # 2 active blockers
+    assert any("AT_RISK" in s for s in er["summary"])  # 2 active blockers
     assert len(er["evidence"]) > 0
 
     # 2. To test ON_TRACK, we must unblock them
@@ -494,7 +495,7 @@ def test_exec_query_on_track(monkeypatch, tmp_path):
 
     res2 = exec_query({"project_id": "prj_646d63703ec5", "query_type": "ON_TRACK"})[0]
     er2 = res2["executive_response"]
-    assert "ON_TRACK" in er2["summary"][0]
+    assert any("ON_TRACK" in s for s in er2["summary"])
     assert any(
         "in_progress" in getattr(ev, "status", "in_progress")
         for ev in er2.get("evidence", [])
@@ -529,7 +530,7 @@ def test_exec_query_blockers(monkeypatch, tmp_path):
     res = exec_query({"project_id": "prj_646d63703ec5", "query_type": "BLOCKERS"})[0]
     er = res["executive_response"]
     assert er["confidence"] in ["medium", "high"]
-    assert "blocked" in er["summary"][0]
+    assert any("blocked" in s for s in er["summary"])
     assert len(er["evidence"]) > 0
     assert any(wid in ev for ev in er["evidence"])
 
@@ -567,7 +568,7 @@ def test_exec_query_changed_since(monkeypatch, tmp_path):
         }
     )[0]
     er = res["executive_response"]
-    assert "activities since" in er["summary"][0]
+    assert any("activities since" in s for s in er["summary"])
     assert len(er["evidence"]) >= 1
 
 
@@ -716,3 +717,253 @@ def test_graph_trace(monkeypatch, tmp_path):
     )[0]
     assert "nodes" in res
     assert "edges" in res
+
+
+def test_propose_and_approve_capture_contract(monkeypatch, tmp_path):
+    import shutil
+
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import (
+        propose_action,
+        capture_approval,
+        capture_outcome,
+        get_store,
+    )
+
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+
+    # 1. Propose action
+    res1 = propose_action(
+        {
+            "project_id": "prj_1",
+            "action_type": "run_command",
+            "params": {"cmd": "npm install"},
+            "risk_hint": "modifies node_modules",
+            "context": {"cwd": "/app"},
+            "actor": actor,
+        }
+    )[0]
+    assert "action_id" in res1
+    assert "action_hash" in res1
+    action_id = res1["action_id"]
+
+    # 2. Capture approval
+    decision_id = f"dec-{uuid.uuid4().hex[:8]}"
+    human_actor = {"actor_type": "human", "actor_id": "u-1"}
+    res2 = capture_approval(
+        {
+            "project_id": "prj_1",
+            "decision_id": decision_id,
+            "action_id": action_id,
+            "decision": "approve",
+            "note": "Looks safe to me",
+            "actor": human_actor,
+        }
+    )[0]
+    assert res2["status"] == "success"
+    assert "decision_id" in res2
+    assert "anchor_id" in res2
+
+    # 3. Capture outcome
+    res3 = capture_outcome(
+        {
+            "project_id": "prj_1",
+            "action_id": action_id,
+            "outcome_metadata": {"exit_code": 0, "stdout": "installed 5 packages"},
+            "actor": actor,
+        }
+    )[0]
+    assert res3["status"] == "success"
+    assert "attempt_id" in res3
+
+    # Check store streams
+    store = get_store()
+    actions = store._load_jsonl("actions.jsonl")
+    assert any(a["action_id"] == action_id for a in actions)
+
+    decisions = store._load_jsonl("decisions.jsonl")
+    assert any(d["decision_id"] == res2["decision_id"] for d in decisions)
+
+    anchors = store._load_jsonl("anchors.jsonl")
+    assert any(a["anchor_id"] == res2["anchor_id"] for a in anchors)
+
+    attempts = store._load_jsonl("attempts.jsonl")
+    assert any(a["attempt_id"] == res3["attempt_id"] for a in attempts)
+
+
+def test_wait_for_approval_contract(monkeypatch, tmp_path):
+    import shutil
+
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import (
+        propose_action,
+        wait_for_approval,
+        get_store,
+    )
+
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+
+    # 1. Propose action
+    res1 = propose_action(
+        {
+            "project_id": "prj_1",
+            "action_type": "delete_db",
+            "params": {"force": True},
+            "risk_hint": "destructive",
+            "context": {"cwd": "/"},
+            "actor": actor,
+        }
+    )[0]
+    action_id = res1["action_id"]
+    
+    # 2. Agent waits
+    decision_id = f"dec-{uuid.uuid4().hex[:8]}"
+    res2 = wait_for_approval(
+        {
+            "project_id": "prj_1",
+            "decision_id": decision_id,
+            "action_id": action_id,
+            "prompt": "Waiting for human to verify delete_db",
+            "actor": actor,
+        }
+    )[0]
+    
+    assert res2["status"] == "PAUSE_AND_EXIT"
+    assert "exit your loop" in res2["message"]
+    assert res2["decision_id"] == decision_id
+    assert res2["action_id"] == action_id
+    
+    # Verify StateStore contains WaitingOnHuman event
+    store = get_store()
+    actions = store._load_stream("actions.jsonl")
+    
+    wait_events = [e for e in actions if e.get("type") == "WaitingOnHuman" and e.get("decision_id") == decision_id]
+    assert len(wait_events) == 1
+    assert wait_events[0]["prompt"] == "Waiting for human to verify delete_db"
+    assert wait_events[0]["options"] == ["approve", "reject"]
+    assert wait_events[0]["created_by"]["actor_id"] == "ag-1"
+
+def test_actuator_cli(monkeypatch, tmp_path):
+    import shutil
+
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import (
+        propose_action,
+        actuate_cli,
+    )
+
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+
+    # 1. Propose action
+    res1 = propose_action(
+        {
+            "project_id": "prj_1",
+            "action_type": "test_cmd",
+            "params": {"cmd": "echo hello"},
+            "risk_hint": "safe",
+            "context": {"cwd": "/"},
+            "actor": actor,
+        }
+    )[0]
+    action_id = res1["action_id"]
+
+    # 2. Actuate CLI (Linux/Mac/Win compat: echo usually works on all)
+    res2 = actuate_cli(
+        {
+            "project_id": "prj_1",
+            "action_id": action_id,
+            "command": "echo hello_actuator",
+            "actor": actor,
+        }
+    )[0]
+
+    assert res2["status"] == "success"
+    assert "hello_actuator" in res2["outcome"]["stdout"]
+    
+    # Verify outcome metadata was captured
+    outcome = res2["record"]
+    assert outcome["action_id"] == action_id
+    assert res2["outcome"]["success"] is True
+
+def test_actuator_file_write(monkeypatch, tmp_path):
+    import shutil
+
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import (
+        propose_action,
+        actuate_file_write,
+    )
+
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+
+    res1 = propose_action(
+        {
+            "project_id": "prj_1",
+            "action_type": "write_file",
+            "params": {"file": "test.txt"},
+            "risk_hint": "safe",
+            "context": {"cwd": "/"},
+            "actor": actor,
+        }
+    )[0]
+    action_id = res1["action_id"]
+    
+    target_file = tmp_path / "test.txt"
+
+    res2 = actuate_file_write(
+        {
+            "project_id": "prj_1",
+            "action_id": action_id,
+            "file_path": str(target_file),
+            "content": "hello file write",
+            "actor": actor,
+        }
+    )[0]
+
+    assert res2["status"] == "success"
+    assert target_file.exists()
+    assert target_file.read_text(encoding="utf-8") == "hello file write"
+    
+    outcome = res2["record"]
+    assert outcome["action_id"] == action_id
+    assert res2["outcome"]["success"] is True
+    assert res2["outcome"]["bytes_written"] > 0
+
+def test_policy_preflight(tmp_path, monkeypatch):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import policy_preflight
+    
+    global _store
+    _store = None
+    
+    # 1. Test safe action
+    res = policy_preflight({
+        "project_id": "prj_1",
+        "action_type": "ls",
+        "params": {"args": "-l"}
+    })[0]
+    assert res["effect"] == "allow"
+    
+    # 2. Test destructive action (should match default policy)
+    res = policy_preflight({
+        "project_id": "prj_1",
+        "action_type": "actuate_cli",
+        "params": {"command": "rm -rf /"}
+    })[0]
+    assert res["effect"] == "deny"
+    assert "Destructive" in res["reason"]
+

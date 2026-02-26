@@ -44,6 +44,11 @@
       "active_file": "streams\\anchors\\active.jsonl",
       "segments": [],
       "id_field": "anchor_id"
+    },
+    "actions": {
+      "active_file": "streams\\actions\\active.jsonl",
+      "segments": [],
+      "id_field": "action_id"
     }
   },
   "last_checkpoint": null,

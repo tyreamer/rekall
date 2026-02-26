@@ -1,4 +1,5 @@
 import argparse
+import tarfile
 import sys
 import json
 from pathlib import Path
@@ -746,7 +747,7 @@ def cmd_handoff(args):
 
 def cmd_features(args):
     """Print the capability map and positioning."""
-    print("\nRekall: The Project Reality Blackboard + Ledger")
+    print("\nRekall: The verifiable AI execution record + execution ledger")
     print("-" * 60)
     print("FEATURES:")
     print(
@@ -762,7 +763,7 @@ def cmd_features(args):
         "  * MCP Server Native       : Direct read/write bindings for Claude Desktop."
     )
     print("\nPRIMITIVES:")
-    print("  * ATTEMPTS : A typed ledger of what has been tried and why it failed.")
+    print("  * ATTEMPTS : A typed execution ledger of what has been tried and why it failed.")
     print("  * DECISIONS: Explicit records of trade-offs and architectural choices.")
     print("  * TIMELINE : An immutable event log of milestones and state changes.")
     print(
@@ -785,6 +786,12 @@ def execute_alias_query(args, qtype: ExecutiveQueryType):
             print(json.dumps(dataclasses.asdict(resp), indent=2))
         else:
             print(f"\n[{qtype.name}] Target: {resp.target_project_id}")
+            for line in resp.summary:
+                print(f"{Theme.ICON_INFO} {line}")
+            if resp.evidence:
+                print("Evidence:")
+                for ev in resp.evidence:
+                    print(f"  \u2022 {ev}")
             print(f"Items Match: {len(resp.work_items)}")
             if resp.blockers:
                 print("BLOCKERS:")
@@ -1118,6 +1125,30 @@ def cmd_decisions_propose(args):
         die(ExitCode.INTERNAL_ERROR, f"Failed to propose decision: {str(e)}", args.json)
 
 
+def cmd_decide(args):
+    """Capture a human decision for an action or decision request."""
+    base_dir = Path(getattr(args, "store_dir", "."))
+    ensure_state_initialized(base_dir, args.json)
+    try:
+        store = StateStore(base_dir)
+        decision_id = args.decision_id
+        decision = args.option
+        note = getattr(args, "note", "")
+        actor = {"actor_type": "human", "actor_id": "cli_user"}
+        
+        updated = store.capture_approval(
+            decision_id=decision_id,
+            decision_str=decision,
+            note=note,
+            actor=actor
+        )
+        if args.json:
+            print(json.dumps({"status": "success", "decision_id": updated["decision_id"]}))
+        else:
+            print(f"\u2705 Decision recorded: {updated['decision_id']}")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Decision failed: {str(e)}", args.json)
+
 
 def cmd_gc(args):
     """Prunes old segment files that are already included in snapshots."""
@@ -1229,6 +1260,49 @@ def cmd_checkpoint(args):
         die(ExitCode.INTERNAL_ERROR, f"Checkpoint failed: {str(e)}", args.json)
 
 
+def cmd_checkout(args):
+    """Rewinds the active HEAD to a specific point in time by appending a StateRevert."""
+    base_dir = Path(getattr(args, "store_dir", "."))
+    ensure_state_initialized(base_dir, args.json)
+    try:
+        store = StateStore(base_dir)
+        to_target = args.to
+        if not to_target:
+            die(ExitCode.USER_ERROR, "--to is required", args.json)
+            
+        # Check if it looks like an ISO timestamp, otherwise look it up
+        if "T" in to_target and len(to_target) > 10:
+            ts = to_target
+        else:
+            ts = None
+            for stream in store.manifest.get("streams", {}):
+                records = store._load_stream_raw(stream, hot_only=False)
+                for r in records:
+                    if (
+                        r.get("event_id") == to_target or
+                        r.get("action_id") == to_target or
+                        r.get("decision_id") == to_target or
+                        r.get("attempt_id") == to_target or
+                        r.get("anchor_id") == to_target
+                    ):
+                        ts = r.get("timestamp") or r.get("created_at") or r.get("created", "")
+                        break
+                if ts:
+                    break
+            if not ts:
+                die(ExitCode.USER_ERROR, f"Event ID {to_target} not found.", args.json)
+        
+        res = store.append_revert(to_timestamp=ts, actor={"actor_id": "cli_user"}, reason=getattr(args, "reason", None))
+        
+        if args.json:
+            print(json.dumps({"status": "success", "revert": res}))
+        else:
+            print(f"\u2705 Checked out to {ts}")
+            print(f"   Revert ID  : {res['revert_id']}")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Checkout failed: {str(e)}", args.json)
+
+
 def cmd_lock(args):
     base_dir = Path(args.store_dir)
     try:
@@ -1262,6 +1336,176 @@ def cmd_lock(args):
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Failed to acquire lock: {str(e)}", args.json)
 
+def cmd_status(args):
+    """Provides an executive summary of the current reality."""
+    store_dir = Path(getattr(args, "store_dir", "project-state"))
+    ensure_state_initialized(store_dir, args.json)
+    
+    try:
+        store = StateStore(store_dir)
+        
+        project_meta = store._load_yaml("project.yaml") or {}
+        goal = project_meta.get("current_goal") or project_meta.get("goal", "No goal defined")
+        phase = project_meta.get("phase", "Unknown phase")
+        
+        timeline = store._load_stream("timeline.jsonl")
+        actions = store._load_stream("actions.jsonl")
+        decisions = store._load_stream("decisions.jsonl")
+        attempts = store._load_stream("attempts.jsonl")
+        activity = store._load_stream("activity.jsonl")
+        anchors_stream = store._load_stream("anchors.jsonl")
+        
+        last_event_time = "Never"
+        last_event_id = "N/A"
+        last_event_hash = "N/A"
+        if timeline:
+            last = max(timeline, key=lambda x: x.get("timestamp", ""))
+            last_event_time = last.get("timestamp", "Unknown")
+            last_event_id = last.get("event_id", last.get("activity_id", "N/A"))
+            last_event_hash = last.get("event_hash", "N/A")
+
+        last_attempt = None
+        if attempts:
+            last_attempt = max(attempts, key=lambda x: x.get("timestamp", ""))
+
+        unresolved_waits = []
+        waits = [e for e in actions if e.get("type", "") == "WaitingOnHuman"]
+        resolved_actions = {d.get("action_id") for d in decisions if d.get("action_id")}
+        resolved_decisions = {d.get("decision_id") for d in decisions if d.get("decision_id")}
+        
+        for w in waits:
+            w_did = w.get("decision_id")
+            w_aid = w.get("action_id")
+            is_resolved = False
+            if w_did and w_did in resolved_decisions:
+                is_resolved = True
+            elif w_aid and w_aid in resolved_actions:
+                is_resolved = True
+            
+            if not is_resolved:
+                unresolved_waits.append(w)
+                
+        if args.json:
+            print(json.dumps({
+                "goal": goal, "phase": phase, 
+                "head": {"timestamp": last_event_time, "id": last_event_id, "hash": last_event_hash},
+                "last_attempt": last_attempt,
+                "unresolved_waits": unresolved_waits
+            }))
+            return
+
+        print("\n[ rekall status ]")
+        sig_s = "SIGNED" if anchors_stream and anchors_stream[-1].get("signature") else "UNSIGNED"
+        verif_status = "✅ INTEGRITY OK" if last_event_hash != "N/A" else "⚠️ EMPTY LEDGER"
+        print(f"{verif_status} | Anchor: {sig_s} | HEAD: {last_event_hash[:12]}...")
+        print(f"Goal/Phase: {goal} ({phase})")
+        print(f"Active HEAD: {last_event_time}")
+        print(f"HEAD ID:     {last_event_id}")
+        print(f"HEAD Hash:   {last_event_hash[:12]}... (verifiable)")
+        
+        print("\n=== Last Attempt ===")
+        if last_attempt:
+            title = last_attempt.get('title', last_attempt.get('action_id', 'Unknown'))
+            outcome = last_attempt.get('outcome', last_attempt.get('status', 'Unknown'))
+            if isinstance(outcome, dict):
+                outcome = outcome.get("success", outcome)
+            print(f"Title:   {title}")
+            print(f"Outcome: {outcome}")
+            print(f"ID:      {last_attempt.get('attempt_id')}")
+        else:
+            print("None")
+            
+        print("\n=== Pending Approvals ===")
+        if unresolved_waits:
+            for w in unresolved_waits:
+                d_id = w.get('decision_id', w.get('action_id', 'Unknown'))
+                print(f"- Decision {d_id} waiting since {w.get('timestamp')}")
+                if w.get('prompt'):
+                    print(f"  Prompt: {w.get('prompt')}")
+        else:
+            print("None")
+            
+        print("\n=== Shadow Policy Constraints ===")
+        policy_checks = [e for e in activity if e.get("type") == "PolicyCheck"]
+        if policy_checks:
+            denies = [c for c in policy_checks if c.get("effect") == "deny"]
+            print(f"Audit Trail: {len(policy_checks)} preflight checks recorded.")
+            if denies:
+                last_deny = denies[-1]
+                print(f"Latest WOULD-DENY: {last_deny.get('rule_id')} ({last_deny.get('timestamp')})")
+            else:
+                print("Status: Pass (0 active would-deny items)")
+        else:
+            print("No policy.yaml preflight checks in current stream.")
+
+        print("\n=== Provenance Anchors ===")
+        if anchors_stream:
+            last_anchor = anchors_stream[-1]
+            sig_status = "SIGNED" if last_anchor.get("signature") else "UNSIGNED"
+            print(f"Latest Anchor: {last_anchor.get('anchor_id')} [{sig_status}]")
+            print(f"Evidence:      {last_anchor.get('timestamp')}")
+        else:
+            print("None")
+        print("")
+        
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Status failed: {str(e)}", args.json)
+
+def cmd_verify(args):
+    """Verify cryptographic integrity of all execution streams."""
+    base_dir = Path(getattr(args, "store_dir", "."))
+    ensure_state_initialized(base_dir, args.json)
+    try:
+        store = StateStore(base_dir)
+        results = []
+        overall_status = "\u2705"
+        
+        streams = store.manifest.get("streams", {})
+        for stream_name in streams:
+            res = store.verify_stream_integrity(stream_name)
+            results.append(res)
+            if res["status"] == "\u274c":
+                overall_status = "\u274c"
+                
+        if args.json:
+            print(json.dumps({"status": overall_status, "streams": results}))
+            return
+            
+        print(f"\n[ rekall verify ] - Integrity: {overall_status}")
+        for res in results:
+            print(f"  {res['status']} {res['stream']:<20} ({res['count']} events)")
+            if res["errors"]:
+                for err in res["errors"]:
+                    print(f"    \u274c {err}")
+                    
+        if overall_status == "\u274c":
+            sys.exit(ExitCode.INTERNAL_ERROR)
+            
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Verification failed: {str(e)}", args.json)
+
+def cmd_bundle(args):
+    """Bundle the entire state directory into a portable tarball."""
+    base_dir = Path(getattr(args, "store_dir", "."))
+    ensure_state_initialized(base_dir, args.json)
+    
+    out_file = Path(args.out)
+    try:
+        if not out_file.name.endswith((".tar.gz", ".tgz")):
+            out_file = out_file.with_name(out_file.name + ".tar.gz")
+            
+        logger.info(f"Bundling {base_dir} into {out_file}...")
+        
+        with tarfile.open(out_file, "w:gz") as tar:
+            tar.add(base_dir, arcname=base_dir.name)
+            
+        if args.json:
+            print(json.dumps({"status": "success", "bundle_path": str(out_file.absolute())}))
+        else:
+            print(f"\u2705 Bundle created: {out_file}")
+            
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Bundle failed: {str(e)}", args.json)
 
 def cmd_onboard(args):
     """Generates an onboarding \u201ccheat sheet\u201d for a repo."""
@@ -1315,12 +1559,12 @@ def cmd_onboard(args):
         lines = []
         lines.append(f"# Onboarding Cheat Sheet: {repo_name}")
         lines.append(f"**Generated**: {timestamp}")
-        lines.append(f"**Ledger Last Updated**: {last_updated}")
+        lines.append(f"**execution ledger Last Updated**: {last_updated}")
         lines.append("")
 
         lines.append("## What is Rekall?")
         lines.append(
-            "Rekall is a project state ledger for AI agents and human collaborators."
+            "Rekall is a project state execution ledger for AI agents and human collaborators."
         )
         lines.append(
             "It tracks decisions, attempts, and work items as a machine-readable event stream."
@@ -1468,7 +1712,7 @@ def main():
                 except Exception:
                     pass
 
-    desc = """Rekall: project reality blackboard + ledger (not Kanban)
+    desc = """Rekall: verifiable AI execution record + execution ledger (not audit trail)
     
 EXAMPLES:
   # Try it out
@@ -1524,7 +1768,7 @@ EXAMPLES:
 
     parser_features = subparsers.add_parser(
         "features",
-        help="[Try] Print capability map and 'Not Kanban' explainer.",
+        help="[Try] Print capability map and 'Not audit trail' explainer.",
         parents=[shared_flags],
     )
     parser_features.set_defaults(func=cmd_features)
@@ -1655,14 +1899,7 @@ EXAMPLES:
     parser_handoff.add_argument("--out", "-o", required=True, help="Output directory")
     parser_handoff.set_defaults(func=cmd_handoff)
 
-    # Aliases
-    parser_status = subparsers.add_parser(
-        "status", help="[Status] Query items ON_TRACK.", parents=[shared_flags]
-    )
-    parser_status.add_argument(
-        "--store-dir", default=".", help="Directory of the current StateStore"
-    )
-    parser_status.set_defaults(func=cmd_alias_status)
+    # Executive Query Aliases
 
     parser_blockers = subparsers.add_parser(
         "blockers", help="[Status] Query items BLOCKERS.", parents=[shared_flags]
@@ -1673,12 +1910,29 @@ EXAMPLES:
     parser_blockers.set_defaults(func=cmd_alias_blockers)
 
     parser_resume = subparsers.add_parser(
-        "resume", help="[Status] Query actions to RESUME.", parents=[shared_flags]
+        "resume", help="[Executive] Query items to RESUME (open breakpoints/decisions).", parents=[shared_flags]
     )
     parser_resume.add_argument(
         "--store-dir", default=".", help="Directory of the current StateStore"
     )
     parser_resume.set_defaults(func=cmd_alias_resume)
+    
+    # Checkout
+    parser_checkout = subparsers.add_parser(
+        "checkout",
+        help="[Portability] Rewind active HEAD to a temporal point.",
+        parents=[shared_flags],
+    )
+    parser_checkout.add_argument(
+        "--to", required=True, help="Timestamp or event_id to rewind to"
+    )
+    parser_checkout.add_argument(
+        "--reason", default="Manual CLI checkout", help="Reason for revert"
+    )
+    parser_checkout.add_argument(
+        "--store-dir", default=".", help="Directory of the current StateStore"
+    )
+    parser_checkout.set_defaults(func=cmd_checkout)
 
     # Guard
     parser_guard = subparsers.add_parser(
@@ -1760,6 +2014,49 @@ EXAMPLES:
         "--idempotency-key", default=None, help="Optional string to deduplicate records"
     )
     parser_decisions_propose.set_defaults(func=cmd_decisions_propose)
+
+    # Decide
+    parser_decide = subparsers.add_parser(
+        "decide",
+        help="[Execution] Provide a decision (approve/reject) for an action breakpoint or decision request.",
+        parents=[shared_flags],
+    )
+    parser_decide.add_argument("decision_id", help="The Decision ID to decide upon")
+    parser_decide.add_argument(
+        "--option", required=True, choices=["approve", "reject", "yes", "no"], help="The decision to make"
+    )
+    parser_decide.add_argument(
+        "--note", default="", help="Optional notes on the decision"
+    )
+    parser_decide.add_argument(
+        "--store-dir", default=".", help="Directory of the StateStore"
+    )
+    parser_decide.set_defaults(func=cmd_decide)
+
+    # Verify
+    parser_verify = subparsers.add_parser(
+        "verify",
+        help="[Security] Verify cryptographic integrity of all execution streams.",
+        parents=[shared_flags],
+    )
+    parser_verify.add_argument(
+        "--store-dir", default=".", help="Directory of the StateStore"
+    )
+    parser_verify.set_defaults(func=cmd_verify)
+
+    # Bundle
+    parser_bundle = subparsers.add_parser(
+        "bundle",
+        help="[Portability] Bundle state into a portable archive for sharing.",
+        parents=[shared_flags],
+    )
+    parser_bundle.add_argument(
+        "--out", "-o", required=True, help="Output path for the bundle archive"
+    )
+    parser_bundle.add_argument(
+        "--store-dir", default=".", help="Directory of the StateStore"
+    )
+    parser_bundle.set_defaults(func=cmd_bundle)
 
     parser_timeline = subparsers.add_parser(
         "timeline", help="[Log] Manage timeline events.", parents=[shared_flags]
@@ -1862,6 +2159,19 @@ EXAMPLES:
         "--force", action="store_true", help="Overwrite if file exists"
     )
     parser_onboard.set_defaults(func=cmd_onboard)
+
+    # Status
+    parser_status = subparsers.add_parser(
+        "status",
+        help="[Core] Executive summary of active HEAD, attempts, and blockers.",
+        parents=[shared_flags],
+    )
+    parser_status.add_argument(
+        "--store-dir",
+        default="project-state",
+        help="Directory of the state store",
+    )
+    parser_status.set_defaults(func=cmd_status)
 
     args = parser.parse_args()
 

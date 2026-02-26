@@ -49,6 +49,30 @@ def query_executive_status(
     now = datetime.datetime.now(datetime.timezone.utc)
     res = ExecutiveResponse(target_project_id=project_id, query_type=query_type)
 
+    # Consensus Primitives (The Evidence) - MUST LEAD EVERY RESPONSE
+    timeline = store._load_stream("timeline.jsonl")
+    activity = store._load_stream("activity.jsonl")
+    anchors = store._load_stream("anchors.jsonl")
+    
+    head_prefix = "[VERIFIABLE RECORD] "
+    if timeline:
+        last = max(timeline, key=lambda x: x.get("timestamp", ""))
+        l_hash = last.get("event_hash", "N/A")[:12]
+        head_prefix += f"HEAD: {l_hash}... "
+    else:
+        head_prefix += "Empty stream. "
+
+    policy_checks = [e for e in activity if e.get("type") == "PolicyCheck"]
+    if policy_checks:
+        effect = policy_checks[-1].get("effect", "unknown")
+        head_prefix += f"Policy: {effect.upper()}. "
+    
+    if anchors:
+        sig_s = "SIGNED" if anchors[-1].get("signature") else "UNSIGNED"
+        head_prefix += f"Anchor: {sig_s}."
+    
+    res.summary.append(head_prefix)
+
     if query_type == ExecutiveQueryType.ON_TRACK:
         blockers = [w for w in work_items if w.get("status") == "blocked"]
         stale_blockers = [
@@ -162,7 +186,7 @@ def query_executive_status(
             res.summary.append(f"Found {len(decs)} total decisions.")
             res.evidence.extend(
                 [
-                    f"decision: {d['decision_id']} ({d.get('title', 'untitled')})"
+                    f"decision: {d['decision_id']} ({d.get('title', 'untitled')}) [hash: {d.get('event_hash', 'N/A')[:8]}...]"
                     for d in decs[:5]
                 ]
             )
@@ -195,6 +219,49 @@ def query_executive_status(
             f"Project has {len(in_prog)} items in-progress and {len(blockers)} active blockers."
         )
         res.summary.append(f"Goal: {store.project_config.get('one_liner', 'Unknown')}.")
+
+        # Check for WaitingOnHuman vs Decisions
+        actions = store._load_stream("actions.jsonl")
+        decisions = store._load_stream("decisions.jsonl")
+        
+        waits = [a for a in actions if a.get("type") == "WaitingOnHuman"]
+        decision_by_action = {d.get("action_id"): d for d in decisions if d.get("action_id")}
+        
+        unresolved = []
+        resolved = []
+        for w in waits:
+            aid = w.get("action_id")
+            w_hash = w.get("event_hash", "N/A")[:8]
+            if aid in decision_by_action:
+                resolved.append((w, decision_by_action[aid]))
+            else:
+                unresolved.append(w)
+                
+        if unresolved:
+            res.summary.append(f"WARNING: There are {len(unresolved)} UNRESOLVED breakpoints. Human must rekall decide.")
+            for w in unresolved[:3]:
+                w_hash = w.get("event_hash", "N/A")[:8]
+                res.evidence.append(f"unresolved_breakpoint: action_id={w.get('action_id')} reason={w.get('reason')} [hash: {w_hash}...]")
+        if resolved:
+            res.summary.append(f"There are {len(resolved)} RESOLVED breakpoints ready for agent pickup.")
+            for w, d in resolved[-3:]:
+                d_hash = d.get("event_hash", "N/A")[:8]
+                res.evidence.append(f"resolved_breakpoint: action_id={w.get('action_id')} decision={d.get('status')} [hash: {d_hash}...]")
+        
+        # Policy Check Evidence
+        acts = store._load_jsonl("activity.jsonl")
+        policy_checks = [a for a in acts if a.get("type") == "PolicyCheck"]
+        if policy_checks:
+            last_p = policy_checks[-1]
+            res.summary.append(f"Evidence: Shadow policy guardrail active. Last check: {last_p.get('effect')} ({last_p.get('rule_id')}).")
+            res.evidence.append(f"policy_check: status={last_p.get('effect')} rule={last_p.get('rule_id')} [hash: {last_p.get('event_hash', 'N/A')[:8]}...]")
+
+        # Human Anchor Evidence
+        anchors = [a for a in acts if a.get("type") == "HumanAnchor"]
+        if anchors:
+            last_a = anchors[-1]
+            sig_s = "SIGNED" if last_a.get("signature") else "UNSIGNED"
+            res.evidence.append(f"provenance_anchor: {last_a.get('activity_id')} [{sig_s}]")
 
         res.evidence.extend([f"work_item: {w['work_item_id']}" for w in in_prog[:2]])
         res.evidence.extend([f"work_item: {w['work_item_id']}" for w in blockers[:2]])
