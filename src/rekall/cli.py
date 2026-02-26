@@ -29,16 +29,16 @@ class Theme:
     ICON_ERROR = "\u274c"   # \u274c
     ICON_WARNING = "\u26a0\ufe0f" # \u26a0\ufe0f
     ICON_INFO = "\u2139\ufe0f"    # \u2139\ufe0f
-    ICON_IDEA = "\ud83d\udca1"    # \U0001f4a1
-    ICON_TARGET = "\ud83c\udfaf"  # \U0001f3af
-    ICON_FOLDER = "\ud83d\udcc1"  # \U0001f4c1
-    ICON_LINK = "\ud83d\udd17"    # \U0001f517
-    ICON_CHART = "\ud83d\udcca"   # \U0001f4ca
-    ICON_ROCKET = "\ud83d\ude80"  # \U0001f680
-    ICON_TOOL = "\ud83d\udd27"    # \U0001f527
-    ICON_DOC = "\ud83d\udcc4"     # \U0001f4c4
-    ICON_SEARCH = "\ud83d\udd0d"  # \U0001f50d
-    ICON_PUSH = "\ud83d\udce4"    # \U0001f4e4
+    ICON_IDEA = "\U0001f4a1"    # \U0001f4a1
+    ICON_TARGET = "\U0001f3af"  # \U0001f3af
+    ICON_FOLDER = "\U0001f4c1"  # \U0001f4c1
+    ICON_LINK = "\U0001f517"    # \U0001f517
+    ICON_CHART = "\U0001f4ca"   # \U0001f4ca
+    ICON_ROCKET = "\U0001f680"  # \U0001f680
+    ICON_TOOL = "\U0001f527"    # \U0001f527
+    ICON_DOC = "\U0001f4c4"     # \U0001f4c4
+    ICON_SEARCH = "\U0001f50d"  # \U0001f50d
+    ICON_PUSH = "\U0001f4e4"    # \U0001f4e4
     ICON_UP = "\u2b06\ufe0f"      # \u2b06\ufe0f
     ICON_CHECK = "\u2714\ufe0f"   # \u2714\ufe0f
     
@@ -278,7 +278,7 @@ def cmd_doctor(args):
             print(f" {icon} {r['check']:<30} : {r['detail']}")
             if r['status'] == "\u274c":
                 all_passed = False
-                if r['fix']: print(f"    \ud83d\udc49 FIX: {r['fix']}")
+                if r['fix']: print(f"    \U0001f449 FIX: {r['fix']}")
                 
         print("="*50)
         if all_passed:

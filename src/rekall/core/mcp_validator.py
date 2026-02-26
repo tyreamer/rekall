@@ -334,7 +334,7 @@ def format_human_report(report: dict) -> str:
 
     lines.append("")
     lines.append("=" * 58)
-    lines.append("\ud83d\udd0d  REKALL MCP SELF-CHECK VALIDATION")
+    lines.append("\U0001f50d  REKALL MCP SELF-CHECK VALIDATION")
     lines.append("=" * 58)
 
     # Tool inventory

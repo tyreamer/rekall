@@ -50,11 +50,11 @@ def render_decision_trace(graph_result: Dict[str, Any]) -> str:
         provider = ref.get("provider", "")
         key = ref.get("key", "")
         art_title = a.get("title", f"{provider} {key}".strip() or "Artifact")
-        lines.append(f" \u251c\u2500\u2500 \ud83d\udcc4 Artifact: {art_title}")
+        lines.append(f" \u251c\u2500\u2500 \U0001f4c4 Artifact: {art_title}")
         
     for r in research:
         r_title = r.get("title", "Research Note")
-        lines.append(f" \u251c\u2500\u2500 \ud83d\udd0d Research: {r_title}")
+        lines.append(f" \u251c\u2500\u2500 \U0001f50d Research: {r_title}")
         
     if not attempts and not artifacts and not research:
         lines.append(" \u2514\u2500\u2500 (No linked attempts or evidence)")
@@ -82,12 +82,12 @@ def render_decision_trace(graph_result: Dict[str, Any]) -> str:
             url = ref.get("url", "")
             art_title = a.get("title", f"{provider} {key}".strip() or "Artifact")
             link = f"[{art_title}]({url})" if url else art_title
-            lines.append(f"- \ud83d\udcc4 {link}")
+            lines.append(f"- \U0001f4c4 {link}")
             
         for r in research:
             r_title = r.get("title", "Research Note")
             claims = r.get("claims", [])
-            lines.append(f"- \ud83d\udd0d **{r_title}**")
+            lines.append(f"- \U0001f50d **{r_title}**")
             for c in claims:
                 lines.append(f"  - {c}")
 
