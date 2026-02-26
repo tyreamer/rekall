@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import logging
 from enum import IntEnum
+from typing import Optional, Any
 
 from rekall.core.state_store import StateStore
 from rekall.core.handoff_generator import generate_boot_brief
@@ -81,7 +82,7 @@ def die(
     code: ExitCode,
     message: str,
     is_json: bool,
-    details: dict = None,
+    details: Optional[dict] = None,
     debug: bool = False,
 ):
     """Standardized exit formatter."""
@@ -172,7 +173,7 @@ def ensure_state_initialized(store_dir: Path, is_json: bool = False):
         # Initialize manifest and streams
         manifest_path = store_dir / "manifest.json"
         if not manifest_path.exists():
-            manifest = {"schema_version": "0.1", "streams": {}}
+            manifest: dict[str, Any] = {"schema_version": "0.1", "streams": {}}
 
             streams_to_init = [
                 ("work_items", "event_id"),

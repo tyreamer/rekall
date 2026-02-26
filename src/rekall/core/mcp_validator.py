@@ -64,7 +64,7 @@ def _send_jsonrpc(
 ) -> dict:
     """Send a JSON-RPC request and read one response line."""
     req_id = str(uuid.uuid4())
-    req = {"jsonrpc": "2.0", "id": req_id, "method": method}
+    req: dict[str, Any] = {"jsonrpc": "2.0", "id": req_id, "method": method}
     if params is not None:
         req["params"] = params
 
@@ -165,7 +165,7 @@ def parse_tools_list(response: dict) -> Tuple[List[dict], Optional[str]]:
     return tools, None
 
 
-def find_missing_tools(tool_names: List[str], required: List[str] = None) -> List[str]:
+def find_missing_tools(tool_names: List[str], required: Optional[List[str]] = None) -> List[str]:
     """Return required tool names not present in tool_names."""
     if required is None:
         required = REQUIRED_TOOLS
@@ -344,7 +344,8 @@ def run_mcp_validation(
 
     finally:
         try:
-            proc.stdin.close()
+            if proc.stdin:
+                proc.stdin.close()
         except Exception:
             pass
         proc.terminate()

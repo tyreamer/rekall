@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from rekall.core.state_store import StateStore
 
@@ -29,7 +29,7 @@ def _paginate(
     items: List[Dict[str, Any]], limit: int, offset: int = 0
 ) -> Dict[str, Any]:
     paginated = items[offset : offset + limit]
-    res = {"items": paginated}
+    res: Dict[str, Any] = {"items": paginated}
     if offset + limit < len(items):
         res["next_cursor"] = str(offset + limit)
     return res
@@ -342,7 +342,7 @@ def work_update(args: dict) -> list:
     store = get_store()
     try:
         updated = store.update_work_item(
-            work_item_id, patch, expected_version, actor, force=force, reason=reason
+            cast(str, work_item_id), cast(Dict[str, Any], patch), cast(int, expected_version), cast(Dict[str, Any], actor), force=bool(force), reason=cast(Optional[str], reason)
         )
         return [{"work_item": updated}]
     except Exception as e:
@@ -364,7 +364,7 @@ def work_claim(args: dict) -> list:
     store = get_store()
     try:
         updated = store.claim_work_item(
-            work_item_id, expected_version, actor, lease_seconds, force, reason
+            cast(str, work_item_id), cast(int, expected_version), cast(Dict[str, Any], actor), cast(int, lease_seconds), bool(force), cast(Optional[str], reason)
         )
         return [{"work_item": updated}]
     except Exception as e:
@@ -385,7 +385,7 @@ def work_renew_claim(args: dict) -> list:
     store = get_store()
     try:
         updated = store.renew_claim(
-            work_item_id, expected_version, actor, lease_seconds, reason
+            cast(str, work_item_id), cast(int, expected_version), cast(Dict[str, Any], actor), cast(int, lease_seconds), cast(Optional[str], reason)
         )
         return [{"work_item": updated}]
     except Exception as e:
@@ -406,7 +406,7 @@ def work_release_claim(args: dict) -> list:
     store = get_store()
     try:
         updated = store.release_claim(
-            work_item_id, expected_version, actor, force, reason
+            cast(str, work_item_id), cast(int, expected_version), cast(Dict[str, Any], actor), bool(force), cast(Optional[str], reason)
         )
         return [{"work_item": updated}]
     except Exception as e:

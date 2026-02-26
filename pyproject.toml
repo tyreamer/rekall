@@ -28,3 +28,8 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools-scm]
+
+[tool.mypy]
+mypy_path = "src"
+explicit_package_bases = true
+ignore_missing_imports = true

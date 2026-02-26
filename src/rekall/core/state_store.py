@@ -743,9 +743,9 @@ class StateStore:
         import datetime
 
         now = datetime.datetime.now(datetime.timezone.utc)
-        lease_until = (now + datetime.timedelta(seconds=lease_seconds)).isoformat()
+        lease_until_ts = (now + datetime.timedelta(seconds=lease_seconds)).isoformat()
 
-        claim_data = {"claimed_by": actor.get("actor_id"), "lease_until": lease_until}
+        claim_data = {"claimed_by": actor.get("actor_id"), "lease_until": lease_until_ts}
 
         event = {
             "event_id": str(uuid.uuid4()),
@@ -1307,7 +1307,7 @@ class StateStore:
         Returns a structured report dictionary.
         Raises ValueError in strict mode if any warnings exist.
         """
-        report = {
+        report: Dict[str, Any] = {
             "summary": {"status": "\u2705", "errors": 0, "warnings": 0},
             "schema_version": {"status": "\u2705", "details": ""},
             "files_present": {"status": "\u2705", "missing": []},
