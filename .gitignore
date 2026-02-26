@@ -27,3 +27,21 @@ test_out.txt
 .vscode/
 *.DS_Store
 Thumbs.db
+
+# Private Roadmap
+roadmap/
+
+# Rekall State (Local Dogfooding - tracked intentionally)
+# .rekall/
+# artifacts/
+
+# Local overrides and secrets
+.env
+.env.local
+*.local
+envs.yaml
+access.yaml
+
+# Local development
+scratch/
+logs/
