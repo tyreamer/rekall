@@ -1,0 +1,289 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/run-rekall/rekall/schemas/state-artifact.schema.json",
+    "title": "Rekall State Artifact",
+    "description": "Schema for Rekall project state append-only logs.",
+    "type": "object",
+    "properties": {
+        "attempt": {
+            "type": "object",
+            "properties": {
+                "attempt_id": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "performed_by": {
+                    "type": "object"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "success",
+                        "failed",
+                        "in_progress"
+                    ]
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "attempt_id",
+                "timestamp",
+                "performed_by",
+                "status",
+                "notes"
+            ]
+        },
+        "decision": {
+            "type": "object",
+            "properties": {
+                "decision_id": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "decided_by": {
+                    "type": "object"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "proposed",
+                        "approved",
+                        "rejected"
+                    ]
+                },
+                "tradeoffs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "minItems": 1
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "supersedes": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "decision_id",
+                "timestamp",
+                "title",
+                "status",
+                "tradeoffs"
+            ]
+        },
+        "artifact": {
+            "type": "object",
+            "properties": {
+                "artifact_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "const": "artifact"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "object"
+                },
+                "artifact_type": {
+                    "type": "string"
+                },
+                "ref": {
+                    "type": "object",
+                    "properties": {
+                        "provider": {
+                            "type": "string"
+                        },
+                        "key": {
+                            "type": "string"
+                        },
+                        "url": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "provider",
+                        "key"
+                    ]
+                },
+                "title": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "artifact_id",
+                "type",
+                "created_at",
+                "artifact_type",
+                "ref"
+            ]
+        },
+        "research_item": {
+            "type": "object",
+            "properties": {
+                "research_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "const": "research_item"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "object"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "claims": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ref": {
+                    "type": "object",
+                    "properties": {
+                        "provider": {
+                            "type": "string"
+                        },
+                        "key": {
+                            "type": "string"
+                        },
+                        "url": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "idempotency_key": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "research_id",
+                "type",
+                "created_at",
+                "title",
+                "claims"
+            ]
+        },
+        "link": {
+            "type": "object",
+            "properties": {
+                "edge_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "const": "link"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "object"
+                },
+                "from": {
+                    "type": "object",
+                    "properties": {
+                        "node_type": {
+                            "type": "string"
+                        },
+                        "id": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "node_type",
+                        "id"
+                    ]
+                },
+                "to": {
+                    "type": "object",
+                    "properties": {
+                        "node_type": {
+                            "type": "string"
+                        },
+                        "id": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "node_type",
+                        "id"
+                    ]
+                },
+                "idempotency_key": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "edge_id",
+                "type",
+                "created_at",
+                "from",
+                "to"
+            ]
+        },
+        "anchor": {
+            "type": "object",
+            "properties": {
+                "anchor_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "const": "anchor"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "object"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "next_steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "idempotency_key": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "anchor_id",
+                "type",
+                "timestamp",
+                "note"
+            ]
+        }
+    }
+}

@@ -100,8 +100,8 @@ class StateStore:
             raise FileNotFoundError("Missing schema-version.txt")
             
         version = schema_file.read_text().strip()
-        if version != "0.1":
-            raise SchemaVersionError(f"Unsupported schema version: {version}. Expected: 0.1")
+        if version not in ["0.1", "0.2"]:
+            raise SchemaVersionError(f"Unsupported schema version: {version}. Expected: 0.1 or 0.2")
             
         # 2. Load Manifest and Migrate if necessary
         self._load_manifest()
@@ -1094,7 +1094,7 @@ class StateStore:
         else:
             v = schema_file.read_text().strip()
             report["schema_version"]["details"] = v
-            if v != "0.1":
+            if v not in ["0.1", "0.2"]:
                 add_error("schema_version", f"Unsupported version: {v}")
                 
         # 2. Files Present
