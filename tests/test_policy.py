@@ -1,6 +1,4 @@
-import pytest
-from pathlib import Path
-from rekall.core.policy import PolicyEngine, get_default_policy
+from rekall.core.policy import PolicyEngine
 from rekall.core.state_store import StateStore
 
 def test_policy_engine_matches():
@@ -29,9 +27,8 @@ def test_policy_engine_matches():
     assert res["effect"] == "allow"
 
 def test_state_store_auto_policy(tmp_path):
-    # Initialize minimal state
     (tmp_path / "schema-version.txt").write_text("0.1", encoding="utf-8")
-    store = StateStore(tmp_path)
+    StateStore(tmp_path)
     policy_file = tmp_path / "policy.yaml"
     assert policy_file.exists()
     assert "warn-destructive-shell" in policy_file.read_text()

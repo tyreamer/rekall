@@ -1,6 +1,4 @@
 import argparse
-import hmac
-import hashlib
 import tarfile
 import sys
 import json
@@ -1396,7 +1394,7 @@ def cmd_status(args):
             }))
             return
 
-        print(f"\n[ rekall status ]")
+        print("\n[ rekall status ]")
         sig_s = "SIGNED" if anchors_stream and anchors_stream[-1].get("signature") else "UNSIGNED"
         verif_status = "✅ INTEGRITY OK" if last_event_hash != "N/A" else "⚠️ EMPTY LEDGER"
         print(f"{verif_status} | Anchor: {sig_s} | HEAD: {last_event_hash[:12]}...")
