@@ -1266,7 +1266,7 @@ class StateStore:
         if idempotency_key:
             wait_event["idempotency_key"] = idempotency_key
             
-        record = self.append_jsonl_idempotent("actions.jsonl", wait_event, "decision_id")
+        self.append_jsonl_idempotent("actions.jsonl", wait_event, "decision_id")
         return {
             "status": "PAUSE_AND_EXIT", 
             "message": f"Decision {decision_id} recorded. Please exit your loop and wait for human resume.", 

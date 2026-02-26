@@ -857,7 +857,6 @@ def test_actuator_cli(monkeypatch, tmp_path):
     from rekall.server.mcp_server import (
         propose_action,
         actuate_cli,
-        get_store,
     )
 
     global _store
@@ -903,7 +902,6 @@ def test_actuator_file_write(monkeypatch, tmp_path):
     from rekall.server.mcp_server import (
         propose_action,
         actuate_file_write,
-        get_store,
     )
 
     global _store
@@ -947,7 +945,7 @@ def test_policy_preflight(tmp_path, monkeypatch):
     import shutil
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    from rekall.server.mcp_server import policy_preflight, get_store
+    from rekall.server.mcp_server import policy_preflight
     
     global _store
     _store = None
