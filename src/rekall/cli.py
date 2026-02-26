@@ -1147,7 +1147,22 @@ def cmd_onboard(args):
         die(ExitCode.INTERNAL_ERROR, f"Onboarding failed: {str(e)}", args.json, debug=args.debug)
 
 def main():
-    setup_logging()
+    # Reconfigure stdout/stderr to handle Unicode on Windows (cp1252 falls back to ?)
+    # This prevents UnicodeEncodeError when printing emojis.
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name)
+        if hasattr(stream, "reconfigure"):
+            try:
+                if sys.platform == "win32":
+                    # Force UTF-8 on Windows for better emoji support in modern terminals
+                    stream.reconfigure(encoding='utf-8', errors='replace')
+                else:
+                    stream.reconfigure(errors='replace')
+            except Exception:
+                try:
+                    stream.reconfigure(errors='replace')
+                except Exception:
+                    pass
     
     desc = """Rekall: project reality blackboard + ledger (not Kanban)
     
@@ -1327,6 +1342,7 @@ EXAMPLES:
     parser_onboard.set_defaults(func=cmd_onboard)
 
     args = parser.parse_args()
+
     setup_logging(args.json, getattr(args, "quiet", False))
     
     try:
