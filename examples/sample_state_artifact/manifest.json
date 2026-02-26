@@ -3,22 +3,28 @@
     "work_items": {
       "active_file": "streams/work_items/active.jsonl",
       "segments": [],
-      "id_field": "event_id"
+      "id_field": "event_id",
+      "latest_hash": "8874b7eb4679a407eae9c49d73423565625540d88ba808424a6ad6fbc26138f6"
     },
     "activity": {
       "active_file": "streams/activity/active.jsonl",
-      "segments": [],
-      "id_field": "activity_id"
+      "segments": [
+        "streams/activity/seg-0001.jsonl"
+      ],
+      "id_field": "activity_id",
+      "latest_hash": "04844120405a20bfd05e31478b1931b9b532c603448a441578f569a332603823"
     },
     "attempts": {
       "active_file": "streams/attempts/active.jsonl",
       "segments": [],
-      "id_field": "attempt_id"
+      "id_field": "attempt_id",
+      "latest_hash": "0b266479f5d5fa53574e8ab7e0b53cc1953400827b02dcdf61a74ad311825258"
     },
     "decisions": {
       "active_file": "streams/decisions/active.jsonl",
       "segments": [],
-      "id_field": "decision_id"
+      "id_field": "decision_id",
+      "latest_hash": "f4778a60b2611647245b804de9047bf2cf622ba348e616300349c06a4a7a35b5"
     },
     "timeline": {
       "active_file": "streams/timeline/active.jsonl",
@@ -43,12 +49,14 @@
     "anchors": {
       "active_file": "streams\\anchors\\active.jsonl",
       "segments": [],
-      "id_field": "anchor_id"
+      "id_field": "anchor_id",
+      "latest_hash": "f47294e8a225e1a21dae7f4c4161a41eb174c926b6161ea73d716b763020a90a"
     },
     "actions": {
       "active_file": "streams\\actions\\active.jsonl",
       "segments": [],
-      "id_field": "action_id"
+      "id_field": "action_id",
+      "latest_hash": "1347f91db08b3fbaa1ed6799b9ea30efc0a0574662aaae1a9bf1857dae21237d"
     }
   },
   "last_checkpoint": null,

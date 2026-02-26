@@ -6,11 +6,12 @@ Thanks for your interest! Here's how to get started.
 
 ```bash
 # Clone and create a virtual environment
-git clone https://github.com/anthropic-labs/rekall.git
+git clone https://github.com/tyreamer/rekall.git
 cd rekall
 python -m venv venv
 source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -e ".[dev]"    # or: pip install -e . && pip install pytest
+pip install -e ".[dev]"
+pre-commit install         # Optional: enables automatic checks on commit
 ```
 
 ## Running Tests
@@ -18,8 +19,24 @@ pip install -e ".[dev]"    # or: pip install -e . && pip install pytest
 ```bash
 # Full suite
 pytest tests/ -v
+```
 
-# Smoke test
+## Running Verification
+
+Before pushing, always run the full quality suite:
+
+```bash
+# Windows (PowerShell)
+./scripts/verify.ps1
+
+# Unix/Mac
+bash scripts/verify.sh
+```
+
+This runs **Ruff** (linting), **Mypy** (typing), and **Pytest** (tests).
+
+### Smoke Test
+```bash
 rekall demo --quiet
 ```
 

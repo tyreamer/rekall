@@ -95,7 +95,7 @@ def test_optimistic_concurrency(tmp_path):
     (tmp_path / "schema-version.txt").write_text("0.1")
     store = StateStore(tmp_path)
 
-    # Add a mock work item via the API if possible, or just mock memory for this specific test
+    # Add a mock work item via the API if possible, or just mock execution record for this specific test
     # But since initialize() replays work_items, we should at least have a manifest entry
     store.append_jsonl_idempotent("work_items", {"event_id": "dummy"}, "event_id")
     store.work_items["WI-test"] = {

@@ -58,7 +58,7 @@ An append-only provenance record emitted for every write:
 - optional diff and reason
 
 ## Typed Link
-A structured link to an external artifact or system (repo/doc/board/logs/traces/etc.), with a `type`, `label`, `url`, optional `system`, and optional notes.
+A structured link to an external artifact or system (repo/doc/audit trail/logs/traces/etc.), with a `type`, `label`, `url`, optional `system`, and optional notes.
 
 ## Access Reference (AccessRef)
 A secret-safe pointer to access or credentials:

@@ -1,7 +1,7 @@
 # Project State Layer — MCP Tool Contract (v0.1)
 
 **Status:** Draft (v0.1)  
-**Purpose:** Implementation-ready tool contract for an MCP server that exposes a **Project State Layer** (portable project memory + coordination semantics) to chat agents and other clients.
+**Purpose:** Implementation-ready tool contract for an MCP server that exposes a **Project State Layer** (portable verifiable AI execution record + coordination semantics) to chat agents and other clients.
 
 This contract is designed to satisfy the **Invariants & Operating Rules** and the **Executive Status Query Contract** you already defined.
 
@@ -73,7 +73,7 @@ If a caller lacks permission, return `FORBIDDEN`.
 ```json
 {
   "link_id": "string",
-  "type": "repo | board | doc | dashboard | logs | traces | alerting | design | dataset | ticketing | runbook | demo | domain | model | mcp_server | notebook | other",
+  "type": "repo | audit trail | doc | dashboard | logs | traces | alerting | design | dataset | ticketing | runbook | demo | domain | model | mcp_server | notebook | other",
   "label": "string",
   "url": "string",
   "system": "github | jira | notion | slack | figma | datadog | sentry | gcp | aws | azure | cloudflare | other (optional)",

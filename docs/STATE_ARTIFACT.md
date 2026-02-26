@@ -1,6 +1,6 @@
 # Rekall State Artifacts
 
-Rekall operates entirely on local, plain-text logs stored in a directory (typically `project-state/`) at the root of your repository. This design ensures that the **project memory lives with the code**.
+Rekall operates entirely on local, plain-text logs stored in a directory (typically `project-state/`) at the root of your repository. This design ensures that the **verifiable AI execution record lives with the code**.
 
 ## "Safe to Commit" Guarantee
 
@@ -51,7 +51,7 @@ All event streams are **append-only JSONL files**.
 
 **Attempt** (`attempts.jsonl`)
 ```json
-{"attempt_id": "att-123", "timestamp": "...", "performed_by": {"actor_id": "agent-1"}, "status": "failed", "notes": "Tried X but memory spiked"}
+{"attempt_id": "att-123", "timestamp": "...", "performed_by": {"actor_id": "agent-1"}, "status": "failed", "notes": "Tried X but execution record spiked"}
 ```
 
 **Decision** (`decisions.jsonl`)

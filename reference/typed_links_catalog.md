@@ -12,9 +12,9 @@ Use the smallest set needed to remain consistent.
 ### Engineering
 - `repo` — source repository (GitHub/GitLab/etc.)
 - `ticketing` — Jira ticket, linear issue, service now record
-- `board` — project board (GitHub Projects, Jira board, Trello board)
+- `audit trail` — project audit trail (GitHub Projects, Jira audit trail, Trello audit trail)
 - `doc` — long-form doc (Notion, Confluence, Google Doc)
-- `design` — design artifact (Figma file, FigJam board)
+- `design` — design artifact (Figma file, FigJam audit trail)
 - `runbook` — operational runbook/playbook
 - `demo` — demo URL, loom, recorded walkthrough
 - `dataset` — dataset location / table reference
@@ -75,11 +75,11 @@ url: "https://github.com/acme/project"
 system: github
 ```
 
-### Board
+### audit trail
 ```yaml
-link_id: LNK-board
-type: board
-label: "GitHub Projects board"
+link_id: LNK-audit trail
+type: audit trail
+label: "GitHub Projects audit trail"
 url: "https://github.com/orgs/acme/projects/12"
 system: github
 ```

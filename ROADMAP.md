@@ -9,7 +9,7 @@ Rekall’s mission is to be the **persistent, immutable reality layer** for auto
 - Append-only immutability. History is never truncated or deleted.
 - Deterministic resumption: agents can stop and resume from Rekall state exactly as it was.
 - Developer wedge: default experience is **OPEN and helpful** (saves time and API credits), never bureaucratic approval theater.
-- No web UI, no Kanban, no collaborative editing, no embeddings or vector memory features.
+- No web UI, no audit trail, no collaborative editing, no embeddings or vector execution record features.
 - No hosted server in the first 90 days. Sharing happens via verifiable bundles only.
 
 We build in **“Proof of Physics” order** — first prove the foundational mechanics, then layer on the delightful features.

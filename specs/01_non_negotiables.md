@@ -66,7 +66,7 @@ We are **not**:
 
 We **are**:
 - the vendor-neutral **project truth layer**
-- portable project memory
+- portable verifiable AI execution record
 - agent-native coordination substrate
 
 ---
