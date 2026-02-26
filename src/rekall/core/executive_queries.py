@@ -162,7 +162,7 @@ def query_executive_status(
             res.summary.append(f"Found {len(decs)} total decisions.")
             res.evidence.extend(
                 [
-                    f"decision: {d['decision_id']} ({d.get('title', 'untitled')})"
+                    f"decision: {d['decision_id']} ({d.get('title', 'untitled')}) [hash: {d.get('event_hash', 'N/A')[:8]}...]"
                     for d in decs[:5]
                 ]
             )
@@ -207,6 +207,7 @@ def query_executive_status(
         resolved = []
         for w in waits:
             aid = w.get("action_id")
+            w_hash = w.get("event_hash", "N/A")[:8]
             if aid in decision_by_action:
                 resolved.append((w, decision_by_action[aid]))
             else:
@@ -215,11 +216,28 @@ def query_executive_status(
         if unresolved:
             res.summary.append(f"WARNING: There are {len(unresolved)} UNRESOLVED breakpoints. Human must rekall decide.")
             for w in unresolved[:3]:
-                res.evidence.append(f"unresolved_breakpoint: action_id={w.get('action_id')} reason={w.get('reason')}")
+                w_hash = w.get("event_hash", "N/A")[:8]
+                res.evidence.append(f"unresolved_breakpoint: action_id={w.get('action_id')} reason={w.get('reason')} [hash: {w_hash}...]")
         if resolved:
             res.summary.append(f"There are {len(resolved)} RESOLVED breakpoints ready for agent pickup.")
             for w, d in resolved[-3:]:
-                res.evidence.append(f"resolved_breakpoint: action_id={w.get('action_id')} decision={d.get('status')}")
+                d_hash = d.get("event_hash", "N/A")[:8]
+                res.evidence.append(f"resolved_breakpoint: action_id={w.get('action_id')} decision={d.get('status')} [hash: {d_hash}...]")
+        
+        # Policy Check Evidence
+        acts = store._load_jsonl("activity.jsonl")
+        policy_checks = [a for a in acts if a.get("type") == "PolicyCheck"]
+        if policy_checks:
+            last_p = policy_checks[-1]
+            res.summary.append(f"Evidence: Shadow policy guardrail active. Last check: {last_p.get('effect')} ({last_p.get('rule_id')}).")
+            res.evidence.append(f"policy_check: status={last_p.get('effect')} rule={last_p.get('rule_id')} [hash: {last_p.get('event_hash', 'N/A')[:8]}...]")
+
+        # Human Anchor Evidence
+        anchors = [a for a in acts if a.get("type") == "HumanAnchor"]
+        if anchors:
+            last_a = anchors[-1]
+            sig_s = "SIGNED" if last_a.get("signature") else "UNSIGNED"
+            res.evidence.append(f"provenance_anchor: {last_a.get('activity_id')} [{sig_s}]")
 
         res.evidence.extend([f"work_item: {w['work_item_id']}" for w in in_prog[:2]])
         res.evidence.extend([f"work_item: {w['work_item_id']}" for w in blockers[:2]])

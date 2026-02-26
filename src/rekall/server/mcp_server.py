@@ -98,12 +98,12 @@ def project_onboard(args: dict) -> list:
         lines = []
         lines.append(f"# Onboarding Cheat Sheet: {repo_name}")
         lines.append(f"**Generated**: {timestamp}")
-        lines.append(f"**Ledger Last Updated**: {last_updated}")
+        lines.append(f"**execution ledger Last Updated**: {last_updated}")
         lines.append("")
 
         lines.append("## What is Rekall?")
         lines.append(
-            "Rekall is a project state ledger for AI agents and human collaborators."
+            "Rekall is a project state execution ledger for AI agents and human collaborators."
         )
         lines.append(
             "It tracks decisions, attempts, and work items as a machine-readable event stream."
@@ -143,7 +143,7 @@ def project_onboard(args: dict) -> list:
             "\u251c\u2500\u2500 project.yaml          # Project identity & goals"
         )
         lines.append(
-            "\u251c\u2500\u2500 work-items.jsonl      # Mutable work state ledger"
+            "\u251c\u2500\u2500 work-items.jsonl      # Mutable work state execution ledger"
         )
         lines.append("\u251c\u2500\u2500 decisions.jsonl       # Architectural choices")
         lines.append(
@@ -650,6 +650,62 @@ def graph_trace(args: dict) -> list:
     except Exception as e:
         return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
 
+def policy_preflight(args: dict) -> list:
+    project_id = args.get("project_id")
+    action_type = args.get("action_type")
+    params = args.get("params", {})
+    context = args.get("context", {})
+    if not project_id or not action_type:
+        raise ValueError("project_id and action_type are required")
+    store = get_store()
+    try:
+        res = store.check_policy(action_type, params, context)
+        return [res]
+    except Exception as e:
+        return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
+
+def exec_natural_query(args: dict) -> list:
+    project_id = args.get("project_id")
+    query = args.get("query")
+    if not project_id or not query:
+        raise ValueError("project_id and query are required")
+        
+    store = get_store()
+    try:
+        # Load the critical ledger streams
+        timeline = store._load_stream("timeline.jsonl") or []
+        attempts = store._load_stream("attempts.jsonl") or []
+        decisions = store._load_stream("decisions.jsonl") or []
+        
+        # Format the ledger for the LLM
+        ledger_text = []
+        ledger_text.append(f"====== PROJECT EXECUTION LEDGER for {project_id} ======")
+        
+        ledger_text.append("\n--- TIMELINE EVENTS ---")
+        for t in timeline[-25:]: # Limit to recent
+            ledger_text.append(json.dumps(t))
+            
+        ledger_text.append("\n--- RECENT ATTEMPTS ---")
+        for a in attempts[-25:]:
+            ledger_text.append(json.dumps(a))
+            
+        ledger_text.append("\n--- RECENT DECISIONS ---")
+        for d in decisions[-25:]:
+            ledger_text.append(json.dumps(d))
+            
+        system_instruction = f"""
+You are answering the user's query: "{query}"
+
+Use the execution ledger provided above to formulate your answer.
+RULES:
+1. You MUST cite exact event IDs (e.g., attempt_id, decision_id, event_id) for every claim you make.
+2. If the evidence is missing from the ledger, explicitly state: "Evidence missing. A log entry for X is required."
+3. Do not invent or hallucinate events. 
+"""
+        return [{"text": "\n".join(ledger_text) + "\n\n" + system_instruction}]
+    except Exception as e:
+        return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
+
 
 def propose_action(args: dict) -> list:
     project_id = args.get("project_id")
@@ -676,6 +732,7 @@ def propose_action(args: dict) -> list:
 
 def capture_approval(args: dict) -> list:
     project_id = args.get("project_id")
+    decision_id = args.get("decision_id")
     action_id = args.get("action_id")
     decision = args.get("decision")
     note = args.get("note", "")
@@ -683,12 +740,12 @@ def capture_approval(args: dict) -> list:
     actor = args.get("actor") or actor_metadata
     reason = args.get("reason")
     idempotency_key = args.get("idempotency_key")
-    if not project_id or not action_id or not decision or not actor:
-        raise ValueError("project_id, action_id, decision, and actor are required")
+    if not project_id or not decision_id or not decision or not actor:
+        raise ValueError("project_id, decision_id, decision, and actor are required")
     store = get_store()
     try:
         updated = store.capture_approval(
-            action_id, decision, note, actor, reason=reason, idempotency_key=idempotency_key
+            decision_id, decision, action_id=action_id, note=note, actor=actor, reason=reason, idempotency_key=idempotency_key
         )
         return [updated]
     except Exception as e:
@@ -697,16 +754,19 @@ def capture_approval(args: dict) -> list:
 
 def wait_for_approval(args: dict) -> list:
     project_id = args.get("project_id")
+    decision_id = args.get("decision_id")
+    prompt = args.get("prompt", "Human approval required.")
+    options = args.get("options", ["approve", "reject"])
     action_id = args.get("action_id")
     actor = args.get("actor")
     reason = args.get("reason")
     idempotency_key = args.get("idempotency_key")
-    if not project_id or not action_id or not actor:
-        raise ValueError("project_id, action_id, and actor are required")
+    if not project_id or not decision_id or not actor:
+        raise ValueError("project_id, decision_id, and actor are required")
     store = get_store()
     try:
         updated = store.wait_for_approval(
-            action_id, actor, reason=reason, idempotency_key=idempotency_key
+            decision_id, prompt, options, actor=actor, action_id=action_id, reason=reason, idempotency_key=idempotency_key
         )
         return [updated]
     except Exception as e:
@@ -1251,6 +1311,20 @@ TOOLS_DEF = [
         },
     },
     {
+        "name": "policy.preflight",
+        "description": "Preflight check for an action against current policies (shadow mode).",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id", "action_type"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "action_type": {"type": "string"},
+                "params": {"type": "object"},
+                "context": {"type": "object"},
+            },
+        },
+    },
+    {
         "name": "rekall.propose_action",
         "description": "Propose an action before executing it to record intent and a deterministic action hash.",
         "inputSchema": {
@@ -1270,12 +1344,13 @@ TOOLS_DEF = [
     },
     {
         "name": "rekall.capture_approval",
-        "description": "Capture human or agent approval/rejection for an action.",
+        "description": "Capture human or agent approval/rejection for an action or decision.",
         "inputSchema": {
             "type": "object",
-            "required": ["project_id", "action_id", "decision", "actor"],
+            "required": ["project_id", "decision_id", "decision", "actor"],
             "properties": {
                 "project_id": {"type": "string"},
+                "decision_id": {"type": "string"},
                 "action_id": {"type": "string"},
                 "decision": {"type": "string"},
                 "note": {"type": "string"},
@@ -1288,13 +1363,19 @@ TOOLS_DEF = [
     },
     {
         "name": "rekall.wait_for_approval",
-        "description": "Signal that the agent is pausing and waiting for a human to approve an action. Returns a PAUSE_AND_EXIT instruction.",
+        "description": "Signal that the agent is pausing and waiting for a human to approve an action or decision. Returns a PAUSE_AND_EXIT instruction.",
         "inputSchema": {
             "type": "object",
-            "required": ["project_id", "action_id", "actor"],
+            "required": ["project_id", "decision_id", "actor"],
             "properties": {
                 "project_id": {"type": "string"},
+                "decision_id": {"type": "string"},
                 "action_id": {"type": "string"},
+                "prompt": {"type": "string"},
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
                 "actor": {"type": "object"},
                 "reason": {"type": "string"},
                 "idempotency_key": {"type": "string"},
@@ -1347,6 +1428,18 @@ TOOLS_DEF = [
             },
         },
     },
+    {
+        "name": "rekall.exec.query",
+        "description": "Query the execution ledger with a natural language question. Returns ledger data and strict citation rules.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id", "query"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "query": {"type": "string", "description": "Natural language question"}
+            },
+        },
+    },
 ]
 
 TOOL_REGISTRY = {
@@ -1379,12 +1472,14 @@ TOOL_REGISTRY = {
     "anchor.resume": anchor_resume,
     "digest.while_you_were_gone": digest_while_you_were_gone,
     "graph.trace": graph_trace,
+    "policy.preflight": policy_preflight,
     "rekall.propose_action": propose_action,
     "rekall.wait_for_approval": wait_for_approval,
     "rekall.capture_approval": capture_approval,
     "rekall.capture_outcome": capture_outcome,
     "rekall.actuate_cli": actuate_cli,
     "rekall.actuate_file_write": actuate_file_write,
+    "rekall.exec.query": exec_natural_query,
 }
 
 

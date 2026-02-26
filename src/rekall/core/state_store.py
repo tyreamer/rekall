@@ -1,12 +1,17 @@
 import json
 import logging
+import os
 import re
 import shutil
+import sys
 import uuid
 import datetime
+import hmac
+import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 import yaml
+from .policy import PolicyEngine, get_default_policy
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +87,7 @@ class StateStore:
         self.base_dir = Path(base_dir)
         self.work_items: Dict[str, Dict[str, Any]] = {}
 
-        # In-memory caches for easy access
+        # In-execution record caches for easy access
         self.project_config: Dict[str, Any] = {}
         self.envs_config: Dict[str, Any] = {}
         self.access_config: Dict[str, Any] = {}
@@ -125,6 +130,13 @@ class StateStore:
 
         # 4. Reload Work Items from event stream (HOT only by default)
         self._replay_work_items()
+
+        # 5. Ensure default policy exists
+        policy_file = self.base_dir / "policy.yaml"
+        if not policy_file.exists():
+            policy_file.write_text(get_default_policy(), encoding="utf-8")
+        
+        self.initialized = True
 
     def _load_manifest(self):
         manifest_path = self.base_dir / "manifest.json"
@@ -321,6 +333,55 @@ class StateStore:
             return records
         return self._apply_head_semantics(records)
 
+    def _get_device_secret(self) -> str:
+        """Retrieves or generates a device-local secret for signatures."""
+        config_dir = Path.home() / ".rekall"
+        secret_file = config_dir / "device-secret.txt"
+        if secret_file.exists():
+            return secret_file.read_text().strip()
+        
+        config_dir.mkdir(parents=True, exist_ok=True)
+        secret = uuid.uuid4().hex + uuid.uuid4().hex
+        secret_file.write_text(secret)
+        return secret
+
+    def _sign_event(self, event_hash: str) -> str:
+        """Signs an event hash using HMAC-SHA256 with the device secret."""
+        secret = self._get_device_secret()
+        sig = hmac.new(secret.encode("utf-8"), event_hash.encode("utf-8"), hashlib.sha256).hexdigest()
+        return sig
+
+    def verify_stream_integrity(self, stream_name: str) -> Dict[str, Any]:
+        """
+        Validates the cryptographic hash chain for a given stream.
+        """
+        records = self._load_stream_raw(stream_name, hot_only=False)
+        errors = []
+        last_hash = None
+        
+        for i, record in enumerate(records):
+            # 1. Check prev_hash matches last_hash
+            if record.get("prev_hash") != last_hash:
+                errors.append(f"Record {i} prev_hash mismatch: expected {last_hash}, got {record.get('prev_hash')}")
+            
+            # 2. Recalculate event_hash
+            record_for_hash = record.copy()
+            claimed_hash = record_for_hash.pop("event_hash", None)
+            record_json_canonical = json.dumps(record_for_hash, sort_keys=True)
+            actual_hash = hashlib.sha256(record_json_canonical.encode("utf-8")).hexdigest()
+            
+            if claimed_hash != actual_hash:
+                errors.append(f"Record {i} event_hash mismatch: expected {claimed_hash}, got {actual_hash}")
+                
+            last_hash = actual_hash
+            
+        return {
+            "stream": stream_name,
+            "count": len(records),
+            "status": "\u2705" if not errors else "\u274c",
+            "errors": errors
+        }
+
     def append_jsonl_idempotent(
         self, stream_name: str, record: Dict[str, Any], id_field: str
     ) -> Dict[str, Any]:
@@ -347,6 +408,7 @@ class StateStore:
                 "active_file": str(active_file.relative_to(self.base_dir)),
                 "segments": [],
                 "id_field": id_field,
+                "latest_hash": None
             }
             self._save_manifest()
 
@@ -392,7 +454,27 @@ class StateStore:
                 record,
             )
 
-        # 4. Atomic Append with Locking logic (simplified for now)
+        # 4. Hash Chain logic
+        import hashlib
+        prev_hash = stream_info.get("latest_hash")
+        record["prev_hash"] = prev_hash
+        
+        # Canonical hash of everything in record except the hash field itself
+        record_for_hash = record.copy()
+        record_json_canonical = json.dumps(record_for_hash, sort_keys=True)
+        event_hash = hashlib.sha256(record_json_canonical.encode("utf-8")).hexdigest()
+        record["event_hash"] = event_hash
+        
+        # Final JSON for writing
+        record_json = json.dumps(record, sort_keys=True)
+        
+        # Guardrail on final size
+        if len(record_json.encode("utf-8")) > BloatConfig.MAX_RECORD_BYTES:
+            raise ValueError(
+                f"Record exceeds maximum size of {BloatConfig.MAX_RECORD_BYTES} bytes"
+            )
+
+        # 5. Atomic Append with Locking logic (simplified for now)
         lock_file = active_path.with_suffix(".lock")
         try:
             # Basic file locking (wait-and-retry could be added)
@@ -421,6 +503,10 @@ class StateStore:
 
             with open(active_path, "a", encoding="utf-8") as f:
                 f.write(record_json + "\n")
+
+            # Update manifest with latest hash
+            self.manifest["streams"][stream_name]["latest_hash"] = event_hash
+            self._save_manifest()
 
             # Update cache
             if rid:
@@ -679,7 +765,7 @@ class StateStore:
             "create", "work_item", wid, actor, diff=patch, reason=reason
         )
 
-        # Apply to memory
+        # Apply to execution record
         patch["work_item_id"] = wid
         patch["version"] = 1
         patch["claim"] = None
@@ -734,7 +820,7 @@ class StateStore:
             "update", "work_item", work_item_id, actor, diff=patch, reason=reason
         )
 
-        # Re-apply memory state
+        # Re-apply execution record state
         item.update(patch)
         item["version"] += 1
         return item
@@ -1155,32 +1241,38 @@ class StateStore:
 
     def wait_for_approval(
         self,
-        action_id: str,
+        decision_id: str,
+        prompt: str,
+        options: list,
         actor: Dict[str, Any],
+        action_id: Optional[str] = None,
         reason: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Appends a WaitingOnHuman event to signal the agent should pause."""
+        detect_secrets(prompt)
         import datetime
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
-        wait_id = f"wait-{uuid.uuid4().hex[:8]}"
         wait_event = {
-            "wait_id": wait_id,
+            "decision_id": decision_id,
             "type": "WaitingOnHuman",
-            "action_id": action_id,
+            "prompt": prompt,
+            "options": options,
             "timestamp": now,
             "created_by": actor,
             "reason": reason
         }
+        if action_id:
+            wait_event["action_id"] = action_id
         if idempotency_key:
             wait_event["idempotency_key"] = idempotency_key
             
-        record = self.append_jsonl_idempotent("actions.jsonl", wait_event, "wait_id")
+        record = self.append_jsonl_idempotent("actions.jsonl", wait_event, "decision_id")
         return {
             "status": "PAUSE_AND_EXIT", 
-            "message": f"Action {action_id} recorded. Please exit your loop and wait for human resume.", 
-            "wait_id": wait_id,
+            "message": f"Decision {decision_id} recorded. Please exit your loop and wait for human resume.", 
+            "decision_id": decision_id,
             "action_id": action_id
         }
 
@@ -1210,6 +1302,15 @@ class StateStore:
         record = self.append_jsonl_idempotent("reverts.jsonl", revert, "revert_id")
         return record
 
+    def check_policy(self, action_type: str, params: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Runs the policy engine against an action."""
+        policy_file = self.base_dir / "policy.yaml"
+        if not policy_file.exists():
+            return {"effect": "allow", "rule_id": None, "reason": "No policy.yaml found"}
+            
+        engine = PolicyEngine.from_file(str(policy_file))
+        return engine.check_action(action_type, params, context)
+
     def propose_action(
         self,
         action_type: str,
@@ -1226,11 +1327,27 @@ class StateStore:
 
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
-        # Consistent hash of action content
+        # 1. Shadow Policy Check
+        policy_res = self.check_policy(action_type, params, context)
+        
+        # 2. Consistent hash of action content
         content_str = json.dumps({"action_type": action_type, "params": params}, sort_keys=True)
         action_hash = hashlib.sha256(content_str.encode("utf-8")).hexdigest()
 
         action_id = f"act-{uuid.uuid4().hex[:8]}"
+        
+        # 3. Record Policy Check result
+        check_event = {
+            "check_id": f"chk-{uuid.uuid4().hex[:8]}",
+            "type": "PolicyCheck",
+            "action_id": action_id,
+            "effect": policy_res["effect"],
+            "rule_id": policy_res["rule_id"],
+            "reason": policy_res["reason"],
+            "timestamp": now,
+            "actor": actor
+        }
+        self.append_jsonl_idempotent("activity.jsonl", check_event, "check_id")
         
         event = {
             "action_id": action_id,
@@ -1240,6 +1357,7 @@ class StateStore:
             "risk_hint": risk_hint,
             "context": context,
             "action_hash": action_hash,
+            "policy_effect": policy_res["effect"],
             "timestamp": now,
             "actor": actor
         }
@@ -1249,50 +1367,64 @@ class StateStore:
         record = self.append_jsonl_idempotent("actions.jsonl", event, "action_id")
 
         if record is event:
-            self._append_activity("propose", "action", action_id, actor, diff={"action_type": action_type}, reason=reason)
+            self._append_activity("propose", "action", action_id, actor, diff={"action_type": action_type, "policy": policy_res["effect"]}, reason=reason)
 
         return record
 
     def capture_approval(
         self,
-        action_id: str,
+        decision_id: str,
         decision_str: str,
         note: str,
         actor: Dict[str, Any],
+        action_id: Optional[str] = None,
         reason: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         import datetime
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
-        decision_id = f"dec-{uuid.uuid4().hex[:8]}"
-        decision = {
+        decision_obj = {
             "decision_id": decision_id,
-            "title": f"Approval for action {action_id}",
+            "title": f"Approval response for decision {decision_id}",
             "status": "approved" if decision_str.lower() in ["approve", "approved", "yes", "allow"] else "rejected",
             "notes": note,
-            "action_id": action_id,
             "timestamp": now,
             "decided_by": actor
         }
+        if action_id:
+            decision_obj["action_id"] = action_id
         if idempotency_key:
-            decision["idempotency_key"] = idempotency_key
+            decision_obj["idempotency_key"] = idempotency_key
             
-        self.append_jsonl_idempotent("decisions.jsonl", decision, "decision_id")
+        self.append_jsonl_idempotent("decisions.jsonl", decision_obj, "decision_id")
         
         anchor_id = f"anch-{uuid.uuid4().hex[:8]}"
         anchor = {
             "anchor_id": anchor_id,
             "type": "HumanAnchor",
             "decision_id": decision_id,
-            "action_id": action_id,
             "note": note,
             "timestamp": now,
             "created_by": actor
         }
+        if action_id:
+            anchor["action_id"] = action_id
+            
+        # Add a placeholder signature based on the event hash (which append_jsonl_idempotent will calculate)
+        # But wait, append_jsonl_idempotent calculates the hash of the record PASSED to it.
+        # So we can calculate the hash here, sign it, and THEN pass it.
+        # However, append_jsonl_idempotent adds prev_hash.
+        # To simplify, we sign the concatenation of (decision_id, anchor_id, actor_id).
+        sig_base = f"{decision_id}:{anchor_id}:{actor.get('actor_id', 'unknown')}"
+        anchor["signature"] = self._sign_event(hashlib.sha256(sig_base.encode("utf-8")).hexdigest())
+            
         self.append_jsonl_idempotent("anchors.jsonl", anchor, "anchor_id")
         
-        self._append_activity("approve", "action", action_id, actor, reason=reason)
+        if action_id:
+            self._append_activity("approve", "action", action_id, actor, reason=reason)
+        else:
+            self._append_activity("approve", "decision", decision_id, actor, reason=reason)
         
         return {"status": "success", "decision_id": decision_id, "anchor_id": anchor_id}
 
