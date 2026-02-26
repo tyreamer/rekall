@@ -430,7 +430,14 @@ def test_cmd_decide_and_resume(temp_store, capfd):
     from rekall.core.state_store import StateStore
     
     store = StateStore(temp_store)
-    store.wait_for_approval("action_123", actor={"actor_id": "ag-1"}, reason="Need human review")
+    store.wait_for_approval(
+        "dec_123", 
+        "Approve?", 
+        ["yes", "no"], 
+        actor={"actor_id": "ag-1"}, 
+        action_id="action_123", 
+        reason="Need human review"
+    )
     
     # Check resume command sees unresolved breakpoint
     args_resume = Namespace(store_dir=str(temp_store), json=False)
@@ -440,7 +447,7 @@ def test_cmd_decide_and_resume(temp_store, capfd):
     assert "action_123" in captured.out
     
     # Make a decision using the CLI
-    args_decide = Namespace(store_dir=str(temp_store), json=False, action_id="action_123", option="approve", note="looks good")
+    args_decide = Namespace(store_dir=str(temp_store), json=False, decision_id="dec_123", option="approve", note="looks good")
     cmd_decide(args_decide)
     captured = capfd.readouterr()
     assert "Decision recorded" in captured.out

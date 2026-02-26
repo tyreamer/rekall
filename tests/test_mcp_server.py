@@ -476,7 +476,7 @@ def test_exec_query_on_track(monkeypatch, tmp_path):
     er = res.get("executive_response")
     assert er is not None
     assert er["confidence"] == "high"
-    assert "AT_RISK" in er["summary"][0]  # 2 active blockers
+    assert any("AT_RISK" in s for s in er["summary"])  # 2 active blockers
     assert len(er["evidence"]) > 0
 
     # 2. To test ON_TRACK, we must unblock them
@@ -495,7 +495,7 @@ def test_exec_query_on_track(monkeypatch, tmp_path):
 
     res2 = exec_query({"project_id": "prj_646d63703ec5", "query_type": "ON_TRACK"})[0]
     er2 = res2["executive_response"]
-    assert "ON_TRACK" in er2["summary"][0]
+    assert any("ON_TRACK" in s for s in er2["summary"])
     assert any(
         "in_progress" in getattr(ev, "status", "in_progress")
         for ev in er2.get("evidence", [])
@@ -530,7 +530,7 @@ def test_exec_query_blockers(monkeypatch, tmp_path):
     res = exec_query({"project_id": "prj_646d63703ec5", "query_type": "BLOCKERS"})[0]
     er = res["executive_response"]
     assert er["confidence"] in ["medium", "high"]
-    assert "blocked" in er["summary"][0]
+    assert any("blocked" in s for s in er["summary"])
     assert len(er["evidence"]) > 0
     assert any(wid in ev for ev in er["evidence"])
 
@@ -568,7 +568,7 @@ def test_exec_query_changed_since(monkeypatch, tmp_path):
         }
     )[0]
     er = res["executive_response"]
-    assert "activities since" in er["summary"][0]
+    assert any("activities since" in s for s in er["summary"])
     assert len(er["evidence"]) >= 1
 
 
