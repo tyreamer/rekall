@@ -716,3 +716,221 @@ def test_graph_trace(monkeypatch, tmp_path):
     )[0]
     assert "nodes" in res
     assert "edges" in res
+
+
+def test_propose_and_approve_capture_contract(monkeypatch, tmp_path):
+    import shutil
+
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import (
+        propose_action,
+        capture_approval,
+        capture_outcome,
+        get_store,
+    )
+
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+
+    # 1. Propose action
+    res1 = propose_action(
+        {
+            "project_id": "prj_1",
+            "action_type": "run_command",
+            "params": {"cmd": "npm install"},
+            "risk_hint": "modifies node_modules",
+            "context": {"cwd": "/app"},
+            "actor": actor,
+        }
+    )[0]
+    assert "action_id" in res1
+    assert "action_hash" in res1
+    action_id = res1["action_id"]
+
+    # 2. Capture approval
+    human_actor = {"actor_type": "human", "actor_id": "u-1"}
+    res2 = capture_approval(
+        {
+            "project_id": "prj_1",
+            "action_id": action_id,
+            "decision": "approve",
+            "note": "Looks safe to me",
+            "actor": human_actor,
+        }
+    )[0]
+    assert res2["status"] == "success"
+    assert "decision_id" in res2
+    assert "anchor_id" in res2
+
+    # 3. Capture outcome
+    res3 = capture_outcome(
+        {
+            "project_id": "prj_1",
+            "action_id": action_id,
+            "outcome_metadata": {"exit_code": 0, "stdout": "installed 5 packages"},
+            "actor": actor,
+        }
+    )[0]
+    assert res3["status"] == "success"
+    assert "attempt_id" in res3
+
+    # Check store streams
+    store = get_store()
+    actions = store._load_jsonl("actions.jsonl")
+    assert any(a["action_id"] == action_id for a in actions)
+
+    decisions = store._load_jsonl("decisions.jsonl")
+    assert any(d["decision_id"] == res2["decision_id"] for d in decisions)
+
+    anchors = store._load_jsonl("anchors.jsonl")
+    assert any(a["anchor_id"] == res2["anchor_id"] for a in anchors)
+
+    attempts = store._load_jsonl("attempts.jsonl")
+    assert any(a["attempt_id"] == res3["attempt_id"] for a in attempts)
+
+
+def test_wait_for_approval_contract(monkeypatch, tmp_path):
+    import shutil
+
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import (
+        propose_action,
+        wait_for_approval,
+        get_store,
+    )
+
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+
+    # 1. Propose action
+    res1 = propose_action(
+        {
+            "project_id": "prj_1",
+            "action_type": "delete_db",
+            "params": {"force": True},
+            "risk_hint": "destructive",
+            "context": {"cwd": "/"},
+            "actor": actor,
+        }
+    )[0]
+    action_id = res1["action_id"]
+    
+    # 2. Agent waits
+    res2 = wait_for_approval(
+        {
+            "project_id": "prj_1",
+            "action_id": action_id,
+            "actor": actor,
+            "reason": "Waiting for human to verify delete_db"
+        }
+    )[0]
+    
+    assert res2["status"] == "PAUSE_AND_EXIT"
+    assert "exit your loop" in res2["message"]
+    assert res2["action_id"] == action_id
+    
+    # Verify StateStore contains WaitingOnHuman event
+    store = get_store()
+    actions = store._load_stream("actions.jsonl")
+    
+    wait_events = [e for e in actions if e.get("type") == "WaitingOnHuman" and e.get("action_id") == action_id]
+    assert len(wait_events) == 1
+    assert wait_events[0]["created_by"]["actor_id"] == "ag-1"
+
+def test_actuator_cli(monkeypatch, tmp_path):
+    import shutil
+
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import (
+        propose_action,
+        actuate_cli,
+        get_store,
+    )
+
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+
+    # 1. Propose action
+    res1 = propose_action(
+        {
+            "project_id": "prj_1",
+            "action_type": "test_cmd",
+            "params": {"cmd": "echo hello"},
+            "risk_hint": "safe",
+            "context": {"cwd": "/"},
+            "actor": actor,
+        }
+    )[0]
+    action_id = res1["action_id"]
+
+    # 2. Actuate CLI (Linux/Mac/Win compat: echo usually works on all)
+    res2 = actuate_cli(
+        {
+            "project_id": "prj_1",
+            "action_id": action_id,
+            "command": "echo hello_actuator",
+            "actor": actor,
+        }
+    )[0]
+
+    assert res2["status"] == "success"
+    assert "hello_actuator" in res2["outcome"]["stdout"]
+    
+    # Verify outcome metadata was captured
+    outcome = res2["record"]
+    assert outcome["action_id"] == action_id
+    assert res2["outcome"]["success"] is True
+
+def test_actuator_file_write(monkeypatch, tmp_path):
+    import shutil
+
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import (
+        propose_action,
+        actuate_file_write,
+        get_store,
+    )
+
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+
+    res1 = propose_action(
+        {
+            "project_id": "prj_1",
+            "action_type": "write_file",
+            "params": {"file": "test.txt"},
+            "risk_hint": "safe",
+            "context": {"cwd": "/"},
+            "actor": actor,
+        }
+    )[0]
+    action_id = res1["action_id"]
+    
+    target_file = tmp_path / "test.txt"
+
+    res2 = actuate_file_write(
+        {
+            "project_id": "prj_1",
+            "action_id": action_id,
+            "file_path": str(target_file),
+            "content": "hello file write",
+            "actor": actor,
+        }
+    )[0]
+
+    assert res2["status"] == "success"
+    assert target_file.exists()
+    assert target_file.read_text(encoding="utf-8") == "hello file write"
+    
+    outcome = res2["record"]
+    assert outcome["action_id"] == action_id
+    assert res2["outcome"]["success"] is True
+    assert res2["outcome"]["bytes_written"] > 0

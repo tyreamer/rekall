@@ -651,6 +651,160 @@ def graph_trace(args: dict) -> list:
         return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
 
 
+def propose_action(args: dict) -> list:
+    project_id = args.get("project_id")
+    action_type = args.get("action_type")
+    params = args.get("params", {})
+    risk_hint = args.get("risk_hint", "")
+    context = args.get("context", {})
+    actor = args.get("actor")
+    reason = args.get("reason")
+    idempotency_key = args.get("idempotency_key")
+    if not project_id or not action_type or not actor:
+        raise ValueError("project_id, action_type, and actor are required")
+    store = get_store()
+    try:
+        updated = store.propose_action(
+            action_type, params, risk_hint, context, actor, reason=reason, idempotency_key=idempotency_key
+        )
+        return [{"action_id": updated["action_id"], "action_hash": updated["action_hash"]}]
+    except Exception as e:
+        err_code = "VALIDATION_ERROR"
+        if "Secret detected" in str(e):
+            err_code = "SECRET_DETECTED"
+        return [{"error": {"code": err_code, "message": str(e)}}]
+
+def capture_approval(args: dict) -> list:
+    project_id = args.get("project_id")
+    action_id = args.get("action_id")
+    decision = args.get("decision")
+    note = args.get("note", "")
+    actor_metadata = args.get("actor_metadata")
+    actor = args.get("actor") or actor_metadata
+    reason = args.get("reason")
+    idempotency_key = args.get("idempotency_key")
+    if not project_id or not action_id or not decision or not actor:
+        raise ValueError("project_id, action_id, decision, and actor are required")
+    store = get_store()
+    try:
+        updated = store.capture_approval(
+            action_id, decision, note, actor, reason=reason, idempotency_key=idempotency_key
+        )
+        return [updated]
+    except Exception as e:
+        err_code = "VALIDATION_ERROR"
+        return [{"error": {"code": err_code, "message": str(e)}}]
+
+def wait_for_approval(args: dict) -> list:
+    project_id = args.get("project_id")
+    action_id = args.get("action_id")
+    actor = args.get("actor")
+    reason = args.get("reason")
+    idempotency_key = args.get("idempotency_key")
+    if not project_id or not action_id or not actor:
+        raise ValueError("project_id, action_id, and actor are required")
+    store = get_store()
+    try:
+        updated = store.wait_for_approval(
+            action_id, actor, reason=reason, idempotency_key=idempotency_key
+        )
+        return [updated]
+    except Exception as e:
+        err_code = "VALIDATION_ERROR"
+        return [{"error": {"code": err_code, "message": str(e)}}]
+
+def capture_outcome(args: dict) -> list:
+    project_id = args.get("project_id")
+    action_id = args.get("action_id")
+    outcome_metadata = args.get("outcome_metadata", {})
+    actor = args.get("actor")
+    reason = args.get("reason")
+    idempotency_key = args.get("idempotency_key")
+    if not project_id or not action_id or not actor:
+        raise ValueError("project_id, action_id, and actor are required")
+    store = get_store()
+    try:
+        updated = store.capture_outcome(
+            action_id, outcome_metadata, actor, reason=reason, idempotency_key=idempotency_key
+        )
+        return [updated]
+    except Exception as e:
+        err_code = "VALIDATION_ERROR"
+        if "Secret detected" in str(e):
+            err_code = "SECRET_DETECTED"
+        return [{"error": {"code": err_code, "message": str(e)}}]
+
+def actuate_cli(args: dict) -> list:
+    project_id = args.get("project_id")
+    action_id = args.get("action_id")
+    command = args.get("command")
+    cwd = args.get("cwd", ".")
+    actor = args.get("actor")
+    
+    if not project_id or not action_id or not command or not actor:
+        raise ValueError("project_id, action_id, command, and actor are required")
+        
+    import subprocess
+    import traceback
+    
+    store = get_store()
+    try:
+        result = subprocess.run(command, cwd=cwd, shell=True, capture_output=True, text=True, timeout=120)
+        outcome_metadata = {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.returncode,
+            "success": result.returncode == 0
+        }
+    except Exception as e:
+        outcome_metadata = {
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "success": False
+        }
+        
+    try:
+        updated = store.capture_outcome(action_id, outcome_metadata, actor)
+        return [{"status": "success" if outcome_metadata["success"] else "failed", "outcome": outcome_metadata, "record": updated}]
+    except Exception as e:
+        return [{"error": {"code": "VALIDATION_ERROR", "message": f"Failed to record outcome: {e}", "outcome": outcome_metadata}}]
+
+def actuate_file_write(args: dict) -> list:
+    project_id = args.get("project_id")
+    action_id = args.get("action_id")
+    file_path = args.get("file_path")
+    content = args.get("content", "")
+    actor = args.get("actor")
+    
+    if not project_id or not action_id or not file_path or not actor:
+        raise ValueError("project_id, action_id, file_path, and actor are required")
+        
+    store = get_store()
+    from pathlib import Path
+    
+    try:
+        p = Path(file_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+        outcome_metadata = {
+            "file_path": str(p),
+            "bytes_written": len(content.encode("utf-8")),
+            "success": True
+        }
+    except Exception as e:
+        import traceback
+        outcome_metadata = {
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "success": False
+        }
+        
+    try:
+        updated = store.capture_outcome(action_id, outcome_metadata, actor)
+        return [{"status": "success" if outcome_metadata["success"] else "failed", "outcome": outcome_metadata, "record": updated}]
+    except Exception as e:
+        return [{"error": {"code": "VALIDATION_ERROR", "message": f"Failed to record outcome: {e}", "outcome": outcome_metadata}}]
+
 def guard_query(args: dict) -> list:
     """Read-only preflight guard query returning the same payload as `rekall guard --json`."""
     project_id = args.get(
@@ -1096,6 +1250,103 @@ TOOLS_DEF = [
             },
         },
     },
+    {
+        "name": "rekall.propose_action",
+        "description": "Propose an action before executing it to record intent and a deterministic action hash.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id", "action_type", "actor"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "action_type": {"type": "string"},
+                "params": {"type": "object"},
+                "risk_hint": {"type": "string"},
+                "context": {"type": "object"},
+                "actor": {"type": "object"},
+                "reason": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "rekall.capture_approval",
+        "description": "Capture human or agent approval/rejection for an action.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id", "action_id", "decision", "actor"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "action_id": {"type": "string"},
+                "decision": {"type": "string"},
+                "note": {"type": "string"},
+                "actor": {"type": "object"},
+                "actor_metadata": {"type": "object"},
+                "reason": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "rekall.wait_for_approval",
+        "description": "Signal that the agent is pausing and waiting for a human to approve an action. Returns a PAUSE_AND_EXIT instruction.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id", "action_id", "actor"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "action_id": {"type": "string"},
+                "actor": {"type": "object"},
+                "reason": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "rekall.capture_outcome",
+        "description": "Capture the result metadata of an executed action.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id", "action_id", "actor"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "action_id": {"type": "string"},
+                "outcome_metadata": {"type": "object"},
+                "actor": {"type": "object"},
+                "reason": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "rekall.actuate_cli",
+        "description": "A wrapped actuator to execute a shell command and capture its outcome automatically.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id", "action_id", "command", "actor"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "action_id": {"type": "string"},
+                "command": {"type": "string"},
+                "cwd": {"type": "string"},
+                "actor": {"type": "object"},
+            },
+        },
+    },
+    {
+        "name": "rekall.actuate_file_write",
+        "description": "A wrapped actuator to write a file and capture its outcome automatically.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id", "action_id", "file_path", "actor"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "action_id": {"type": "string"},
+                "file_path": {"type": "string"},
+                "content": {"type": "string"},
+                "actor": {"type": "object"},
+            },
+        },
+    },
 ]
 
 TOOL_REGISTRY = {
@@ -1128,6 +1379,12 @@ TOOL_REGISTRY = {
     "anchor.resume": anchor_resume,
     "digest.while_you_were_gone": digest_while_you_were_gone,
     "graph.trace": graph_trace,
+    "rekall.propose_action": propose_action,
+    "rekall.wait_for_approval": wait_for_approval,
+    "rekall.capture_approval": capture_approval,
+    "rekall.capture_outcome": capture_outcome,
+    "rekall.actuate_cli": actuate_cli,
+    "rekall.actuate_file_write": actuate_file_write,
 }
 
 

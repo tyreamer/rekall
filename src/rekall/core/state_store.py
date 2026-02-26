@@ -251,13 +251,13 @@ class StateStore:
             return data
 
     def _load_jsonl(self, filename: str) -> List[Dict[str, Any]]:
-        """Loads all records from a jsonl stream (including all segments)."""
+        """Loads all records from a jsonl stream (including all segments) applying HEAD semantics."""
         return self._load_stream(filename, hot_only=False)
 
-    def _load_stream(
+    def _load_stream_raw(
         self, stream_name: str, hot_only: bool = True
     ) -> List[Dict[str, Any]]:
-        """Loads records from a stream, optionally including segments."""
+        """Loads records from a stream natively, without applying HEAD semantics."""
         stream_name = stream_name.replace(".jsonl", "").replace("-", "_")
         if stream_name not in self.manifest.get("streams", {}):
             return []
@@ -282,6 +282,44 @@ class StateStore:
                                     f"Malformed JSON in {filepath.name}:{line_no}: {line}"
                                 )
         return records
+
+    def _apply_head_semantics(self, stream_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filters a stream of records by ignoring events that were un-done by a StateRevert."""
+        # Note: calling _load_stream_raw here avoids infinite recursion if we ask for reverts
+        reverts = self._load_stream_raw("reverts", hot_only=False)
+        if not reverts:
+            return stream_records
+            
+        combined = []
+        for r in stream_records:
+            t = r.get("timestamp") or r.get("created_at") or r.get("created", "")
+            combined.append((t, "event", r))
+            
+        for rev in reverts:
+            t = rev.get("timestamp", "")
+            combined.append((t, "revert", rev))
+            
+        # Stable sort by timestamp
+        combined.sort(key=lambda x: x[0])
+        
+        active = []
+        for t, etype, obj in combined:
+            if etype == "revert":
+                to_t = obj.get("to_timestamp", "")
+                active = [x for x in active if x[0] <= to_t]
+            else:
+                active.append((t, obj))
+                
+        return [obj for t, obj in active]
+
+    def _load_stream(
+        self, stream_name: str, hot_only: bool = True
+    ) -> List[Dict[str, Any]]:
+        """Loads records from a stream and filters out reverted futures."""
+        records = self._load_stream_raw(stream_name, hot_only=hot_only)
+        if stream_name.replace(".jsonl", "").replace("-", "_") == "reverts":
+            return records
+        return self._apply_head_semantics(records)
 
     def append_jsonl_idempotent(
         self, stream_name: str, record: Dict[str, Any], id_field: str
@@ -1112,9 +1150,181 @@ class StateStore:
             anchor["idempotency_key"] = idempotency_key
         if "timestamp" not in anchor:
             anchor["timestamp"] = now
-
         record = self.append_jsonl_idempotent("anchors.jsonl", anchor, "anchor_id")
         return record
+
+    def wait_for_approval(
+        self,
+        action_id: str,
+        actor: Dict[str, Any],
+        reason: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Appends a WaitingOnHuman event to signal the agent should pause."""
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        wait_id = f"wait-{uuid.uuid4().hex[:8]}"
+        wait_event = {
+            "wait_id": wait_id,
+            "type": "WaitingOnHuman",
+            "action_id": action_id,
+            "timestamp": now,
+            "created_by": actor,
+            "reason": reason
+        }
+        if idempotency_key:
+            wait_event["idempotency_key"] = idempotency_key
+            
+        record = self.append_jsonl_idempotent("actions.jsonl", wait_event, "wait_id")
+        return {
+            "status": "PAUSE_AND_EXIT", 
+            "message": f"Action {action_id} recorded. Please exit your loop and wait for human resume.", 
+            "wait_id": wait_id,
+            "action_id": action_id
+        }
+
+    def append_revert(
+        self,
+        to_timestamp: str,
+        actor: Dict[str, Any],
+        reason: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Appends a StateRevert event to the reverts stream."""
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        revert_id = f"rev-{uuid.uuid4().hex[:8]}"
+        revert = {
+            "revert_id": revert_id,
+            "type": "StateRevert",
+            "to_timestamp": to_timestamp,
+            "timestamp": now,
+            "created_by": actor,
+            "reason": reason
+        }
+        if idempotency_key:
+            revert["idempotency_key"] = idempotency_key
+            
+        record = self.append_jsonl_idempotent("reverts.jsonl", revert, "revert_id")
+        return record
+
+    def propose_action(
+        self,
+        action_type: str,
+        params: Dict[str, Any],
+        risk_hint: str,
+        context: Dict[str, Any],
+        actor: Dict[str, Any],
+        reason: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        detect_secrets(params)
+        import datetime
+        import hashlib
+
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        # Consistent hash of action content
+        content_str = json.dumps({"action_type": action_type, "params": params}, sort_keys=True)
+        action_hash = hashlib.sha256(content_str.encode("utf-8")).hexdigest()
+
+        action_id = f"act-{uuid.uuid4().hex[:8]}"
+        
+        event = {
+            "action_id": action_id,
+            "type": "ActionProposed",
+            "action_type": action_type,
+            "params": params,
+            "risk_hint": risk_hint,
+            "context": context,
+            "action_hash": action_hash,
+            "timestamp": now,
+            "actor": actor
+        }
+        if idempotency_key:
+            event["idempotency_key"] = idempotency_key
+
+        record = self.append_jsonl_idempotent("actions.jsonl", event, "action_id")
+
+        if record is event:
+            self._append_activity("propose", "action", action_id, actor, diff={"action_type": action_type}, reason=reason)
+
+        return record
+
+    def capture_approval(
+        self,
+        action_id: str,
+        decision_str: str,
+        note: str,
+        actor: Dict[str, Any],
+        reason: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        decision_id = f"dec-{uuid.uuid4().hex[:8]}"
+        decision = {
+            "decision_id": decision_id,
+            "title": f"Approval for action {action_id}",
+            "status": "approved" if decision_str.lower() in ["approve", "approved", "yes", "allow"] else "rejected",
+            "notes": note,
+            "action_id": action_id,
+            "timestamp": now,
+            "decided_by": actor
+        }
+        if idempotency_key:
+            decision["idempotency_key"] = idempotency_key
+            
+        self.append_jsonl_idempotent("decisions.jsonl", decision, "decision_id")
+        
+        anchor_id = f"anch-{uuid.uuid4().hex[:8]}"
+        anchor = {
+            "anchor_id": anchor_id,
+            "type": "HumanAnchor",
+            "decision_id": decision_id,
+            "action_id": action_id,
+            "note": note,
+            "timestamp": now,
+            "created_by": actor
+        }
+        self.append_jsonl_idempotent("anchors.jsonl", anchor, "anchor_id")
+        
+        self._append_activity("approve", "action", action_id, actor, reason=reason)
+        
+        return {"status": "success", "decision_id": decision_id, "anchor_id": anchor_id}
+
+    def capture_outcome(
+        self,
+        action_id: str,
+        outcome_metadata: Dict[str, Any],
+        actor: Dict[str, Any],
+        reason: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        detect_secrets(outcome_metadata)
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        attempt_id = f"att-{uuid.uuid4().hex[:8]}"
+        attempt = {
+            "attempt_id": attempt_id,
+            "action_id": action_id,
+            "outcome": outcome_metadata,
+            "timestamp": now,
+            "performed_by": actor
+        }
+        if idempotency_key:
+            attempt["idempotency_key"] = idempotency_key
+            
+        record = self.append_jsonl_idempotent("attempts.jsonl", attempt, "attempt_id")
+        
+        if record is attempt:
+            self._append_activity("execute", "action", action_id, actor, reason=reason)
+            
+        return {"status": "success", "attempt_id": attempt_id, "action_id": action_id}
 
     def resume_anchor(self, anchor_id: Optional[str] = None) -> Dict[str, Any]:
         """Resumes from an anchor, providing a warm restart brief."""

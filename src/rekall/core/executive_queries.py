@@ -196,6 +196,31 @@ def query_executive_status(
         )
         res.summary.append(f"Goal: {store.project_config.get('one_liner', 'Unknown')}.")
 
+        # Check for WaitingOnHuman vs Decisions
+        actions = store._load_stream("actions.jsonl")
+        decisions = store._load_stream("decisions.jsonl")
+        
+        waits = [a for a in actions if a.get("type") == "WaitingOnHuman"]
+        decision_by_action = {d.get("action_id"): d for d in decisions if d.get("action_id")}
+        
+        unresolved = []
+        resolved = []
+        for w in waits:
+            aid = w.get("action_id")
+            if aid in decision_by_action:
+                resolved.append((w, decision_by_action[aid]))
+            else:
+                unresolved.append(w)
+                
+        if unresolved:
+            res.summary.append(f"WARNING: There are {len(unresolved)} UNRESOLVED breakpoints. Human must rekall decide.")
+            for w in unresolved[:3]:
+                res.evidence.append(f"unresolved_breakpoint: action_id={w.get('action_id')} reason={w.get('reason')}")
+        if resolved:
+            res.summary.append(f"There are {len(resolved)} RESOLVED breakpoints ready for agent pickup.")
+            for w, d in resolved[-3:]:
+                res.evidence.append(f"resolved_breakpoint: action_id={w.get('action_id')} decision={d.get('status')}")
+
         res.evidence.extend([f"work_item: {w['work_item_id']}" for w in in_prog[:2]])
         res.evidence.extend([f"work_item: {w['work_item_id']}" for w in blockers[:2]])
 

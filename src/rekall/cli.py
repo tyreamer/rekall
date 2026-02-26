@@ -785,6 +785,12 @@ def execute_alias_query(args, qtype: ExecutiveQueryType):
             print(json.dumps(dataclasses.asdict(resp), indent=2))
         else:
             print(f"\n[{qtype.name}] Target: {resp.target_project_id}")
+            for line in resp.summary:
+                print(f"{Theme.ICON_INFO} {line}")
+            if resp.evidence:
+                print("Evidence:")
+                for ev in resp.evidence:
+                    print(f"  \u2022 {ev}")
             print(f"Items Match: {len(resp.work_items)}")
             if resp.blockers:
                 print("BLOCKERS:")
@@ -1118,6 +1124,30 @@ def cmd_decisions_propose(args):
         die(ExitCode.INTERNAL_ERROR, f"Failed to propose decision: {str(e)}", args.json)
 
 
+def cmd_decide(args):
+    """Capture a human decision for an action."""
+    base_dir = Path(getattr(args, "store_dir", "."))
+    ensure_state_initialized(base_dir, args.json)
+    try:
+        store = StateStore(base_dir)
+        action_id = args.action_id
+        decision = args.option
+        note = getattr(args, "note", "")
+        actor = {"actor_type": "human", "actor_id": "cli_user"}
+        
+        updated = store.capture_approval(
+            action_id=action_id,
+            decision_str=decision,
+            note=note,
+            actor=actor
+        )
+        if args.json:
+            print(json.dumps({"status": "success", "decision_id": updated["decision_id"]}))
+        else:
+            print(f"\u2705 Decision recorded: {updated['decision_id']} for action {action_id}")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Decision failed: {str(e)}", args.json)
+
 
 def cmd_gc(args):
     """Prunes old segment files that are already included in snapshots."""
@@ -1227,6 +1257,49 @@ def cmd_checkpoint(args):
 
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Checkpoint failed: {str(e)}", args.json)
+
+
+def cmd_checkout(args):
+    """Rewinds the active HEAD to a specific point in time by appending a StateRevert."""
+    base_dir = Path(getattr(args, "store_dir", "."))
+    ensure_state_initialized(base_dir, args.json)
+    try:
+        store = StateStore(base_dir)
+        to_target = args.to
+        if not to_target:
+            die(ExitCode.USER_ERROR, "--to is required", args.json)
+            
+        # Check if it looks like an ISO timestamp, otherwise look it up
+        if "T" in to_target and len(to_target) > 10:
+            ts = to_target
+        else:
+            ts = None
+            for stream in store.manifest.get("streams", {}):
+                records = store._load_stream_raw(stream, hot_only=False)
+                for r in records:
+                    if (
+                        r.get("event_id") == to_target or
+                        r.get("action_id") == to_target or
+                        r.get("decision_id") == to_target or
+                        r.get("attempt_id") == to_target or
+                        r.get("anchor_id") == to_target
+                    ):
+                        ts = r.get("timestamp") or r.get("created_at") or r.get("created", "")
+                        break
+                if ts:
+                    break
+            if not ts:
+                die(ExitCode.USER_ERROR, f"Event ID {to_target} not found.", args.json)
+        
+        res = store.append_revert(to_timestamp=ts, actor={"actor_id": "cli_user"}, reason=getattr(args, "reason", None))
+        
+        if args.json:
+            print(json.dumps({"status": "success", "revert": res}))
+        else:
+            print(f"\u2705 Checked out to {ts}")
+            print(f"   Revert ID  : {res['revert_id']}")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Checkout failed: {str(e)}", args.json)
 
 
 def cmd_lock(args):
@@ -1679,6 +1752,23 @@ EXAMPLES:
         "--store-dir", default=".", help="Directory of the current StateStore"
     )
     parser_resume.set_defaults(func=cmd_alias_resume)
+    
+    # Checkout
+    parser_checkout = subparsers.add_parser(
+        "checkout",
+        help="[Portability] Rewind active HEAD to a temporal point.",
+        parents=[shared_flags],
+    )
+    parser_checkout.add_argument(
+        "--to", required=True, help="Timestamp or event_id to rewind to"
+    )
+    parser_checkout.add_argument(
+        "--reason", default="Manual CLI checkout", help="Reason for revert"
+    )
+    parser_checkout.add_argument(
+        "--store-dir", default=".", help="Directory of the current StateStore"
+    )
+    parser_checkout.set_defaults(func=cmd_checkout)
 
     # Guard
     parser_guard = subparsers.add_parser(
@@ -1760,6 +1850,24 @@ EXAMPLES:
         "--idempotency-key", default=None, help="Optional string to deduplicate records"
     )
     parser_decisions_propose.set_defaults(func=cmd_decisions_propose)
+
+    # Decide
+    parser_decide = subparsers.add_parser(
+        "decide",
+        help="[Execution] Provide a decision (approve/reject) for an action breakpoint.",
+        parents=[shared_flags],
+    )
+    parser_decide.add_argument("action_id", help="The Action ID to decide upon")
+    parser_decide.add_argument(
+        "--option", required=True, choices=["approve", "reject", "yes", "no"], help="The decision to make"
+    )
+    parser_decide.add_argument(
+        "--note", default="", help="Optional notes on the decision"
+    )
+    parser_decide.add_argument(
+        "--store-dir", default=".", help="Directory of the StateStore"
+    )
+    parser_decide.set_defaults(func=cmd_decide)
 
     parser_timeline = subparsers.add_parser(
         "timeline", help="[Log] Manage timeline events.", parents=[shared_flags]
