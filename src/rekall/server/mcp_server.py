@@ -420,6 +420,117 @@ def exec_query(args: dict) -> list:
     except ValueError as e:
         return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
 
+def artifact_append(args: dict) -> list:
+    project_id = args.get("project_id")
+    artifact = args.get("artifact")
+    actor = args.get("actor")
+    reason = args.get("reason")
+    idempotency_key = args.get("idempotency_key")
+    if not project_id or not artifact or not actor:
+        raise ValueError("project_id, artifact, and actor are required")
+    store = get_store()
+    try:
+        updated = store.append_artifact(artifact, actor, reason=reason, idempotency_key=idempotency_key)
+        return [{"artifact": updated}]
+    except Exception as e:
+        err_code = "VALIDATION_ERROR"
+        if "Secret detected" in str(e): err_code = "SECRET_DETECTED"
+        return [{"error": {"code": err_code, "message": str(e)}}]
+
+def research_append(args: dict) -> list:
+    project_id = args.get("project_id")
+    research = args.get("research")
+    actor = args.get("actor")
+    reason = args.get("reason")
+    idempotency_key = args.get("idempotency_key")
+    if not project_id or not research or not actor:
+        raise ValueError("project_id, research, and actor are required")
+    store = get_store()
+    try:
+        updated = store.append_research(research, actor, reason=reason, idempotency_key=idempotency_key)
+        return [{"research": updated}]
+    except Exception as e:
+        err_code = "VALIDATION_ERROR"
+        if "Secret detected" in str(e): err_code = "SECRET_DETECTED"
+        return [{"error": {"code": err_code, "message": str(e)}}]
+
+def link_append(args: dict) -> list:
+    project_id = args.get("project_id")
+    link = args.get("link")
+    actor = args.get("actor")
+    reason = args.get("reason")
+    idempotency_key = args.get("idempotency_key")
+    if not project_id or not link or not actor:
+        raise ValueError("project_id, link, and actor are required")
+    store = get_store()
+    try:
+        updated = store.append_link(link, actor, reason=reason, idempotency_key=idempotency_key)
+        return [{"link": updated}]
+    except Exception as e:
+        err_code = "VALIDATION_ERROR"
+        if "Secret detected" in str(e): err_code = "SECRET_DETECTED"
+        return [{"error": {"code": err_code, "message": str(e)}}]
+
+def anchor_save(args: dict) -> list:
+    project_id = args.get("project_id")
+    anchor = args.get("anchor")
+    actor = args.get("actor")
+    reason = args.get("reason")
+    idempotency_key = args.get("idempotency_key")
+    if not project_id or not anchor or not actor:
+        raise ValueError("project_id, anchor, and actor are required")
+    store = get_store()
+    try:
+        updated = store.save_anchor(anchor, actor, reason=reason, idempotency_key=idempotency_key)
+        return [{"anchor": updated}]
+    except Exception as e:
+        err_code = "VALIDATION_ERROR"
+        if "Secret detected" in str(e): err_code = "SECRET_DETECTED"
+        return [{"error": {"code": err_code, "message": str(e)}}]
+
+def anchor_resume(args: dict) -> list:
+    project_id = args.get("project_id")
+    anchor_id = args.get("anchor_id")
+    if not project_id:
+        raise ValueError("project_id is required")
+    store = get_store()
+    try:
+        res = store.resume_anchor(anchor_id)
+        if "error" in res:
+            return [{"error": {"code": "NOT_FOUND", "message": res["error"]}}]
+        return [res]
+    except Exception as e:
+        return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
+
+def digest_while_you_were_gone(args: dict) -> list:
+    project_id = args.get("project_id")
+    since = args.get("since")
+    limit = args.get("limit", 25)
+    if not project_id:
+        raise ValueError("project_id is required")
+    store = get_store()
+    try:
+        res = store.digest_while_you_were_gone(since=since, limit=limit)
+        return [res]
+    except Exception as e:
+        return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
+
+def graph_trace(args: dict) -> list:
+    project_id = args.get("project_id")
+    root = args.get("root")
+    depth = args.get("depth", 2)
+    include_bundles = args.get("include_bundles", True)
+    if not project_id or not root:
+        raise ValueError("project_id and root are required")
+    store = get_store()
+    try:
+        res = store.trace_graph(root=root, depth=depth, include_bundles=include_bundles)
+        if "error" in res:
+            return [{"error": {"code": "NOT_FOUND", "message": res["error"]}}]
+        return [res]
+    except Exception as e:
+        return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
+
 def guard_query(args: dict) -> list:
     """Read-only preflight guard query returning the same payload as `rekall guard --json`."""
     project_id = args.get("project_id") # Added project_id for consistency with other tools
@@ -586,6 +697,41 @@ TOOLS_DEF = [
                 "project_id": {"type": "string"}
             }
         }
+    },
+    {
+        "name": "artifact.append",
+        "description": "Append an artifact record.",
+        "inputSchema": {"type": "object", "required": ["project_id", "artifact", "actor"], "properties": {"project_id": {"type": "string"}, "artifact": {"type": "object"}, "actor": {"type": "object"}, "reason": {"type": "string"}, "idempotency_key": {"type": "string"}}}
+    },
+    {
+        "name": "research.append",
+        "description": "Append a research item record.",
+        "inputSchema": {"type": "object", "required": ["project_id", "research", "actor"], "properties": {"project_id": {"type": "string"}, "research": {"type": "object"}, "actor": {"type": "object"}, "reason": {"type": "string"}, "idempotency_key": {"type": "string"}}}
+    },
+    {
+        "name": "link.append",
+        "description": "Append a link edge record.",
+        "inputSchema": {"type": "object", "required": ["project_id", "link", "actor"], "properties": {"project_id": {"type": "string"}, "link": {"type": "object"}, "actor": {"type": "object"}, "reason": {"type": "string"}, "idempotency_key": {"type": "string"}}}
+    },
+    {
+        "name": "anchor.save",
+        "description": "Save an intent checkpoint anchor.",
+        "inputSchema": {"type": "object", "required": ["project_id", "anchor", "actor"], "properties": {"project_id": {"type": "string"}, "anchor": {"type": "object"}, "actor": {"type": "object"}, "reason": {"type": "string"}, "idempotency_key": {"type": "string"}}}
+    },
+    {
+        "name": "anchor.resume",
+        "description": "Resume an intent checkpoint anchor context.",
+        "inputSchema": {"type": "object", "required": ["project_id"], "properties": {"project_id": {"type": "string"}, "anchor_id": {"type": "string"}}}
+    },
+    {
+        "name": "digest.while_you_were_gone",
+        "description": "Get a digest of recent activity.",
+        "inputSchema": {"type": "object", "required": ["project_id"], "properties": {"project_id": {"type": "string"}, "since": {"type": "string"}, "limit": {"type": "integer"}}}
+    },
+    {
+        "name": "graph.trace",
+        "description": "Trace a provenance graph from a root node.",
+        "inputSchema": {"type": "object", "required": ["project_id", "root"], "properties": {"project_id": {"type": "string"}, "root": {"type": "object"}, "depth": {"type": "integer"}, "include_bundles": {"type": "boolean"}}}
     }
 ]
 
@@ -611,7 +757,14 @@ TOOL_REGISTRY = {
     "decision.approve": decision_approve,
     "timeline.append": timeline_append,
     "exec.query": exec_query,
-    "guard.query": guard_query
+    "guard.query": guard_query,
+    "artifact.append": artifact_append,
+    "research.append": research_append,
+    "link.append": link_append,
+    "anchor.save": anchor_save,
+    "anchor.resume": anchor_resume,
+    "digest.while_you_were_gone": digest_while_you_were_gone,
+    "graph.trace": graph_trace
 }
 
 def send_response(response: dict):

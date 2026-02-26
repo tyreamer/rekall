@@ -10,12 +10,10 @@ from argparse import Namespace
 def temp_store():
     with tempfile.TemporaryDirectory() as d:
         base_dir = Path(d)
-        (base_dir / "schema-version.txt").write_text("0.1")
-        (base_dir / "project.yaml").write_text("project_id: test_proj\ndescription: Test\nrepo_url: https://github.com/test")
-        (base_dir / "envs.yaml").write_text("dev: {}")
-        (base_dir / "access.yaml").write_text("roles: {}")
+        from rekall.cli import ensure_state_initialized
+        from rekall.core.state_store import StateStore
+        ensure_state_initialized(base_dir, is_json=True)
         
-        # Valid work item
         event = {
             "event_id": "e1",
             "type": "WORK_ITEM_CREATED",
@@ -26,19 +24,18 @@ def temp_store():
                 "priority": "p1"
             }
         }
-        (base_dir / "work-items.jsonl").write_text(json.dumps(event) + "\n")
+        
+        store = StateStore(base_dir)
+        store.append_jsonl_idempotent("work_items", event, "event_id")
         yield base_dir
 
 def test_cmd_validate_success(temp_store, capfd):
     import logging
     args = Namespace(store_dir=str(temp_store), json=False, strict=False)
-    try:
-        cmd_validate(args)
-    except SystemExit as e:
-        # Should not exit on success, or exit 0
-        assert e.code == 0
+    # cmd_validate should not exit on success. If it does, it's a test failure.
+    cmd_validate(args)
     captured = capfd.readouterr()
-    assert "Status: ⚠️" in captured.out  # the mock has dangling refs so it's a warning, not a perfect check
+    assert "Status: ✅" in captured.out
 
 def test_cmd_validate_missing_dir(capfd):
     # Test validation when store_dir does not exist
@@ -58,7 +55,8 @@ def test_cmd_validate_failure():
             "work_item_id": "wi_1",
             "patch": {}
         }
-        (base_dir / "work-items.jsonl").write_text(json.dumps(event) + "\n")
+        (base_dir / "streams/work_items").mkdir(parents=True, exist_ok=True)
+        (base_dir / "streams/work_items/active.jsonl").write_text(json.dumps(event) + "\n")
         
         args = Namespace(store_dir=d, json=False, strict=False)
         with pytest.raises(SystemExit) as excinfo:
@@ -74,7 +72,7 @@ def test_cmd_export(temp_store):
     assert out_dir.exists()
     assert (out_dir / "project.yaml").exists()
     assert (out_dir / "schema-version.txt").exists()
-    assert (out_dir / "work-items.jsonl").exists()
+    assert (out_dir / "streams/work_items/active.jsonl").exists()
 
 def test_cmd_import(temp_store):
     out_dir = temp_store / "output_dir"
@@ -89,7 +87,7 @@ def test_cmd_import(temp_store):
         imported_dir = Path(import_d)
         assert (imported_dir / "schema-version.txt").exists()
         assert (imported_dir / "project.yaml").exists()
-        assert (imported_dir / "work-items.jsonl").exists()
+        assert (imported_dir / "streams/work_items/active.jsonl").exists()
 
 def test_cmd_handoff(temp_store):
     out_dir = temp_store / "handoff_out"
@@ -126,7 +124,8 @@ def test_validate_regression_malformed_jsonl():
         (base_dir / "access.yaml").write_text("roles: {}")
         
         # Malformed jsonl
-        (base_dir / "work-items.jsonl").write_text("{bad json\n")
+        (base_dir / "streams/work_items").mkdir(parents=True, exist_ok=True)
+        (base_dir / "streams/work_items/active.jsonl").write_text("{bad json\n")
         
         args = Namespace(store_dir=d, json=False, strict=False)
         with pytest.raises(SystemExit) as excinfo:
@@ -148,7 +147,8 @@ def test_validate_regression_duplicate_ids():
             "patch": {"title": "Test", "status": "todo"}
         }
         content = json.dumps(event) + "\n" + json.dumps(event) + "\n"
-        (base_dir / "work-items.jsonl").write_text(content)
+        (base_dir / "streams/work_items").mkdir(parents=True, exist_ok=True)
+        (base_dir / "streams/work_items/active.jsonl").write_text(content)
         
         args = Namespace(store_dir=d, json=False, strict=True)
         with pytest.raises(SystemExit) as excinfo:
@@ -169,7 +169,7 @@ def test_validate_regression_expired_claim(temp_store, capfd):
             "lease_until": (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).isoformat()
         }
     }
-    with open(store / "work-items.jsonl", "a", encoding="utf-8") as f:
+    with open(store / "streams/work_items/active.jsonl", "a", encoding="utf-8") as f:
         f.write(json.dumps(event) + "\n")
         
     args = Namespace(store_dir=str(store), json=False, strict=True)
@@ -239,7 +239,7 @@ def test_cmd_attempts_add(temp_store):
     args = Namespace(store_dir=str(temp_store), json=False, work_item_id="wi_1", title="Attempt 1", evidence="link.com", actor="user1")
     cmd_attempts_add(args)
     
-    with open(temp_store / "attempts.jsonl") as f:
+    with open(temp_store / "streams/attempts/active.jsonl") as f:
         data = f.read()
         assert "Attempt 1" in data
         assert "link.com" in data
@@ -249,7 +249,7 @@ def test_cmd_decisions_propose(temp_store):
     args = Namespace(store_dir=str(temp_store), json=False, title="Decision 1", rationale="because", tradeoffs="speed", actor="user1")
     cmd_decisions_propose(args)
     
-    with open(temp_store / "decisions.jsonl") as f:
+    with open(temp_store / "streams/decisions/active.jsonl") as f:
         data = f.read()
         assert "Decision 1" in data
         assert "because" in data
@@ -259,7 +259,7 @@ def test_cmd_lock(temp_store):
     args = Namespace(store_dir=str(temp_store), json=False, work_item_id="wi_1", expected_version=1, ttl="5m", force=False, actor="user1")
     cmd_lock(args)
     
-    with open(temp_store / "work-items.jsonl") as f:
+    with open(temp_store / "streams/work_items/active.jsonl") as f:
         data = f.read()
         assert "WORK_ITEM_CLAIMED" in data
         assert "user1" in data
@@ -313,11 +313,11 @@ def test_cmd_guard_emit_timeline_idempotent(temp_store):
     args = Namespace(store_dir=str(temp_store), json=True, strict=False, emit_timeline=True, actor="cli_user")
     
     cmd_guard(args)
-    with open(temp_store / "timeline.jsonl") as f:
+    with open(temp_store / "streams/timeline/active.jsonl") as f:
         lines1 = [l for l in f.readlines() if l.strip()]
     
     cmd_guard(args)
-    with open(temp_store / "timeline.jsonl") as f:
+    with open(temp_store / "streams/timeline/active.jsonl") as f:
         lines2 = [l for l in f.readlines() if l.strip()]
     
     # Should be exactly 1 event (idempotent by event_id)

@@ -33,7 +33,22 @@ SECRET_PATTERNS = [
     re.compile(r"xox[baprs]-[a-zA-Z0-9]{10,}"),          # Slack tokens
     re.compile(r"AKIA[0-9A-Z]{16}"),                     # AWS access keys
     re.compile(r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+"),  # JWT
+    re.compile(r"ghp_[a-zA-Z0-9]{36}"),                  # GitHub Personal Access Token
+    re.compile(r"(?i)token="),                           # Token query param
+    re.compile(r"(?i)access_token="),                    # Access token query param
+    re.compile(r"(?i)Authorization:\s+"),                # Authorization header
+    re.compile(r"(?i)Bearer\s+"),                        # Bearer token
+    re.compile(r"(?i)x-api-key"),                        # API key header
+    re.compile(r"AIza[0-9A-Za-z-_]{35}"),                # Google API Key
 ]
+
+def sanitize_url(url: str) -> str:
+    """Strips query parameters from URL to avoid leaking secrets."""
+    if not url:
+        return url
+    if "?" in url:
+        url = url.split("?")[0]
+    return url
 
 class BloatConfig:
     MAX_RECORD_BYTES = 128 * 1024  # 128 KB
@@ -124,15 +139,17 @@ class StateStore:
             "timeline.jsonl": ("timeline", "event_id")
         }
         
+        migrated = False
         for filename, (stream_key, id_field) in legacy_files.items():
             legacy_path = self.base_dir / filename
             if legacy_path.exists():
+                migrated = True
                 stream_dir = streams_dir / stream_key
                 stream_dir.mkdir(parents=True, exist_ok=True)
                 active_path = stream_dir / "active.jsonl"
                 
                 if not active_path.exists():
-                    shutil.move(legacy_path, active_path)
+                    shutil.move(str(legacy_path), str(active_path))
                 else:
                     # Append legacy to active if both exist (unlikely in fresh migration)
                     with open(active_path, "a", encoding="utf-8") as target:
@@ -141,13 +158,73 @@ class StateStore:
                     legacy_path.unlink()
                 
                 self.manifest["streams"][stream_key] = {
-                    "active_file": str(active_path.relative_to(self.base_dir)),
+                    "active_file": str(active_path.relative_to(self.base_dir).as_posix()),
                     "segments": [],
                     "id_field": id_field
                 }
         
-        if any(f in os.listdir(self.base_dir) for f in legacy_files):
+        if migrated:
             self._save_manifest()
+            logger.info("Migrated legacy state files to stream structure.")
+
+    def gc(self, archive: bool = True):
+        """
+        Garbage collects old segments that are already captured in snapshots.
+        If archive is True, moves them to an .archive/ folder. Otherwise deletes them.
+        """
+        if "work_items" not in self.manifest.get("streams", {}):
+            return
+            
+        stream_info = self.manifest["streams"]["work_items"]
+        snapshot_path = self.base_dir / stream_info["active_file"]
+        snapshot_path = snapshot_path.parent / "snapshot.json"
+        
+        if not snapshot_path.exists():
+            logger.info("GC skipped: No snapshot found to reference.")
+            return
+            
+        try:
+            with open(snapshot_path, "r", encoding="utf-8") as f:
+                snap_data = json.load(f)
+                last_snap_idx = snap_data.get("last_segment_index", 0)
+        except Exception as e:
+            logger.error(f"GC failed to read snapshot: {e}")
+            return
+            
+        if last_snap_idx == 0:
+            return
+            
+        # Segments index is 1-based. Segments list in manifest is ordered.
+        # segments: ["streams/work_items/seg-0001.jsonl", ...]
+        
+        orig_segments = stream_info.get("segments", [])
+        new_segments = []
+        to_remove = []
+        
+        for i, seg_path_str in enumerate(orig_segments, 1):
+            if i <= last_snap_idx:
+                to_remove.append(self.base_dir / seg_path_str)
+            else:
+                new_segments.append(seg_path_str)
+                
+        if not to_remove:
+            logger.info("GC: No old segments to archive.")
+            return
+
+        if archive:
+            archive_dir = (self.base_dir / stream_info["active_file"]).parent / ".archive"
+            archive_dir.mkdir(exist_ok=True)
+            for p in to_remove:
+                if p.exists():
+                    shutil.move(str(p), str(archive_dir / p.name))
+        else:
+            for p in to_remove:
+                if p.exists():
+                    p.unlink()
+                    
+        stream_info["segments"] = new_segments
+        self._save_manifest()
+        logger.info(f"GC completed: Archived/Removed {len(to_remove)} segments.")
 
     def _load_yaml(self, filename: str) -> Dict[str, Any]:
         filepath = self.base_dir / filename
@@ -159,25 +236,38 @@ class StateStore:
             return data
 
     def _load_jsonl(self, filename: str) -> List[Dict[str, Any]]:
-        filepath = self.base_dir / filename
-        if not filepath.exists():
+        """Loads all records from a jsonl stream (including all segments)."""
+        return self._load_stream(filename, hot_only=False)
+    def _load_stream(self, stream_name: str, hot_only: bool = True) -> List[Dict[str, Any]]:
+        """Loads records from a stream, optionally including segments."""
+        stream_name = stream_name.replace(".jsonl", "").replace("-", "_")
+        if stream_name not in self.manifest.get("streams", {}):
             return []
+            
+        stream_info = self.manifest["streams"][stream_name]
+        files_to_load = [self.base_dir / stream_info["active_file"]]
+        
+        if not hot_only:
+            for seg in stream_info.get("segments", []):
+                files_to_load.insert(0, self.base_dir / seg)
+                
         records = []
-        with open(filepath, "r", encoding="utf-8") as f:
-            for line_no, line in enumerate(f, 1):
-                if line.strip():
-                    try:
-                        records.append(json.loads(line))
-                    except json.JSONDecodeError as e:
-                        # Log but continue if possible during general load
-                        # validate_all will catch this for a proper report
-                        logger.warning(f"Malformed JSON in {filename}:{line_no}: {line}")
+        for filepath in files_to_load:
+            if filepath.exists():
+                with open(filepath, "r", encoding="utf-8") as f:
+                    for line_no, line in enumerate(f, 1):
+                        if line.strip():
+                            try:
+                                records.append(json.loads(line))
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"Malformed JSON in {filepath.name}:{line_no}: {line}")
         return records
 
     def append_jsonl_idempotent(self, stream_name: str, record: Dict[str, Any], id_field: str) -> Dict[str, Any]:
         """
         Appends a record to a jsonl stream idempotently and enforces bloat guardrails.
         """
+        stream_name = stream_name.replace(".jsonl", "").replace("-", "_")
         detect_secrets(record)
         
         # 1. Record Size Guardrail
@@ -219,11 +309,10 @@ class StateStore:
                         except json.JSONDecodeError: continue
 
         if rid in self._idemp_cache[stream_name]:
-            # Double check active file to be sure (if cache was partial, but here we wamed it)
-            return record # Assume exists
+            return next((r for r in self._load_stream(stream_name) if r.get(id_field) == rid), record)
             
         if idemp_key and f"idemp:{idemp_key}" in self._idemp_cache[stream_name]:
-            return record # Assume exists
+            return next((r for r in self._load_stream(stream_name) if r.get("idempotency_key") == idemp_key), record)
 
         # 4. Atomic Append with Locking logic (simplified for now)
         lock_file = active_path.with_suffix(".lock")
@@ -257,6 +346,23 @@ class StateStore:
             
         return record
 
+    def _generate_work_items_snapshot(self, last_segment_index: int):
+        stream_info = self.manifest["streams"].get("work_items")
+        if not stream_info: return
+        
+        snapshot_path = self.base_dir / stream_info["active_file"]
+        snapshot_path = snapshot_path.parent / "snapshot.json"
+        
+        data = {
+            "last_segment_index": last_segment_index,
+            "work_items": self.work_items
+        }
+        
+        temp_path = snapshot_path.with_suffix(".tmp")
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        shutil.move(str(temp_path), str(snapshot_path))
+
     def _roll_over_stream(self, stream_name: str):
         stream_info = self.manifest["streams"][stream_name]
         active_path = self.base_dir / stream_info["active_file"]
@@ -265,27 +371,18 @@ class StateStore:
         seg_name = f"seg-{seg_idx:04d}.jsonl"
         seg_path = active_path.parent / seg_name
         
-        shutil.move(active_path, seg_path)
+        shutil.move(str(active_path), str(seg_path))
         active_path.touch()
         
-        stream_info["segments"].append(str(seg_path.relative_to(self.base_dir)))
+        stream_info["segments"].append(seg_path.relative_to(self.base_dir).as_posix())
         self._save_manifest()
+        
+        if stream_name == "work_items":
+            self._generate_work_items_snapshot(seg_idx)
+            
         logger.info(f"Rolled over stream '{stream_name}' to {seg_name}")
 
-    def _replay_work_items(self):
-        """
-        Replays work_items.jsonl into self.work_items map.
-        Computes `version` and `claim` dynamically.
-        """
-        self.work_items.clear()
-        
-        # In strict validation we might want to catch these earlier, but replay needs to survive
-        try:
-            events = self._load_jsonl("work-items.jsonl")
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse work-items.jsonl: {e}")
-            events = []
-            
+    def _apply_work_item_events(self, events: List[Dict[str, Any]]):
         for event in events:
             wid = event.get("work_item_id")
             if not wid:
@@ -305,7 +402,6 @@ class StateStore:
                 if wid in self.work_items:
                     item = self.work_items[wid]
                     expected_version = event.get("expected_version")
-                    # Even in replay, we simulate applying patches correctly. 
                     if expected_version is not None and item["version"] != expected_version:
                         logger.warning(f"Replay mismatch for {wid}: expected v{expected_version}, got v{item['version']}")
                     
@@ -316,7 +412,6 @@ class StateStore:
                 if wid in self.work_items:
                     item = self.work_items[wid]
                     claim = event.get("patch", {})
-                    # Should contain `claimed_by` and `lease_until`
                     item["claim"] = claim
                     item["version"] += 1
             elif e_type == WorkItemEventTypes.RELEASED:
@@ -324,6 +419,65 @@ class StateStore:
                     item = self.work_items[wid]
                     item["claim"] = None
                     item["version"] += 1
+
+    def _replay_work_items(self):
+        """
+        Replays work_items stream into self.work_items map.
+        Uses snapshot.json to resume from the last rolled-over segment to speed up load.
+        """
+        self.work_items.clear()
+        
+        stream_info = self.manifest.get("streams", {}).get("work_items")
+        
+        # Legacy fallback if stream hasn't been migrated
+        if not stream_info:
+            try:
+                events = self._load_jsonl("work-items.jsonl")
+            except Exception as e:
+                logger.error(f"Failed to parse work-items.jsonl: {e}")
+                events = []
+            self._apply_work_item_events(events)
+            return
+            
+        snapshot_path = self.base_dir / stream_info["active_file"]
+        snapshot_path = snapshot_path.parent / "snapshot.json"
+        
+        last_seg_idx = 0
+        if snapshot_path.exists():
+            try:
+                with open(snapshot_path, "r", encoding="utf-8") as f:
+                    snap_data = json.load(f)
+                    self.work_items = snap_data.get("work_items", {})
+                    last_seg_idx = snap_data.get("last_segment_index", 0)
+            except Exception as e:
+                logger.warning(f"Failed to load snapshot, replaying all: {str(e)}")
+                self.work_items.clear()
+                last_seg_idx = 0
+                
+        # Replay segments strictly newer than last_seg_idx
+        files_to_load = []
+        for i, seg in enumerate(stream_info["segments"], 1):
+            if i > last_seg_idx:
+                files_to_load.append(self.base_dir / seg)
+        
+        # Always replay active file
+        files_to_load.append(self.base_dir / stream_info["active_file"])
+        
+        for filepath in files_to_load:
+            if filepath.exists():
+                try:
+                    # In python 3.9 filepath can be passed to open directly, but if _load_jsonl_raw doesn't exist, we must use _load_jsonl
+                    # Wait, _load_jsonl takes a 'str' filename relative to base_dir, or _load_jsonl_raw might be missing?
+                    # Let's check if _load_jsonl can take absolute paths. 
+                    # If not, let's just implement inline loading to be safe.
+                    events = []
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if line.strip():
+                                events.append(json.loads(line))
+                    self._apply_work_item_events(events)
+                except Exception as e:
+                    logger.warning(f"Failed to replay {filepath}: {e}")
 
     def _append_activity(self, action: str, target_type: str, target_id: str, actor: Dict[str, Any], diff: Optional[Dict[str, Any]] = None, reason: Optional[str] = None):
         import uuid
@@ -678,6 +832,228 @@ class StateStore:
             
         return record
 
+    def append_artifact(self, artifact: Dict[str, Any], actor: Dict[str, Any], reason: Optional[str] = None, idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+        """Appends an artifact record."""
+        ref = artifact.get("ref", {})
+        if "url" in ref:
+            ref["url"] = sanitize_url(ref["url"])
+            
+        detect_secrets(artifact)
+        import uuid
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        artifact_id = artifact.get("artifact_id") or str(uuid.uuid4())
+        artifact["artifact_id"] = artifact_id
+        artifact["created_by"] = actor
+        artifact["type"] = "artifact"
+        if idempotency_key:
+            artifact["idempotency_key"] = idempotency_key
+        if "created_at" not in artifact:
+            artifact["created_at"] = now
+            
+        record = self.append_jsonl_idempotent("artifacts.jsonl", artifact, "artifact_id")
+        
+        if record is artifact:
+            self._append_activity("append", "artifact", artifact_id, actor, reason=reason)
+            
+        return record
+
+    def append_research(self, research: Dict[str, Any], actor: Dict[str, Any], reason: Optional[str] = None, idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+        """Appends a research_item record."""
+        ref = research.get("ref", {})
+        if "url" in ref:
+            ref["url"] = sanitize_url(ref["url"])
+            
+        detect_secrets(research)
+        import uuid
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        research_id = research.get("research_id") or str(uuid.uuid4())
+        research["research_id"] = research_id
+        research["created_by"] = actor
+        research["type"] = "research_item"
+        if idempotency_key:
+            research["idempotency_key"] = idempotency_key
+        if "created_at" not in research:
+            research["created_at"] = now
+            
+        record = self.append_jsonl_idempotent("research.jsonl", research, "research_id")
+        
+        if record is research:
+            self._append_activity("append", "research", research_id, actor, reason=reason)
+            
+        return record
+
+    def append_link(self, link: Dict[str, Any], actor: Dict[str, Any], reason: Optional[str] = None, idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+        """Appends a link edge record."""
+        detect_secrets(link)
+        import uuid
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        edge_id = link.get("edge_id") or str(uuid.uuid4())
+        link["edge_id"] = edge_id
+        link["created_by"] = actor
+        link["type"] = "link"
+        if idempotency_key:
+            link["idempotency_key"] = idempotency_key
+        if "created_at" not in link:
+            link["created_at"] = now
+            
+        record = self.append_jsonl_idempotent("links.jsonl", link, "edge_id")
+        
+        if record is link:
+            self._append_activity("append", "link", edge_id, actor, reason=reason)
+            
+        return record
+
+    def save_anchor(self, anchor: Dict[str, Any], actor: Dict[str, Any], reason: Optional[str] = None, idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+        """Appends an anchor save record."""
+        detect_secrets(anchor)
+        import uuid
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        anchor_id = anchor.get("anchor_id") or str(uuid.uuid4())
+        anchor["anchor_id"] = anchor_id
+        anchor["created_by"] = actor
+        anchor["type"] = "anchor"
+        if idempotency_key:
+            anchor["idempotency_key"] = idempotency_key
+        if "timestamp" not in anchor:
+            anchor["timestamp"] = now
+            
+        record = self.append_jsonl_idempotent("anchors.jsonl", anchor, "anchor_id")
+        return record
+
+    def resume_anchor(self, anchor_id: Optional[str] = None) -> Dict[str, Any]:
+        """Resumes from an anchor, providing a warm restart brief."""
+        anchors = self._load_jsonl("anchors.jsonl")
+        if not anchors:
+            return {"error": "No anchors found."}
+            
+        if anchor_id:
+            target = next((a for a in anchors if a.get("anchor_id") == anchor_id), None)
+            if not target:
+                return {"error": f"Anchor {anchor_id} not found."}
+        else:
+            target = sorted(anchors, key=lambda x: x.get("timestamp", ""), reverse=True)[0]
+            
+        anchor_time = target.get("timestamp", "")
+        
+        decisions = self._load_jsonl("decisions.jsonl")
+        attempts = self._load_jsonl("attempts.jsonl")
+        
+        new_decisions = [d for d in decisions if d.get("timestamp", "") > anchor_time]
+        new_attempts = [a for a in attempts if a.get("timestamp", "") > anchor_time]
+        
+        return {
+            "anchor": target,
+            "note": target.get("note", ""),
+            "next_steps": target.get("next_steps", target.get("optional", {}).get("next_steps", [])),
+            "since_anchor": {
+                "new_decisions": len(new_decisions),
+                "new_attempts": len(new_attempts),
+                "decisions": new_decisions,
+                "attempts": new_attempts
+            }
+        }
+
+    def digest_while_you_were_gone(self, since: Optional[str] = None, limit: int = 25) -> Dict[str, Any]:
+        """Generates a digest of recent activity."""
+        import datetime
+        if not since:
+            since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).isoformat()
+            
+        attempts = self._load_jsonl("attempts.jsonl")
+        decisions = self._load_jsonl("decisions.jsonl")
+        artifacts = self._load_jsonl("artifacts.jsonl")
+        research = self._load_jsonl("research.jsonl")
+        
+        recent_attempts = sorted([a for a in attempts if a.get("timestamp", "") >= since], key=lambda x: x.get("timestamp", ""), reverse=True)[:limit]
+        recent_decisions = sorted([d for d in decisions if d.get("timestamp", "") >= since], key=lambda x: x.get("timestamp", ""), reverse=True)[:limit]
+        recent_artifacts = sorted([a for a in artifacts if a.get("created_at", "") >= since], key=lambda x: x.get("created_at", ""), reverse=True)[:limit]
+        recent_research = sorted([r for r in research if r.get("created_at", "") >= since], key=lambda x: x.get("created_at", ""), reverse=True)[:limit]
+        
+        blockers = [a for a in recent_attempts if a.get("status") == "failed"]
+        unapproved_decisions = [d for d in recent_decisions if d.get("status") != "approved"]
+        
+        return {
+            "since": since,
+            "summary": {
+                "recent_attempts_count": len(recent_attempts),
+                "recent_decisions_count": len(recent_decisions),
+                "failed_attempts": len(blockers),
+                "unapproved_decisions": len(unapproved_decisions)
+            },
+            "recent_attempts": recent_attempts,
+            "recent_decisions": recent_decisions,
+            "blockers": blockers + unapproved_decisions,
+            "recent_artifacts": recent_artifacts,
+            "recent_research": recent_research
+        }
+
+    def trace_graph(self, root: Dict[str, str], depth: int = 2, include_bundles: bool = True) -> Dict[str, Any]:
+        """Returns a deterministic provenance graph."""
+        nodes_collected = {} # key: (node_type, id) -> node
+        edges_collected = []
+        
+        links = self._load_jsonl("links.jsonl")
+        
+        all_nodes = {
+            "decision": {d["decision_id"]: d for d in self._load_jsonl("decisions.jsonl") if "decision_id" in d},
+            "attempt": {a["attempt_id"]: a for a in self._load_jsonl("attempts.jsonl") if "attempt_id" in a},
+            "artifact": {a["artifact_id"]: a for a in self._load_jsonl("artifacts.jsonl") if "artifact_id" in a},
+            "research_item": {r["research_id"]: r for r in self._load_jsonl("research.jsonl") if "research_id" in r}
+        }
+        
+        root_type = root.get("node_type")
+        root_id = root.get("id")
+        
+        if root_type not in all_nodes or root_id not in all_nodes.get(root_type, {}):
+            return {"error": f"Root node {root_type}/{root_id} not found."}
+            
+        nodes_collected[(root_type, root_id)] = all_nodes[root_type][root_id]
+        current_level = set([(root_type, root_id)])
+        
+        for _ in range(depth):
+            next_level = set()
+            for edge in links:
+                u = (edge.get("from", {}).get("node_type"), edge.get("from", {}).get("id"))
+                v = (edge.get("to", {}).get("node_type"), edge.get("to", {}).get("id"))
+                
+                if u in current_level or v in current_level:
+                    if edge not in edges_collected:
+                        edges_collected.append(edge)
+                    if u not in nodes_collected and u[0] in all_nodes and u[1] in all_nodes[u[0]]:
+                        nodes_collected[u] = all_nodes[u[0]][u[1]]
+                        next_level.add(u)
+                    if v not in nodes_collected and v[0] in all_nodes and v[1] in all_nodes[v[0]]:
+                        nodes_collected[v] = all_nodes[v[0]][v[1]]
+                        next_level.add(v)
+            current_level = next_level
+
+        sorted_nodes = [nodes_collected[k] for k in sorted(nodes_collected.keys())]
+        sorted_edges = sorted(edges_collected, key=lambda e: e.get("edge_id", ""))
+        
+        result = {
+            "root": root,
+            "nodes": sorted_nodes,
+            "edges": sorted_edges
+        }
+        
+        if include_bundles:
+            result["bundles"] = {
+                "decision": [n for k, n in nodes_collected.items() if k[0] == "decision"],
+                "attempts": [n for k, n in nodes_collected.items() if k[0] == "attempt"],
+                "artifacts": [n for k, n in nodes_collected.items() if k[0] == "artifact"],
+                "research": [n for k, n in nodes_collected.items() if k[0] == "research_item"]
+            }
+            
+        return result
+
     def validate_all(self, strict: bool = False) -> Dict[str, Any]:
         """
         Performs a deep diagnostic scan of the entire StateStore.
@@ -722,53 +1098,57 @@ class StateStore:
                 add_error("schema_version", f"Unsupported version: {v}")
                 
         # 2. Files Present
-        expected_files = ["project.yaml", "envs.yaml", "access.yaml", "work-items.jsonl", "activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"]
-        for f in expected_files:
+        expected_yamls = ["project.yaml", "envs.yaml", "access.yaml"]
+        for f in expected_yamls:
             if not (self.base_dir / f).exists():
                 add_warning("files_present", "missing", f)
+        
+        if not (self.base_dir / "manifest.json").exists():
+            add_warning("files_present", "missing", "manifest.json")
                 
         # 3. JSONL Integrity & ID Uniqueness
         seen_ids = set()
         seen_idemp_keys = set()
-        for f in ["work-items.jsonl", "activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"]:
-            filepath = self.base_dir / f
-            if not filepath.exists():
-                continue
-                
-            id_field_map = {
-                "work-items.jsonl": "event_id",
-                "activity.jsonl": "activity_id",
-                "attempts.jsonl": "attempt_id",
-                "decisions.jsonl": "decision_id",
-                "timeline.jsonl": "event_id"
-            }
-            id_key = id_field_map[f]
-            seen_idemp_keys.clear()
+        
+        for stream_name, info in self.manifest.get("streams", {}).items():
+            id_key = info.get("id_field", "event_id")
+            files_to_check = [self.base_dir / info["active_file"]] + [self.base_dir / s for s in info.get("segments", [])]
             
-            with open(filepath, "r", encoding="utf-8") as file:
-                for line_no, line in enumerate(file, 1):
-                    if not line.strip(): continue
-                    try:
-                        record = json.loads(line)
-                        rid = record.get(id_key)
-                        idemp_key = record.get("idempotency_key")
-                        if rid:
-                            if rid in seen_ids:
-                                add_warning("id_uniqueness", "duplicates", f"{f}:{line_no} Duplicate ID {rid}")
-                            else:
-                                seen_ids.add(rid)
-                        else:
-                            add_error("jsonl_integrity", f"{f}:{line_no} Missing ID field '{id_key}'")
-                            
-                        if idemp_key:
-                            if idemp_key in seen_idemp_keys:
-                                add_warning("id_uniqueness", "duplicates", f"{f}:{line_no} Duplicate idempotency_key '{idemp_key}'")
-                            else:
-                                seen_idemp_keys.add(idemp_key)
+            for filepath in files_to_check:
+                if not filepath.exists():
+                    continue
+                
+                with open(filepath, "r", encoding="utf-8") as file:
+                    for line_no, line in enumerate(file, 1):
+                        if not line.strip(): continue
+                        try:
+                            # Also check record size during validation
+                            line_bytes = len(line.encode('utf-8'))
+                            if line_bytes > BloatConfig.MAX_RECORD_BYTES:
+                                add_warning("jsonl_integrity", "malformed", f"{filepath.name}:{line_no} Record exceeds MAX_RECORD_BYTES ({line_bytes})")
 
-                    except json.JSONDecodeError as e:
-                        add_warning("jsonl_integrity", "malformed", f"{f}:{line_no} JSON Decode Error: {str(e)}")
-                        add_error("jsonl_integrity", f"Fatal parse error in {f}")
+                            record = json.loads(line)
+                            rid = record.get(id_key)
+                            idemp_key = record.get("idempotency_key")
+                            if rid:
+                                if rid in seen_ids:
+                                    add_warning("id_uniqueness", "duplicates", f"{filepath.name}:{line_no} Duplicate ID {rid}")
+                                else:
+                                    seen_ids.add(rid)
+                            else:
+                                add_error("jsonl_integrity", f"{filepath.name}:{line_no} Missing ID field '{id_key}'")
+                                
+                            if idemp_key:
+                                # We check global uniqueness of idempotency keys across segments for this stream
+                                full_idemp = f"{stream_name}:{idemp_key}"
+                                if full_idemp in seen_idemp_keys:
+                                    add_warning("id_uniqueness", "duplicates", f"{filepath.name}:{line_no} Duplicate idempotency_key '{idemp_key}'")
+                                else:
+                                    seen_idemp_keys.add(full_idemp)
+
+                        except json.JSONDecodeError as e:
+                            add_warning("jsonl_integrity", "malformed", f"{filepath.name}:{line_no} JSON Decode Error: {str(e)}")
+                            add_error("jsonl_integrity", f"Fatal parse error in {filepath.name}")
 
         # 4. Secrets
         for f in ["project.yaml", "envs.yaml", "access.yaml"]:

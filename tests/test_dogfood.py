@@ -19,11 +19,11 @@ def test_ensure_state_initialized(temp_repo):
     assert (store_dir / "project.yaml").exists()
     assert (store_dir / "envs.yaml").exists()
     assert (store_dir / "access.yaml").exists()
-    assert (store_dir / "work-items.jsonl").exists()
-    assert (store_dir / "activity.jsonl").exists()
-    assert (store_dir / "attempts.jsonl").exists()
-    assert (store_dir / "decisions.jsonl").exists()
-    assert (store_dir / "timeline.jsonl").exists()
+    assert (store_dir / "streams/work_items/active.jsonl").exists()
+    assert (store_dir / "streams/activity/active.jsonl").exists()
+    assert (store_dir / "streams/attempts/active.jsonl").exists()
+    assert (store_dir / "streams/decisions/active.jsonl").exists()
+    assert (store_dir / "streams/timeline/active.jsonl").exists()
 
 def test_timeline_add_auto_inits(temp_repo, capfd):
     store_dir = temp_repo / "project-state"
@@ -39,8 +39,8 @@ def test_timeline_add_auto_inits(temp_repo, capfd):
     cmd_timeline_add(args)
     
     assert store_dir.exists()
-    assert (store_dir / "timeline.jsonl").exists()
+    assert (store_dir / "streams/timeline/active.jsonl").exists()
     
-    timeline_content = (store_dir / "timeline.jsonl").read_text()
+    timeline_content = (store_dir / "streams/timeline/active.jsonl").read_text()
     assert "Test CI Dogfooding" in timeline_content
     assert "ci-run-1" in timeline_content

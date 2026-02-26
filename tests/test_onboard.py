@@ -83,7 +83,7 @@ def test_onboard_corrupted_jsonl(temp_repo, capfd):
     
     captured = capfd.readouterr()
     assert "Onboarding failed" in captured.out
-    assert "work-items.jsonl" in captured.out.lower()
+    assert "active.jsonl" in captured.out.lower()
 
 def test_onboard_print_flag(temp_repo, capfd):
     # --print includes expected heading text on stdout.

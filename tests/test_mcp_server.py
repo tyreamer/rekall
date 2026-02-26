@@ -466,3 +466,99 @@ def test_exec_query_resume_in_30(monkeypatch, tmp_path):
     assert "work_item:" in evidence_text
     assert "env:" in evidence_text
 
+def test_artifact_append_idempotency(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import artifact_append, get_store
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+    art = {"artifact_id": "art-1", "title": "PR"}
+    
+    res1 = artifact_append({"project_id": "prj_1", "artifact": art, "actor": actor})[0]
+    assert "artifact" in res1
+    
+    art2 = {"artifact_id": "art-1", "title": "different"}
+    res2 = artifact_append({"project_id": "prj_1", "artifact": art2, "actor": actor})[0]
+    assert res2["artifact"]["title"] == "PR"
+
+def test_research_append(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import research_append
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+    res_item = {"research_id": "res-1", "title": "Notes"}
+    
+    r = research_append({"project_id": "prj_1", "research": res_item, "actor": actor})[0]
+    assert "research" in r
+
+def test_link_append(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import link_append
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+    link = {"edge_id": "edge-1", "from": {"node_type": "attempt", "id": "att-1"}}
+    
+    r = link_append({"project_id": "prj_1", "link": link, "actor": actor})[0]
+    assert "link" in r
+
+def test_anchor_save_resume(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import anchor_save, anchor_resume
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+    anchor = {"anchor_id": "anch-1", "note": "Saving state"}
+    
+    anchor_save({"project_id": "prj_1", "anchor": anchor, "actor": actor})
+    
+    res = anchor_resume({"project_id": "prj_1", "anchor_id": "anch-1"})[0]
+    assert "anchor" in res
+    assert res["note"] == "Saving state"
+
+def test_digest_while_you_were_gone(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import digest_while_you_were_gone
+    global _store
+    _store = None
+    
+    res = digest_while_you_were_gone({"project_id": "prj_1"})[0]
+    assert "summary" in res
+
+def test_graph_trace(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
+    from rekall.server.mcp_server import graph_trace, link_append, attempt_append, decision_propose
+    global _store
+    _store = None
+    actor = {"actor_type": "agent", "actor_id": "ag-1"}
+    
+    attempt = {"attempt_id": "att-1", "notes": "test"}
+    attempt_append({"project_id": "prj_1", "attempt": attempt, "actor": actor})
+    
+    decision = {"decision_id": "dec-1", "title": "test decision"}
+    decision_propose({"project_id": "prj_1", "decision": decision, "actor": actor})
+    
+    link = {
+        "edge_id": "edge-1",
+        "from": {"node_type": "attempt", "id": "att-1"},
+        "to": {"node_type": "decision", "id": "dec-1"}
+    }
+    link_append({"project_id": "prj_1", "link": link, "actor": actor})
+    
+    res = graph_trace({"project_id": "prj_1", "root": {"node_type": "attempt", "id": "att-1"}})[0]
+    assert "nodes" in res
+    assert "edges" in res
+

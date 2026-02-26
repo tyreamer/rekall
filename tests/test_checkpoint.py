@@ -27,9 +27,12 @@ def temp_store():
             "work_item_id": "wi_1",
             "patch": {"title": "Test Item", "status": "todo", "priority": "p1"},
         }
-        (base_dir / "work-items.jsonl").write_text(json.dumps(event) + "\n")
-        for f in ["activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"]:
-            (base_dir / f).touch()
+        (base_dir / "streams/work_items").mkdir(parents=True, exist_ok=True)
+        (base_dir / "streams/work_items").mkdir(parents=True, exist_ok=True); (base_dir / "streams/work_items/active.jsonl").write_text(json.dumps(event) + "\n")
+        for f in ["activity", "attempts", "decisions", "timeline"]:
+            d = base_dir / "streams" / f
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "active.jsonl").touch()
         yield base_dir
 
 
@@ -48,7 +51,7 @@ class TestCheckpointExport:
         assert out_dir.exists()
         assert (out_dir / "schema-version.txt").exists()
         assert (out_dir / "project.yaml").exists()
-        assert (out_dir / "work-items.jsonl").exists()
+        assert (out_dir / "streams/work_items/active.jsonl").exists()
 
         # Exported folder must pass validation
         validate_args = Namespace(
@@ -74,7 +77,7 @@ class TestCheckpointTimeline:
         )
         cmd_checkpoint(args)
 
-        with open(temp_store / "timeline.jsonl") as f:
+        with open(temp_store / "streams/timeline/active.jsonl") as f:
             lines = [l for l in f.readlines() if l.strip()]
         assert len(lines) == 1
 
@@ -95,7 +98,7 @@ class TestCheckpointTimeline:
         cmd_checkpoint(args)
         cmd_checkpoint(args)
 
-        with open(temp_store / "timeline.jsonl") as f:
+        with open(temp_store / "streams/timeline/active.jsonl") as f:
             lines = [l for l in f.readlines() if l.strip()]
         assert len(lines) == 1
         evt = json.loads(lines[0])
@@ -117,7 +120,7 @@ class TestCheckpointTimeline:
         cmd_checkpoint(args1)
         cmd_checkpoint(args2)
 
-        with open(temp_store / "timeline.jsonl") as f:
+        with open(temp_store / "streams/timeline/active.jsonl") as f:
             lines = [l for l in f.readlines() if l.strip()]
         assert len(lines) == 2
 

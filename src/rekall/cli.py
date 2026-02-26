@@ -61,7 +61,7 @@ def setup_logging(json_mode: bool = False, quiet_mode: bool = False):
 
 def ensure_state_initialized(store_dir: Path, is_json: bool = False):
     """Ensures the state directory and its minimal required files exist."""
-    if store_dir.exists() and (store_dir / "schema-version.txt").exists():
+    if store_dir.exists() and (store_dir / "schema-version.txt").exists() and (store_dir / "manifest.json").exists():
         return
 
     if not is_json:
@@ -91,8 +91,36 @@ def ensure_state_initialized(store_dir: Path, is_json: bool = False):
             with open(store_dir / "access.yaml", "w", encoding="utf-8") as f:
                 yaml.dump({"roles": {}}, f)
                 
-        for name in ["work-items.jsonl", "activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"]:
-            (store_dir / name).touch(exist_ok=True)
+        # Initialize manifest and streams
+        manifest_path = store_dir / "manifest.json"
+        if not manifest_path.exists():
+            manifest = {
+                "schema_version": "0.1",
+                "streams": {}
+            }
+            
+            streams_to_init = [
+                ("work_items", "event_id"),
+                ("activity", "activity_id"),
+                ("attempts", "attempt_id"),
+                ("decisions", "decision_id"),
+                ("timeline", "event_id")
+            ]
+            
+            for stream_key, id_field in streams_to_init:
+                stream_dir = store_dir / "streams" / stream_key
+                stream_dir.mkdir(parents=True, exist_ok=True)
+                active_file = stream_dir / "active.jsonl"
+                active_file.touch(exist_ok=True)
+                
+                manifest["streams"][stream_key] = {
+                    "active_file": str(active_file.relative_to(store_dir).as_posix()),
+                    "segments": [],
+                    "id_field": id_field
+                }
+            
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2)
             
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Failed to auto-initialize {store_dir}: {str(e)}", is_json)
@@ -285,8 +313,10 @@ def cmd_validate(args):
         return
 
     base_dir = Path(args.store_dir)
+
     if not base_dir.exists():
         die(ExitCode.NOT_FOUND, f"Directory {base_dir} does not exist.", args.json)
+    ensure_state_initialized(base_dir, args.json)
         
     try:
         # We instantiate StateStore but don't want it to crash if schema-version is missing during init,
@@ -371,11 +401,11 @@ def cmd_snapshot(args):
         store = StateStore(base_dir)
         
         # Compile snapshot with deterministic ordering
-        activity = sorted(store._load_jsonl("activity.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("activity_id", "")))
-        attempts = sorted(store._load_jsonl("attempts.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("attempt_id", "")))
-        decisions = sorted(store._load_jsonl("decisions.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("decision_id", "")))
-        timeline = sorted(store._load_jsonl("timeline.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
-        events = sorted(store._load_jsonl("work-items.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
+        activity = sorted(store._load_stream("activity", hot_only=False), key=lambda x: (x.get("timestamp", ""), x.get("activity_id", "")))
+        attempts = sorted(store._load_stream("attempts", hot_only=False), key=lambda x: (x.get("timestamp", ""), x.get("attempt_id", "")))
+        decisions = sorted(store._load_stream("decisions", hot_only=False), key=lambda x: (x.get("timestamp", ""), x.get("decision_id", "")))
+        timeline = sorted(store._load_stream("timeline", hot_only=False), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
+        events = sorted(store._load_stream("work_items", hot_only=False), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
         
         # Sort work_items keys deterministically
         work_items_sorted = {k: store.work_items[k] for k in sorted(store.work_items.keys())}
@@ -417,15 +447,16 @@ def cmd_export(args):
         # If valid, just copy files over
         out_dir.mkdir(parents=True, exist_ok=True)
         
-        files_to_copy = [
-            "schema-version.txt", "project.yaml", "envs.yaml", "access.yaml",
-            "work-items.jsonl", "activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"
-        ]
-        
-        for f in files_to_copy:
+        # Core YAMLs
+        for f in ["schema-version.txt", "project.yaml", "envs.yaml", "access.yaml", "manifest.json"]:
             src = base_dir / f
             if src.exists():
                 shutil.copy2(src, out_dir / f)
+        
+        # Streams directory
+        src_streams = base_dir / "streams"
+        if src_streams.exists():
+            shutil.copytree(src_streams, out_dir / "streams", dirs_exist_ok=True)
                 
         if args.json:
             print(json.dumps({"status": "success", "export_dir": str(out_dir)}))
@@ -437,8 +468,8 @@ def cmd_export(args):
 
 def cmd_import(args):
     """Reads from a state store folder and imports events idempotently to the target directory."""
-    target_dir = Path(args.store_dir)
     source_dir = Path(args.source)
+    target_dir = Path(args.store_dir)
     
     if not source_dir.exists() or not (source_dir / "schema-version.txt").exists():
         die(ExitCode.NOT_FOUND, f"Source directory {source_dir} is not a valid state store.", args.json)
@@ -458,20 +489,10 @@ def cmd_import(args):
             if (source_dir / yaml_file).exists():
                 shutil.copy2(source_dir / yaml_file, target_dir / yaml_file)
                 
-        # Idempotent JSONL event injection
-        events_lists = [
-            ("work-items.jsonl", "event_id"),
-            ("activity.jsonl", "activity_id"),
-            ("attempts.jsonl", "attempt_id"),
-            ("decisions.jsonl", "decision_id"),
-            ("timeline.jsonl", "event_id")
-        ]
-        
-        for file_name, id_field in events_lists:
-            if (source_dir / file_name).exists():
-                records = source_store._load_jsonl(file_name)
-                for record in records:
-                    target_store.append_jsonl_idempotent(file_name, record, id_field)
+        for stream_name, info in source_store.manifest.get("streams", {}).items():
+             records = source_store._load_stream(stream_name, hot_only=False)
+             for record in records:
+                 target_store.append_jsonl_idempotent(stream_name, record, info["id_field"])
                     
         if args.json:
             print(json.dumps({"status": "success", "imported_to": str(target_dir)}))
@@ -498,11 +519,11 @@ def cmd_handoff(args):
         out_dir.mkdir(parents=True, exist_ok=True)
         
         # Compile snapshot with deterministic ordering
-        events = sorted(store._load_jsonl("work-items.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
-        activity = sorted(store._load_jsonl("activity.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("activity_id", "")))
-        attempts = sorted(store._load_jsonl("attempts.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("attempt_id", "")))
-        decisions = sorted(store._load_jsonl("decisions.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("decision_id", "")))
-        timeline = sorted(store._load_jsonl("timeline.jsonl"), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
+        events = sorted(store._load_stream("work_items", hot_only=False), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
+        activity = sorted(store._load_stream("activity", hot_only=False), key=lambda x: (x.get("timestamp", ""), x.get("activity_id", "")))
+        attempts = sorted(store._load_stream("attempts", hot_only=False), key=lambda x: (x.get("timestamp", ""), x.get("attempt_id", "")))
+        decisions = sorted(store._load_stream("decisions", hot_only=False), key=lambda x: (x.get("timestamp", ""), x.get("decision_id", "")))
+        timeline = sorted(store._load_stream("timeline", hot_only=False), key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")))
         
         work_items_sorted = {k: store.work_items[k] for k in sorted(store.work_items.keys())}
         
@@ -552,8 +573,7 @@ def cmd_features(args):
 def execute_alias_query(args, qtype: ExecutiveQueryType):
     """Wrapper to run existing ExecutiveQueries directly from CLI."""
     base_dir = Path(args.store_dir)
-    if not base_dir.exists():
-        die(ExitCode.NOT_FOUND, f"Directory {base_dir} does not exist.", args.json)
+    ensure_state_initialized(base_dir, args.json)
         
     try:
         store = StateStore(base_dir)
@@ -608,9 +628,9 @@ def build_guard_payload(store: StateStore) -> dict:
         constraints = [f"{k}: {v}" for k, v in constraints.items()]
     constraints = constraints[:10] if constraints else []
     
-    # Recent approved decisions (last 3)
+    # Recent approved decisions (last 3) - search HOT stream
     all_decisions = sorted(
-        store._load_jsonl("decisions.jsonl"),
+        store._load_stream("decisions", hot_only=True),
         key=lambda d: d.get("timestamp", ""),
         reverse=True
     )
@@ -628,9 +648,9 @@ def build_guard_payload(store: StateStore) -> dict:
             "evidence_refs": d.get("evidence_links", d.get("evidence", [])),
         })
     
-    # Recent failed attempts (last 3)
+    # Recent failed attempts (last 5)
     all_attempts = sorted(
-        store._load_jsonl("attempts.jsonl"),
+        store._load_stream("attempts", hot_only=True),
         key=lambda a: a.get("timestamp", ""),
         reverse=True
     )
@@ -701,8 +721,7 @@ def build_guard_payload(store: StateStore) -> dict:
 def cmd_guard(args):
     """Drift guard / invariant preflight check."""
     base_dir = Path(args.store_dir)
-    if not base_dir.exists():
-        die(ExitCode.NOT_FOUND, f"Directory {base_dir} does not exist.", args.json)
+    ensure_state_initialized(base_dir, args.json)
     
     try:
         store = StateStore(base_dir)
@@ -838,6 +857,46 @@ def cmd_decisions_propose(args):
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Failed to propose decision: {str(e)}", args.json)
 
+def cmd_snapshot(args):
+    """Compile the state store into a single standalone snapshot.json (compact format)."""
+    store_dir = Path(args.store_dir)
+    ensure_state_initialized(store_dir, args.json)
+    
+    try:
+        store = StateStore(store_dir)
+        # Full export to dict
+        data = {
+            "project": store._load_yaml("project.yaml"),
+            "work_items": store.work_items,
+            "timeline": store._load_jsonl("timeline.jsonl"),
+            "decisions": store._load_jsonl("decisions.jsonl"),
+            "attempts": store._load_jsonl("attempts.jsonl"),
+            "activity": store._load_jsonl("activity.jsonl")
+        }
+        
+        out_path = Path(args.out) if args.out else Path.cwd() / "snapshot.json"
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            
+        success(f"State exported to {out_path}", args.json)
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Snapshot failed: {str(e)}", args.json)
+
+def cmd_gc(args):
+    """Prunes old segment files that are already included in snapshots."""
+    store_dir = Path(args.store_dir)
+    ensure_state_initialized(store_dir, args.json)
+    
+    try:
+        store = StateStore(store_dir)
+        store.gc(archive=(not args.delete))
+        if not args.json:
+            print("✅ Garbage collection finished.")
+        else:
+            print(json.dumps({"status": "success", "message": "GC finished"}))
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"GC failed: {str(e)}", args.json)
+
 def cmd_timeline_add(args):
     base_dir = Path(args.store_dir)
     ensure_state_initialized(base_dir, args.json)
@@ -875,15 +934,16 @@ def cmd_checkpoint(args):
 
         # 1. Folder-based export (reuse export logic)
         out_dir.mkdir(parents=True, exist_ok=True)
-        files_to_copy = [
-            "schema-version.txt", "project.yaml", "envs.yaml", "access.yaml",
-            "work-items.jsonl", "activity.jsonl", "attempts.jsonl",
-            "decisions.jsonl", "timeline.jsonl"
-        ]
-        for f in files_to_copy:
+        # YAMLs and Manifest
+        for f in ["schema-version.txt", "project.yaml", "envs.yaml", "access.yaml", "manifest.json"]:
             src = base_dir / f
             if src.exists():
                 shutil.copy2(src, out_dir / f)
+        
+        # Streams
+        src_streams = base_dir / "streams"
+        if src_streams.exists():
+            shutil.copytree(src_streams, out_dir / "streams", dirs_exist_ok=True)
 
         export_path = str(out_dir.resolve())
 
@@ -1023,9 +1083,11 @@ def cmd_onboard(args):
         lines.append("```text")
         lines.append(f"{store_dir.name}/")
         lines.append("├── project.yaml          # Project identity & goals")
-        lines.append("├── work-items.jsonl      # Mutable work state ledger")
-        lines.append("├── decisions.jsonl       # Architectural choices")
-        lines.append("├── attempts.jsonl        # History of what failed")
+        lines.append("├── manifest.json         # Stream index")
+        lines.append("├── streams/              # Partitioned event streams")
+        lines.append("│   └── work_items/")
+        lines.append("│       ├── active.jsonl  # Hot events")
+        lines.append("│       └── snapshot.json # Fast-load state")
         lines.append("└── artifacts/            # Generated summaries & briefs")
         lines.append("```")
         lines.append("")
@@ -1155,6 +1217,12 @@ EXAMPLES:
     parser_snapshot.add_argument("--store-dir", default=".", help="Directory of the StateStore")
     parser_snapshot.add_argument("--out", "-o", help="Output JSON file path")
     parser_snapshot.set_defaults(func=cmd_snapshot)
+    
+    # GC
+    parser_gc = subparsers.add_parser("gc", help="[Health] Prune old segments captured in snapshots.", parents=[shared_flags])
+    parser_gc.add_argument("store_dir", nargs="?", default="project-state", help="Directory of the StateStore")
+    parser_gc.add_argument("--delete", action="store_true", help="Delete segments instead of archiving them")
+    parser_gc.set_defaults(func=cmd_gc)
     
     parser_import = subparsers.add_parser("import", help="[Portability] Import events from a source folder.", parents=[shared_flags])
     parser_import.add_argument("source", help="Path to source state store folder")

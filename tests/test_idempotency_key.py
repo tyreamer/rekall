@@ -12,22 +12,20 @@ from rekall.core.state_store import StateStore
 def store():
     with tempfile.TemporaryDirectory() as d:
         base_dir = Path(d)
-        (base_dir / "schema-version.txt").write_text("0.1")
-        (base_dir / "project.yaml").write_text(
-            "project_id: test_proj\ndescription: Test\nrepo_url: https://github.com/test"
-        )
-        (base_dir / "envs.yaml").write_text("dev: {}")
-        (base_dir / "access.yaml").write_text("roles: {}")
+        from rekall.cli import ensure_state_initialized
+        ensure_state_initialized(base_dir, is_json=True)
+        
         event = {
             "event_id": "e1",
             "type": "WORK_ITEM_CREATED",
             "work_item_id": "wi_1",
             "patch": {"title": "Test Item", "status": "todo", "priority": "p1"},
         }
-        (base_dir / "work-items.jsonl").write_text(json.dumps(event) + "\n")
-        for f in ["activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"]:
-            (base_dir / f).touch()
-        yield StateStore(base_dir)
+        
+        # Add a work item to ensure some state exists if needed
+        store = StateStore(base_dir)
+        store.append_jsonl_idempotent("work_items", event, "event_id")
+        yield store
 
 
 # ── Attempt idempotency_key ─────────────────────────────────────────────
@@ -46,7 +44,7 @@ class TestAttemptIdempotencyKey:
         # Returns the first record (no-op)
         assert r1["attempt_id"] == r2["attempt_id"]
 
-        with open(store.base_dir / "attempts.jsonl") as f:
+        with open(store.base_dir / "streams/attempts/active.jsonl") as f:
             lines = [l for l in f if l.strip()]
         assert len(lines) == 1
 
@@ -56,7 +54,7 @@ class TestAttemptIdempotencyKey:
         store.append_attempt({"work_item_id": "wi_1", "title": "A"}, actor, idempotency_key="key-1")
         store.append_attempt({"work_item_id": "wi_1", "title": "B"}, actor, idempotency_key="key-2")
 
-        with open(store.base_dir / "attempts.jsonl") as f:
+        with open(store.base_dir / "streams/attempts/active.jsonl") as f:
             lines = [l for l in f if l.strip()]
         assert len(lines) == 2
 
@@ -97,7 +95,7 @@ class TestTimelineIdempotencyKey:
 
         assert r1["event_id"] == r2["event_id"]
 
-        with open(store.base_dir / "timeline.jsonl") as f:
+        with open(store.base_dir / "streams/timeline/active.jsonl") as f:
             lines = [l for l in f if l.strip()]
         assert len(lines) == 1
 
@@ -128,7 +126,7 @@ class TestDecisionIdempotencyKey:
 
         assert r1["decision_id"] == r2["decision_id"]
 
-        with open(store.base_dir / "decisions.jsonl") as f:
+        with open(store.base_dir / "streams/decisions/active.jsonl") as f:
             lines = [l for l in f if l.strip()]
         assert len(lines) == 1
 
@@ -150,7 +148,7 @@ class TestBackwardCompatibility:
               "title": "A", "performed_by": actor, "timestamp": "2026-01-01T00:00:00Z"}
         r2 = {"attempt_id": "a2", "idempotency_key": "dup-key", "work_item_id": "wi_1",
               "title": "B", "performed_by": actor, "timestamp": "2026-01-01T00:01:00Z"}
-        with open(store.base_dir / "attempts.jsonl", "a") as f:
+        with open(store.base_dir / "streams/attempts/active.jsonl", "a") as f:
             f.write(json.dumps(r1) + "\n")
             f.write(json.dumps(r2) + "\n")
 
