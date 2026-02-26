@@ -242,13 +242,13 @@ class TestRunMCPValidationIntegration:
 
 class TestCLIIntegration:
     def test_validate_mcp_missing_server_cmd(self, capfd):
-        from rekall.cli import cmd_validate
+        from rekall.cli import cmd_validate, ExitCode
         args = Namespace(
             store_dir=".", json=False, strict=False, mcp=True, server_cmd=None, quiet=False
         )
         with pytest.raises(SystemExit) as excinfo:
             cmd_validate(args)
-        assert excinfo.value.code == 2  # VALIDATION_FAILED
+        assert excinfo.value.code == ExitCode.USER_ERROR.value
 
     def test_validate_mcp_json_output(self, capfd):
         root = Path(__file__).parent.parent

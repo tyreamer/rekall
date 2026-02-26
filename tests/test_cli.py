@@ -207,7 +207,7 @@ def test_cmd_demo_os_output_windows(capfd, monkeypatch):
     assert "✅ DEMO COMPLETE — OPEN THIS NOW:" in captured.out
     assert "notepad" in captured.out
     assert "Get-Content" in captured.out
-    assert "rekall init ./project-state" in captured.out
+    assert "rekall status" in captured.out
 
 def test_cmd_demo_os_output_mac(capfd, monkeypatch):
     import platform
@@ -220,7 +220,7 @@ def test_cmd_demo_os_output_mac(capfd, monkeypatch):
     
     assert "✅ DEMO COMPLETE — OPEN THIS NOW:" in captured.out
     assert "open " in captured.out
-    assert "rekall validate ./project-state --strict" in captured.out
+    assert "rekall status" in captured.out
 
 def test_cmd_demo_os_output_linux(capfd, monkeypatch):
     import platform
@@ -301,11 +301,11 @@ def test_cmd_guard_json_output(temp_store, capfd):
 
 def test_cmd_guard_strict_fails_no_constraints(temp_store):
     """--strict exits non-zero when no constraints defined."""
-    from rekall.cli import cmd_guard
+    from rekall.cli import cmd_guard, ExitCode
     args = Namespace(store_dir=str(temp_store), json=False, strict=True, emit_timeline=False, actor="cli_user")
     with pytest.raises(SystemExit) as excinfo:
         cmd_guard(args)
-    assert excinfo.value.code == 2  # ExitCode.VALIDATION_FAILED
+    assert excinfo.value.code == ExitCode.VALIDATION_FAILED.value
 
 def test_cmd_guard_emit_timeline_idempotent(temp_store):
     """--emit-timeline appends exactly one event and is idempotent on repeat."""

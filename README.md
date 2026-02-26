@@ -26,6 +26,17 @@ pipx install git+https://github.com/tyreamer/rekall.git
 rekall demo
 ```
 
+## Quick Start (for humans & agents)
+```bash
+cd /path/to/your-repo
+rekall onboard          # ← creates cheat sheet + project-state/
+
+# Core Commands
+rekall status           # ← Quick executive summary of the current reality
+rekall guard            # ← Preflight check: summarized goals, risks, and recent work
+rekall blockers         # ← List active blockers and their estimated impact
+```
+
 ### What does the actual state look like?
 Rekall is just a folder of human-readable files that agents can easily parse and update. No complex database, no hidden state.
 
@@ -74,12 +85,38 @@ Rekall is a **project reality blackboard + ledger**, not a task manager. It prov
 
 ---
 
-## Core Commands
-- `rekall status` — Quick executive summary of the current reality.
-- `rekall guard` — Preflight check: summarized goals, risks, and recent work.
-- `rekall blockers` — List active blockers and their estimated impact.
-- `rekall handoff <project_id>` — Generate a `boot_brief.md` for the next agent session.
-- **MCP-Native** — First-class support for Claude Desktop and Cursor (`python -m rekall.server.mcp_server`).
+## Agent Operating Instructions
+If you are an AI agent, you should read the project's state to understand the context, and contribute back to the ledger securely so the next agent isn't starting from scratch.
+
+### 1. Read the State
+Before making changes, understand the current context and invariants:
+```bash
+cat project-state/artifacts/onboard_cheatsheet.md  # Best place to start
+rekall status
+rekall guard
+```
+
+### 2. Contribute to the Ledger
+If you hit a roadblock, make a decision, or try an approach that fails—record it!
+
+**Idempotency Keys**: You can safely run these commands multiple times. Rekall uses idempotency keys to avoid duplicate records:
+```bash
+# Append a failed attempt so others don't repeat your mistakes
+rekall attempts add REQ-1 \
+  --title "Tried migrating to Postgres RDS" \
+  --evidence "logs/deploy_error.log" \
+  --idempotency-key "pg-rds-migration-v1"
+
+# Propose an architectural decision
+rekall decisions propose \
+  --title "Use SQLite instead of Postgres" \
+  --rationale "Keep it simple and local-first" \
+  --tradeoffs "Harder to scale horizontally" \
+  --idempotency-key "use-sqlite-v1"
+```
+
+### 3. Call to Action
+Run `rekall handoff <project_id>` when you're done to generate a `boot_brief.md` for the next agent session!
 
 ---
 

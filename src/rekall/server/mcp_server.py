@@ -63,6 +63,106 @@ def project_get(args: dict) -> list:
         
     return [{"project": cfg}]
 
+def project_onboard(args: dict) -> list:
+    store = get_store()
+    from rekall.cli import build_guard_payload
+    from rekall.core.executive_queries import query_executive_status, ExecutiveQueryType
+    import datetime
+    
+    try:
+        repo_name = store.project_config.get("project_id", store.base_dir.parent.name)
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        last_updated = "Never"
+        timeline_events = store._load_jsonl("timeline.jsonl")
+        if timeline_events:
+            last_event = max(timeline_events, key=lambda x: x.get("timestamp", ""))
+            last_updated = last_event.get("timestamp", "Unknown")
+            
+        status_resp = query_executive_status(store, ExecutiveQueryType.ON_TRACK)
+        blockers_resp = query_executive_status(store, ExecutiveQueryType.BLOCKERS)
+        guard_payload = build_guard_payload(store)
+        
+        lines = []
+        lines.append(f"# Onboarding Cheat Sheet: {repo_name}")
+        lines.append(f"**Generated**: {timestamp}")
+        lines.append(f"**Ledger Last Updated**: {last_updated}")
+        lines.append("")
+        
+        lines.append("## What is Rekall?")
+        lines.append("Rekall is a project state ledger for AI agents and human collaborators.")
+        lines.append("It tracks decisions, attempts, and work items as a machine-readable event stream.")
+        lines.append("")
+        
+        lines.append("## Project Reality Snapshot")
+        if status_resp.summary:
+            for s in status_resp.summary:
+                lines.append(f"- {s}")
+        lines.append(f"- **Total Work Items**: {len(status_resp.work_items)}")
+        lines.append("")
+        
+        lines.append("## Risks / Unknowns")
+        risks = guard_payload.get("risks_blockers", [])
+        if risks:
+            for r in risks[:5]:
+                lines.append(f"- [{r['work_item_id']}] {r['title']} ({r['status']})")
+        else:
+            lines.append("No critical risks identified by guard.")
+        lines.append("")
+        
+        lines.append("## Blockers")
+        if blockers_resp.blockers:
+            for b in blockers_resp.blockers:
+                wid = b.get('work_item_id')
+                title = b.get('title', 'Untitled')
+                lines.append(f"- **{wid}**: {title}")
+        else:
+            lines.append("No blockers detected.")
+        lines.append("")
+        
+        lines.append("## State Artifact Layout")
+        lines.append("```text")
+        lines.append(f"{store.base_dir.name}/")
+        lines.append("├── project.yaml          # Project identity & goals")
+        lines.append("├── work-items.jsonl      # Mutable work state ledger")
+        lines.append("├── decisions.jsonl       # Architectural choices")
+        lines.append("├── attempts.jsonl        # History of what failed")
+        lines.append("└── artifacts/            # Generated summaries & briefs")
+        lines.append("```")
+        lines.append("")
+        
+        lines.append("## How to update state")
+        lines.append("If you try something and fail, add an attempt:")
+        lines.append("`rekall attempts add REQ-1 --title \"Tried changing font size\" --evidence \"UI broke\"`")
+        lines.append("If you make an architectural choice, propose a decision:")
+        lines.append("`rekall decisions propose --title \"Use Postgres\" --rationale \"Need relational data\" --tradeoffs \"Heavier than SQLite\"`")
+        lines.append("")
+        
+        lines.append("## Next Recommended Commands")
+        lines.append("```bash")
+        lines.append("rekall status")
+        lines.append("rekall guard")
+        lines.append("rekall blockers")
+        lines.append(f"rekall handoff {store.project_config.get('project_id', repo_name)} -o ./handoff/")
+        lines.append("```")
+        lines.append("")
+
+        lines.append("## Links")
+        lines.append("- [Quickstart Guide](https://github.com/run-rekall/rekall#quick-start-for-humans--agents)")
+        lines.append("- [BETA.md](https://github.com/run-rekall/rekall/blob/main/docs/BETA.md)")
+        lines.append("- [GitHub Discussions](https://github.com/run-rekall/rekall/discussions)")
+        
+        content = "\n".join(lines)
+        
+        artifacts_dir = store.base_dir / "artifacts"
+        artifacts_dir.mkdir(exist_ok=True)
+        out_path = artifacts_dir / "onboard_cheatsheet.md"
+        out_path.write_text(content, encoding="utf-8")
+        
+        return [{"status": "success", "path": str(out_path), "content": content}]
+    except Exception as e:
+        return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
+
 def work_list(args: dict) -> list:
     limit = args.get("limit", 100)
     cursor = str(args.get("cursor", "0"))
@@ -351,6 +451,14 @@ TOOLS_DEF = [
         }
     },
     {
+        "name": "project.onboard",
+        "description": "Generate an onboarding cheat sheet for the project and return it as markdown.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
         "name": "work.list",
         "description": "List work items with filters.",
         "inputSchema": {
@@ -484,6 +592,7 @@ TOOLS_DEF = [
 TOOL_REGISTRY = {
     "project.list": project_list,
     "project.get": project_get,
+    "project.onboard": project_onboard,
     "work.list": work_list,
     "work.get": work_get,
     "attempt.list": attempt_list,

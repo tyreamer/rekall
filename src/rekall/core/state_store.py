@@ -1,8 +1,12 @@
 import json
 import logging
 import re
+import os
+import shutil
+import uuid
+import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -31,6 +35,11 @@ SECRET_PATTERNS = [
     re.compile(r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+"),  # JWT
 ]
 
+class BloatConfig:
+    MAX_RECORD_BYTES = 128 * 1024  # 128 KB
+    MAX_HOT_RECORDS = 1000        # Roll over after 1000 records
+    MAX_HOT_BYTES = 5 * 1024 * 1024 # 5 MB
+
 def detect_secrets(data: Any, path: str = "") -> None:
     """Recursively checks for secrets in values and raises SecretDetectedError if found."""
     if isinstance(data, dict):
@@ -54,6 +63,15 @@ class StateStore:
         self.envs_config: Dict[str, Any] = {}
         self.access_config: Dict[str, Any] = {}
         
+        self.manifest: Dict[str, Any] = {
+            "streams": {},
+            "last_checkpoint": None,
+            "schema_version": "0.1"
+        }
+        
+        # LRU-ish cache for idempotency in the HOT window
+        self._idemp_cache: Dict[str, Set[str]] = {} # stream_name -> set of IDs
+        
         self.initialize()
         
     def initialize(self):
@@ -70,13 +88,66 @@ class StateStore:
         if version != "0.1":
             raise SchemaVersionError(f"Unsupported schema version: {version}. Expected: 0.1")
             
-        # 2. Load YAMLs safely, verifying no secrets
+        # 2. Load Manifest and Migrate if necessary
+        self._load_manifest()
+        self._migrate_legacy_files()
+        
+        # 3. Load YAMLs safely, verifying no secrets
         self.project_config = self._load_yaml("project.yaml")
         self.envs_config = self._load_yaml("envs.yaml")
         self.access_config = self._load_yaml("access.yaml")
         
-        # 3. Reload Work Items from event stream
+        # 4. Reload Work Items from event stream (HOT only by default)
         self._replay_work_items()
+
+    def _load_manifest(self):
+        manifest_path = self.base_dir / "manifest.json"
+        if manifest_path.exists():
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                self.manifest = json.load(f)
+        else:
+            self._save_manifest()
+
+    def _save_manifest(self):
+        manifest_path = self.base_dir / "manifest.json"
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(self.manifest, f, indent=2)
+
+    def _migrate_legacy_files(self):
+        """Moves legacy flat files into streams/ directory and initializes manifest."""
+        streams_dir = self.base_dir / "streams"
+        legacy_files = {
+            "work-items.jsonl": ("work_items", "event_id"),
+            "activity.jsonl": ("activity", "activity_id"),
+            "attempts.jsonl": ("attempts", "attempt_id"),
+            "decisions.jsonl": ("decisions", "decision_id"),
+            "timeline.jsonl": ("timeline", "event_id")
+        }
+        
+        for filename, (stream_key, id_field) in legacy_files.items():
+            legacy_path = self.base_dir / filename
+            if legacy_path.exists():
+                stream_dir = streams_dir / stream_key
+                stream_dir.mkdir(parents=True, exist_ok=True)
+                active_path = stream_dir / "active.jsonl"
+                
+                if not active_path.exists():
+                    shutil.move(legacy_path, active_path)
+                else:
+                    # Append legacy to active if both exist (unlikely in fresh migration)
+                    with open(active_path, "a", encoding="utf-8") as target:
+                        with open(legacy_path, "r", encoding="utf-8") as source:
+                            target.write(source.read())
+                    legacy_path.unlink()
+                
+                self.manifest["streams"][stream_key] = {
+                    "active_file": str(active_path.relative_to(self.base_dir)),
+                    "segments": [],
+                    "id_field": id_field
+                }
+        
+        if any(f in os.listdir(self.base_dir) for f in legacy_files):
+            self._save_manifest()
 
     def _load_yaml(self, filename: str) -> Dict[str, Any]:
         filepath = self.base_dir / filename
@@ -93,45 +164,113 @@ class StateStore:
             return []
         records = []
         with open(filepath, "r", encoding="utf-8") as f:
-            for line in f:
+            for line_no, line in enumerate(f, 1):
                 if line.strip():
-                    records.append(json.loads(line))
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError as e:
+                        # Log but continue if possible during general load
+                        # validate_all will catch this for a proper report
+                        logger.warning(f"Malformed JSON in {filename}:{line_no}: {line}")
         return records
 
-    def append_jsonl_idempotent(self, filename: str, record: Dict[str, Any], id_field: str) -> Dict[str, Any]:
+    def append_jsonl_idempotent(self, stream_name: str, record: Dict[str, Any], id_field: str) -> Dict[str, Any]:
         """
-        Appends a record to a jsonl file idempotently based on `id_field`.
-        Checks for secrets before saving. 
-        If a record with the same ID exists, it does not append.
-        To maintain deterministic ordering, this appends to the file, but we should ensure
-        that readers of this file sort by a deterministic key (e.g. timestamp or version).
-        For append-only logs, the current write order is acceptable if deduplicated properly.
+        Appends a record to a jsonl stream idempotently and enforces bloat guardrails.
         """
         detect_secrets(record)
         
-        filepath = self.base_dir / filename
-        
-        # Dedupe check
-        if filepath.exists():
-            with open(filepath, "r", encoding="utf-8") as f:
-                for line in f:
-                    if not line.strip(): continue
-                    try:
-                        existing = json.loads(line)
-                        if existing.get(id_field) == record.get(id_field):
-                            return existing # No-op, already exists
-                            
-                        if record.get("idempotency_key") and existing.get("idempotency_key") == record.get("idempotency_key"):
-                            return existing # No-op, already exists under this idempotency_key
+        # 1. Record Size Guardrail
+        record_json = json.dumps(record, sort_keys=True)
+        if len(record_json.encode('utf-8')) > BloatConfig.MAX_RECORD_BYTES:
+            raise ValueError(f"Record exceeds maximum size of {BloatConfig.MAX_RECORD_BYTES} bytes")
 
-                    except json.JSONDecodeError:
-                        continue # Ignore malformed lines during dedupe check
-                            
-        # Append
-        with open(filepath, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, sort_keys=True) + "\n")
+        # 2. Ensure stream exists in manifest
+        if stream_name not in self.manifest["streams"]:
+            stream_dir = self.base_dir / "streams" / stream_name
+            stream_dir.mkdir(parents=True, exist_ok=True)
+            active_file = stream_dir / "active.jsonl"
+            active_file.touch(exist_ok=True)
+            self.manifest["streams"][stream_name] = {
+                "active_file": str(active_file.relative_to(self.base_dir)),
+                "segments": [],
+                "id_field": id_field
+            }
+            self._save_manifest()
+
+        stream_info = self.manifest["streams"][stream_name]
+        active_path = self.base_dir / stream_info["active_file"]
+        
+        # 3. Idempotency Check (HOT Window via Cache + Active File)
+        rid = record.get(id_field)
+        idemp_key = record.get("idempotency_key")
+        
+        if stream_name not in self._idemp_cache:
+            self._idemp_cache[stream_name] = set()
+            # Warm up cache from active file
+            if active_path.exists():
+                with open(active_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if not line.strip(): continue
+                        try:
+                            existing = json.loads(line)
+                            if existing.get(id_field): self._idemp_cache[stream_name].add(existing[id_field])
+                            if existing.get("idempotency_key"): self._idemp_cache[stream_name].add(f"idemp:{existing['idempotency_key']}")
+                        except json.JSONDecodeError: continue
+
+        if rid in self._idemp_cache[stream_name]:
+            # Double check active file to be sure (if cache was partial, but here we wamed it)
+            return record # Assume exists
+            
+        if idemp_key and f"idemp:{idemp_key}" in self._idemp_cache[stream_name]:
+            return record # Assume exists
+
+        # 4. Atomic Append with Locking logic (simplified for now)
+        lock_file = active_path.with_suffix(".lock")
+        try:
+            # Basic file locking (wait-and-retry could be added)
+            with open(lock_file, "x"): pass 
+            
+            # Check rollover before append
+            if active_path.exists():
+                stat = active_path.stat()
+                # Count lines without loading whole file
+                count = 0
+                with open(active_path, "rb") as f:
+                    for _ in f: count += 1
+                
+                if stat.st_size > BloatConfig.MAX_HOT_BYTES or count >= BloatConfig.MAX_HOT_RECORDS:
+                    self._roll_over_stream(stream_name)
+                    # Re-resolve active path after rollover
+                    active_path = self.base_dir / self.manifest["streams"][stream_name]["active_file"]
+
+            with open(active_path, "a", encoding="utf-8") as f:
+                f.write(record_json + "\n")
+            
+            # Update cache
+            if rid: self._idemp_cache[stream_name].add(rid)
+            if idemp_key: self._idemp_cache[stream_name].add(f"idemp:{idemp_key}")
+            
+        finally:
+            if lock_file.exists():
+                lock_file.unlink()
             
         return record
+
+    def _roll_over_stream(self, stream_name: str):
+        stream_info = self.manifest["streams"][stream_name]
+        active_path = self.base_dir / stream_info["active_file"]
+        
+        seg_idx = len(stream_info["segments"]) + 1
+        seg_name = f"seg-{seg_idx:04d}.jsonl"
+        seg_path = active_path.parent / seg_name
+        
+        shutil.move(active_path, seg_path)
+        active_path.touch()
+        
+        stream_info["segments"].append(str(seg_path.relative_to(self.base_dir)))
+        self._save_manifest()
+        logger.info(f"Rolled over stream '{stream_name}' to {seg_name}")
 
     def _replay_work_items(self):
         """
@@ -671,6 +810,15 @@ class StateStore:
                         add_warning("claims", "expired", f"Work item {wid} has expired claim held by {claim.get('claimed_by')}")
                 except ValueError:
                     add_error("claims", f"Work item {wid} has malformed claim date {claim['lease_until']}")
+                    
+        # 7. Corruption Recovery Guidance
+        if report["summary"]["status"] == "❌":
+            report["summary"]["recovery"] = (
+                "If a JSONL file is corrupted, you can: \n"
+                "1. Restore from a recent 'rekall checkpoint' or backup.\n"
+                "2. Manually remove the malformed line if it's the last one.\n"
+                "3. Run 'rekall doctor' for a full system check."
+            )
                     
         if strict and report["summary"]["warnings"] > 0:
             report["summary"]["status"] = "❌"

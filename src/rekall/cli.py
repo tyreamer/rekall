@@ -14,14 +14,15 @@ logger = logging.getLogger(__name__)
 class ExitCode(IntEnum):
     SUCCESS = 0
     INTERNAL_ERROR = 1
-    VALIDATION_FAILED = 2
-    STRICT_WARNINGS = 3
-    NOT_FOUND = 4
-    FORBIDDEN = 5
-    CONFLICT = 6
-    SECRET_DETECTED = 7
+    BLOCKERS_FOUND = 2
+    USER_ERROR = 1 # Alias for general failure
+    VALIDATION_FAILED = 1 # Mapping to 1 per req
+    NOT_FOUND = 1
+    FORBIDDEN = 1
+    CONFLICT = 1
+    SECRET_DETECTED = 1
     
-def die(code: ExitCode, message: str, is_json: bool, details: dict = None):
+def die(code: ExitCode, message: str, is_json: bool, details: dict = None, debug: bool = False):
     """Standardized exit formatter."""
     if is_json:
         payload = {"ok": False, "code": code.name, "message": message}
@@ -29,9 +30,27 @@ def die(code: ExitCode, message: str, is_json: bool, details: dict = None):
             payload["details"] = details
         print(json.dumps(payload))
     else:
-        logger.error(f"[{code.name}] {message}")
+        # Success Criterion 4: Print clean human-readable error
+        if code == ExitCode.INTERNAL_ERROR:
+            prefix = "INTERNAL ERROR"
+        elif code == ExitCode.BLOCKERS_FOUND:
+            prefix = "BLOCKERS"
+        else:
+            prefix = "ERROR"
+            
+        print(f"\n❌ {prefix}: {message}")
+        
         if details:
-            print(f"Details: {details}")
+             print(f"Details: {details}")
+             
+        if code == ExitCode.INTERNAL_ERROR or debug:
+             if not debug:
+                 print("\n💡 Suggestion: Run with --debug for full stack trace.")
+             else:
+                 import traceback
+                 print("\n--- STACK TRACE ---")
+                 traceback.print_exc()
+                 
     sys.exit(code.value)
 
 def setup_logging(json_mode: bool = False, quiet_mode: bool = False):
@@ -40,6 +59,44 @@ def setup_logging(json_mode: bool = False, quiet_mode: bool = False):
     else:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", force=True)
 
+def ensure_state_initialized(store_dir: Path, is_json: bool = False):
+    """Ensures the state directory and its minimal required files exist."""
+    if store_dir.exists() and (store_dir / "schema-version.txt").exists():
+        return
+
+    if not is_json:
+        logger.info(f"State directory {store_dir}/ missing. Initializing minimal structure...")
+        
+    try:
+        store_dir.mkdir(parents=True, exist_ok=True)
+        (store_dir / "schema-version.txt").write_text("0.1")
+        
+        import yaml
+        project_id = Path.cwd().name
+        
+        if not (store_dir / "project.yaml").exists():
+            with open(store_dir / "project.yaml", "w", encoding="utf-8") as f:
+                yaml.dump({
+                    "project_id": project_id,
+                    "description": "Project managed by Rekall",
+                    "repo_url": "N/A",
+                    "links": []
+                }, f, sort_keys=False)
+                
+        if not (store_dir / "envs.yaml").exists():
+            with open(store_dir / "envs.yaml", "w", encoding="utf-8") as f:
+                yaml.dump({"dev": {"type": "local"}}, f)
+                
+        if not (store_dir / "access.yaml").exists():
+            with open(store_dir / "access.yaml", "w", encoding="utf-8") as f:
+                yaml.dump({"roles": {}}, f)
+                
+        for name in ["work-items.jsonl", "activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"]:
+            (store_dir / name).touch(exist_ok=True)
+            
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Failed to auto-initialize {store_dir}: {str(e)}", is_json)
+
 def cmd_init(args):
     """Initializes a new Rekall project state directory."""
     base_dir = Path(args.store_dir)
@@ -47,35 +104,105 @@ def cmd_init(args):
     if base_dir.exists() and any(base_dir.iterdir()):
         die(ExitCode.CONFLICT, f"Directory {base_dir} is not empty.", args.json)
         
-    try:
-        base_dir.mkdir(parents=True, exist_ok=True)
-        (base_dir / "schema-version.txt").write_text("0.1")
+    ensure_state_initialized(base_dir, args.json)
         
+    if args.json:
+        print(json.dumps({"status": "success", "store_dir": str(base_dir)}))
+    else:
+        logger.info(f"Initialized empty Rekall state at {base_dir}/")
+
+def cmd_doctor(args):
+    """Diagnostic command to check system health and configuration."""
+    import platform
+    import shutil
+    import os
+    
+    results = []
+    
+    # 1. Python Version
+    py_version = platform.python_version()
+    results.append({
+        "check": "Python version",
+        "status": "✅" if sys.version_info >= (3, 8) else "❌",
+        "detail": f"Version {py_version} detected",
+        "fix": "Upgrade to Python 3.8+" if sys.version_info < (3, 8) else None
+    })
+    
+    # 2. Writable Working Directory
+    cwd = Path.cwd()
+    is_writable = os.access(cwd, os.W_OK)
+    results.append({
+        "check": "Working directory permissions",
+        "status": "✅" if is_writable else "❌",
+        "detail": f"{cwd} is {'writable' if is_writable else 'NOT writable'}",
+        "fix": "Ensure the current directory is writable or use --store-dir"
+    })
+    
+    # 3. .rekall / store_dir presence
+    store_dir = Path(getattr(args, "store_dir", "project-state"))
+    exists = store_dir.exists()
+    results.append({
+        "check": ".rekall / state store presence",
+        "status": "✅" if exists else "⚠️",
+        "detail": f"{store_dir} {'exists' if exists else 'not found'}",
+        "fix": "Run 'rekall init' to create a state store" if not exists else None
+    })
+    
+    # 4. JSONL file integrity (if exists)
+    integrity_ok = True
+    malformed_files = []
+    if exists:
+        try:
+            store = StateStore(store_dir)
+            report = store.validate_all()
+            if report["summary"]["status"] == "❌":
+                integrity_ok = False
+                malformed_files = report["jsonl_integrity"].get("malformed", [])
+        except Exception as e:
+            integrity_ok = False
+            malformed_files = [str(e)]
+            
+    results.append({
+        "check": "JSONL file integrity",
+        "status": "✅" if integrity_ok else "❌",
+        "detail": f"{len(malformed_files)} issues found" if not integrity_ok else "All files parseable",
+        "fix": "If corrupted, restore from backup or remove malformed lines."
+    })
+    
+    # 5. Dependency availability
+    try:
         import yaml
-        with open(base_dir / "project.yaml", "w", encoding="utf-8") as f:
-            yaml.dump({
-                "project_id": "new_project_123",
-                "description": "A new Rekall project",
-                "repo_url": "https://github.com/your-org/repo",
-                "links": []
-            }, f, sort_keys=False)
-            
-        with open(base_dir / "envs.yaml", "w", encoding="utf-8") as f:
-            yaml.dump({"dev": {"type": "local"}}, f)
-            
-        with open(base_dir / "access.yaml", "w", encoding="utf-8") as f:
-            yaml.dump({"roles": {}}, f)
-            
-        for name in ["work-items.jsonl", "activity.jsonl", "attempts.jsonl", "decisions.jsonl", "timeline.jsonl"]:
-            (base_dir / name).touch()
-            
-        if args.json:
-            print(json.dumps({"status": "success", "store_dir": str(base_dir)}))
+        yaml_ok = True
+    except ImportError:
+        yaml_ok = False
+        
+    results.append({
+        "check": "Dependencies (PyYAML)",
+        "status": "✅" if yaml_ok else "❌",
+        "detail": "PyYAML found" if yaml_ok else "PyYAML missing",
+        "fix": "pip install PyYAML"
+    })
+    
+    if args.json:
+        print(json.dumps({"results": results, "healthy": all(r["status"] != "❌" for r in results)}))
+    else:
+        print("\n" + "="*50)
+        print("🏥 REKALL DOCTOR DIAGNOSTICS")
+        print("="*50)
+        
+        all_passed = True
+        for r in results:
+            print(f" {r['status']} {r['check']:<30} : {r['detail']}")
+            if r['status'] == "❌":
+                all_passed = False
+                if r['fix']: print(f"    👉 FIX: {r['fix']}")
+                
+        print("="*50)
+        if all_passed:
+            print("✅ System healthy")
         else:
-            logger.info(f"Initialized empty Rekall state at {base_dir}/")
-            
-    except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Init failed: {str(e)}", args.json)
+            print("❌ System issues detected. Please check the checklist above.")
+        print("="*50 + "\n")
 
 def cmd_demo(args):
     """One-click experience that sets up a temporary project, validates it, and generates handoff."""
@@ -138,10 +265,9 @@ def cmd_demo(args):
             print("\nView it now:")
             print(f"  {view_cmd}\n")
             print("-" * 50)
-            print("Next, initialize your own project:")
-            print("  rekall init ./project-state")
-            print("  rekall guard --store-dir ./project-state   # preflight check")
-            print("  rekall validate ./project-state --strict")
+            print("💡 Next Steps:")
+            print("  - run 'rekall status' to see project health")
+            print("  - run 'rekall guard' for preflight checks")
             print("-" * 50 + "\n")
 
 def cmd_validate(args):
@@ -197,9 +323,16 @@ def cmd_validate(args):
             print("================================\n")
             
         if report["summary"]["status"] == "❌":
+            if not args.json:
+                print("\n" + "!" * 50)
+                print("🚨 VALIDATION FAILED")
+                print("!" * 50)
+                if "recovery" in report["summary"]:
+                    print(f"\nRECOVERY GUIDANCE:\n{report['summary']['recovery']}")
+                print("!" * 50 + "\n")
             sys.exit(ExitCode.VALIDATION_FAILED.value)
         elif args.strict and report["summary"]["warnings"] > 0:
-            sys.exit(ExitCode.STRICT_WARNINGS.value)
+            sys.exit(ExitCode.BLOCKERS_FOUND.value)
             
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Validation failed with exception: {str(e)}", args.json)
@@ -440,7 +573,11 @@ def execute_alias_query(args, qtype: ExecutiveQueryType):
                 print("NEXT STEPS:")
                 for s in resp.next_steps:
                     print(f" - {s}")
+            else:
+                print("✓ No blockers detected")
             print("")
+            if qtype == ExecutiveQueryType.BLOCKERS and resp.blockers:
+                sys.exit(ExitCode.BLOCKERS_FOUND.value)
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Query failed: {str(e)}", args.json)
 
@@ -703,6 +840,7 @@ def cmd_decisions_propose(args):
 
 def cmd_timeline_add(args):
     base_dir = Path(args.store_dir)
+    ensure_state_initialized(base_dir, args.json)
     try:
         store = StateStore(base_dir)
         event = {
@@ -807,6 +945,140 @@ def cmd_lock(args):
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Failed to acquire lock: {str(e)}", args.json)
 
+def cmd_onboard(args):
+    """Generates an onboarding “cheat sheet” for a repo."""
+    import datetime
+    
+    # Target state dir: default to project-state if not specified
+    store_dir = Path(args.store_dir)
+    
+    # Auto-init if missing
+    ensure_state_initialized(store_dir, args.json)
+
+    try:
+        store = StateStore(store_dir)
+        
+        # Integrity check: fail if JSONL is corrupted
+        report = store.validate_all()
+        if report["summary"]["status"] == "❌" and report["jsonl_integrity"]["status"] == "❌":
+            malformed = report["jsonl_integrity"].get("malformed", [])
+            errors = report["jsonl_integrity"].get("errors", [])
+            msg = "; ".join(malformed + errors)
+            die(ExitCode.INTERNAL_ERROR, f"Onboarding failed: corrupted state files detected. {msg}", args.json)
+
+        repo_name = Path.cwd().name
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Get last timeline update
+        last_updated = "Never"
+        timeline_events = store._load_jsonl("timeline.jsonl")
+        if timeline_events:
+            last_event = max(timeline_events, key=lambda x: x.get("timestamp", ""))
+            last_updated = last_event.get("timestamp", "Unknown")
+        
+        # 1. Gather data
+        status_resp = query_executive_status(store, ExecutiveQueryType.ON_TRACK)
+        blockers_resp = query_executive_status(store, ExecutiveQueryType.BLOCKERS)
+        guard_payload = build_guard_payload(store)
+        
+        # 2. Build Markdown
+        lines = []
+        lines.append(f"# Onboarding Cheat Sheet: {repo_name}")
+        lines.append(f"**Generated**: {timestamp}")
+        lines.append(f"**Ledger Last Updated**: {last_updated}")
+        lines.append("")
+        
+        lines.append("## What is Rekall?")
+        lines.append("Rekall is a project state ledger for AI agents and human collaborators.")
+        lines.append("It tracks decisions, attempts, and work items as a machine-readable event stream.")
+        lines.append("")
+        
+        lines.append("## Project Reality Snapshot")
+        if status_resp.summary:
+            for s in status_resp.summary:
+                lines.append(f"- {s}")
+        lines.append(f"- **Total Work Items**: {len(status_resp.work_items)}")
+        lines.append("")
+        
+        lines.append("## Risks / Unknowns")
+        risks = guard_payload.get("risks_blockers", [])
+        if risks:
+            for r in risks[:5]:
+                lines.append(f"- [{r['work_item_id']}] {r['title']} ({r['status']})")
+        else:
+            lines.append("No critical risks identified by guard.")
+        lines.append("")
+        
+        lines.append("## Blockers")
+        if blockers_resp.blockers:
+            for b in blockers_resp.blockers:
+                wid = b.get('work_item_id')
+                title = b.get('title', 'Untitled')
+                lines.append(f"- **{wid}**: {title}")
+        else:
+            lines.append("No blockers detected.")
+        lines.append("")
+        
+        lines.append("## State Artifact Layout")
+        lines.append("```text")
+        lines.append(f"{store_dir.name}/")
+        lines.append("├── project.yaml          # Project identity & goals")
+        lines.append("├── work-items.jsonl      # Mutable work state ledger")
+        lines.append("├── decisions.jsonl       # Architectural choices")
+        lines.append("├── attempts.jsonl        # History of what failed")
+        lines.append("└── artifacts/            # Generated summaries & briefs")
+        lines.append("```")
+        lines.append("")
+        
+        lines.append("## How to update state")
+        lines.append("If you try something and fail, add an attempt:")
+        lines.append("`rekall attempts add REQ-1 --title \"Tried changing font size\" --evidence \"UI broke\"`")
+        lines.append("If you make an architectural choice, propose a decision:")
+        lines.append("`rekall decisions propose --title \"Use Postgres\" --rationale \"Need relational data\" --tradeoffs \"Heavier than SQLite\"`")
+        lines.append("")
+        
+        lines.append("## Next Recommended Commands")
+        lines.append("```bash")
+        lines.append("rekall status")
+        lines.append("rekall guard")
+        lines.append("rekall blockers")
+        lines.append(f"rekall handoff {store.project_config.get('project_id', repo_name)} -o ./handoff/")
+        lines.append("```")
+        lines.append("")
+
+        lines.append("## Links")
+        lines.append("- [Quickstart Guide](https://github.com/run-rekall/rekall#quick-start-for-humans--agents)")
+        lines.append("- [BETA.md](https://github.com/run-rekall/rekall/blob/main/docs/BETA.md)")
+        lines.append("- [GitHub Discussions](https://github.com/run-rekall/rekall/discussions)")
+        
+        content = "\n".join(lines)
+        
+        # 3. Write to file
+        artifacts_dir = store_dir / "artifacts"
+        artifacts_dir.mkdir(exist_ok=True)
+        
+        out_path = Path(args.out) if args.out else artifacts_dir / "onboard_cheatsheet.md"
+        
+        if out_path.exists() and not args.force:
+            die(ExitCode.CONFLICT, f"File {out_path} already exists. Use --force to overwrite.", args.json)
+            
+        out_path.write_text(content, encoding="utf-8")
+        
+        # 4. Success output
+        if args.print:
+            print("\n--- ONBOARDING CHEAT SHEET ---")
+            print(content)
+            print("--- END OF CHEAT SHEET ---\n")
+            
+        if args.json:
+            print(json.dumps({"status": "success", "path": str(out_path)}))
+        else:
+            print(f"Created: {out_path}")
+            print(f"Next: rekall status | rekall blockers | rekall handoff {store.project_config.get('project_id', repo_name)}")
+
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Onboarding failed: {str(e)}", args.json, debug=args.debug)
+
 def main():
     setup_logging()
     
@@ -837,11 +1109,13 @@ EXAMPLES:
     
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     parser.add_argument("--quiet", "-q", action="store_true", help="Suppress internal logs")
+    parser.add_argument("--debug", action="store_true", help="Show full stack traces on failure")
     
-    # Shared flags parent so --json/--quiet work after subcommand args too
+    # Shared flags parent so --json/--quiet/--debug work after subcommand args too
     shared_flags = argparse.ArgumentParser(add_help=False)
     shared_flags.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
     shared_flags.add_argument("--quiet", "-q", action="store_true", help=argparse.SUPPRESS)
+    shared_flags.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
     
     subparsers = parser.add_subparsers(dest="command", required=True, title="Commands", metavar="")
     
@@ -856,6 +1130,11 @@ EXAMPLES:
     parser_init = subparsers.add_parser("init", help="[Portability] Initialize a new Rekall directory.", parents=[shared_flags])
     parser_init.add_argument("store_dir", nargs="?", default="project-state", help="Directory to initialize")
     parser_init.set_defaults(func=cmd_init)
+    
+    # Doctor
+    parser_doctor = subparsers.add_parser("doctor", help="[Health] Run diagnostics on the system and configuration.", parents=[shared_flags])
+    parser_doctor.add_argument("store_dir", nargs="?", default="project-state", help="Directory of the StateStore to check")
+    parser_doctor.set_defaults(func=cmd_doctor)
     
     # Validate
     parser_validate = subparsers.add_parser("validate", help="[Status] Validate the StateStore invariants (or MCP surface with --mcp).", parents=[shared_flags])
@@ -964,13 +1243,28 @@ EXAMPLES:
     parser_checkpoint.add_argument("--event-id", default=None, help="Explicit event_id for idempotent timeline append")
     parser_checkpoint.set_defaults(func=cmd_checkpoint)
 
+    # Onboard
+    parser_onboard = subparsers.add_parser("onboard", help="[Handoff] Generate a repository onboarding cheat sheet.", parents=[shared_flags])
+    parser_onboard.add_argument("--store-dir", default="project-state", help="Directory of the state store (default: project-state)")
+    parser_onboard.add_argument("--print", action="store_true", help="Also print the cheat sheet to stdout")
+    parser_onboard.add_argument("--out", "-o", help="Custom output path for the cheat sheet")
+    parser_onboard.add_argument("--force", action="store_true", help="Overwrite if file exists")
+    parser_onboard.set_defaults(func=cmd_onboard)
+
     args = parser.parse_args()
     setup_logging(args.json, getattr(args, "quiet", False))
     
     try:
         args.func(args)
+    except SystemExit as e:
+        sys.exit(e.code)
+    except KeyboardInterrupt:
+        die(ExitCode.USER_ERROR, "Operation cancelled by user.", getattr(args, "json", False))
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, str(e), args.json)
+        # Success Criterion 4: Global exception wrapper
+        # Suppress traceback unless --debug
+        msg = str(e) or "An unexpected error occurred."
+        die(ExitCode.INTERNAL_ERROR, msg, getattr(args, "json", False), debug=getattr(args, "debug", False))
     
 if __name__ == "__main__":
     main()
