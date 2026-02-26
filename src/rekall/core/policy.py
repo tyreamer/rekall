@@ -1,6 +1,6 @@
 import re
 import yaml
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 class PolicyEngine:
     def __init__(self, policy_data: Dict[str, Any]):
@@ -13,7 +13,7 @@ class PolicyEngine:
             data = yaml.safe_load(f)
         return cls(data or {"rules": []})
 
-    def check_action(self, action_type: str, params: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
+    def check_action(self, action_type: str, params: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Checks an action against the policy rules. 
         Returns { "effect": "allow"|"deny", "rule_id": str|None, "reason": str|None }

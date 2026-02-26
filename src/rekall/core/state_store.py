@@ -7,7 +7,7 @@ import datetime
 import hmac
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 import yaml
 from .policy import PolicyEngine, get_default_policy
 
@@ -312,7 +312,7 @@ class StateStore:
         # Stable sort by timestamp
         combined.sort(key=lambda x: x[0])
         
-        active = []
+        active: List[Tuple[str, Dict[str, Any]]] = []
         for t, etype, obj in combined:
             if etype == "revert":
                 to_t = obj.get("to_timestamp", "")
@@ -1300,7 +1300,7 @@ class StateStore:
         record = self.append_jsonl_idempotent("reverts.jsonl", revert, "revert_id")
         return record
 
-    def check_policy(self, action_type: str, params: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
+    def check_policy(self, action_type: str, params: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Runs the policy engine against an action."""
         policy_file = self.base_dir / "policy.yaml"
         if not policy_file.exists():
