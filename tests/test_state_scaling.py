@@ -1,6 +1,8 @@
-import pytest
 import json
-from rekall.core.state_store import StateStore, BloatConfig
+
+import pytest
+
+from rekall.core.state_store import BloatConfig, StateStore
 
 
 @pytest.fixture

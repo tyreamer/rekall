@@ -76,4 +76,4 @@ Every executive answer must include:
 
 ## E) Positioning reminder (say this out loud)
 
-“Rekall is not Kanban for agents. It’s a project’s living state — work + knowledge + decisions + attempts + operational truth — exposed via MCP so agents and leaders can query it with evidence.”
+“Rekall is not audit trail for agents. It’s a project’s living state — work + knowledge + decisions + attempts + operational truth — exposed via MCP so agents and leaders can query it with evidence.”

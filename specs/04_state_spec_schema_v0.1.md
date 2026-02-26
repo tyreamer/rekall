@@ -80,7 +80,7 @@ display_name: string?   # optional
 ### 4.2 TypedLink
 ```yaml
 link_id: string
-type: repo | board | doc | dashboard | logs | traces | alerting | design | dataset | ticketing | runbook | demo | domain | model | mcp_server | notebook | other
+type: repo | audit trail | doc | dashboard | logs | traces | alerting | design | dataset | ticketing | runbook | demo | domain | model | mcp_server | notebook | other
 label: string
 url: string
 system: github | jira | notion | slack | figma | datadog | sentry | gcp | aws | azure | cloudflare | other?

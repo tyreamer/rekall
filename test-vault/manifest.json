@@ -1,0 +1,45 @@
+{
+  "schema_version": "0.1",
+  "streams": {
+    "work_items": {
+      "active_file": "streams/work_items/active.jsonl",
+      "segments": [],
+      "id_field": "event_id"
+    },
+    "activity": {
+      "active_file": "streams/activity/active.jsonl",
+      "segments": [],
+      "id_field": "activity_id",
+      "latest_hash": "aa7efb7a35f57e844b606d92a02fb93b9614722b06e9ac5a8666eb7a6c30ca5b"
+    },
+    "attempts": {
+      "active_file": "streams/attempts/active.jsonl",
+      "segments": [],
+      "id_field": "attempt_id"
+    },
+    "decisions": {
+      "active_file": "streams/decisions/active.jsonl",
+      "segments": [],
+      "id_field": "decision_id",
+      "latest_hash": "014c0d00873b1078f02c3cd0df71b6bb050bf055db3c52b7ba717cdf2ba12c9c"
+    },
+    "timeline": {
+      "active_file": "streams/timeline/active.jsonl",
+      "segments": [],
+      "id_field": "event_id",
+      "latest_hash": "149843855d1d3e90398b591912c4d177ed495eb5cc80fd3e5a1196f83b8ab90d"
+    },
+    "anchors": {
+      "active_file": "streams\\anchors\\active.jsonl",
+      "segments": [],
+      "id_field": "anchor_id",
+      "latest_hash": "cf8c8ce495ce51d946c149f8903f2f05913e99e1b179e20bf88ba5ce4ae7f255"
+    },
+    "actions": {
+      "active_file": "streams\\actions\\active.jsonl",
+      "segments": [],
+      "id_field": "decision_id",
+      "latest_hash": "e0cdf9849770951ec810b04c076eb01100c141b7bb4aea2129a3b4525d2399b4"
+    }
+  }
+}

@@ -19,21 +19,21 @@
    *What to ship next:* A `rekall claim <item_id> --ttl 5m` file-locking mechanism for true mutual exclusion.
 
 5. **Where Is It and What Is The Password? (Hardcoded Secrets)**  
-   *The problem:* Access credentials inevitably leak into prompt histories, logs, or agent memory when they attempt to interact with live environments.  
+   *The problem:* Access credentials inevitably leak into prompt histories, logs, or agent execution record when they attempt to interact with live environments.  
    *What to ship next:* An `Env+Access pointers` JSON schema that injects environment maps by reference (not value) into the agent's context.
 
 ---
 
 ## Ranked List of Grievances (Top 16)
 
-| Rank | Grievance | Quote Snippet (Source) | Who | Freq | Severity | Root Cause | Rekall Fit | What to Ship Next | "Kanban" Risk? |
+| Rank | Grievance | Quote Snippet (Source) | Who | Freq | Severity | Root Cause | Rekall Fit | What to Ship Next | "audit trail" Risk? |
 |--|--|--|--|--|--|--|--|--|--|
 | 1 | **Amnesia in New Sessions** | "agents often 'wake up with amnesia' at the start of a new session" ([Medium](https://medium.com/)) | Solo / Small Team | High | High | Context windows clear when the session is closed, destroying all processed knowledge. | **State Artifact** | `rekall init ./project-state` | No (pure filesystem persistence) |
-| 2 | **Repeating Failed Experiments** | "Context Rot where they forget past requirements... leading to overwriting valid data" ([parallel.ai](https://parallel.ai/)) | Solo Builder | High | High | Agents lack an immutable historical ledger of failed coding attempts. | **Attempts** | `rekall attempts list` | No (this is a scientific engineering log) |
+| 2 | **Repeating Failed Experiments** | "Context Rot where they forget past requirements... leading to overwriting valid data" ([parallel.ai](https://parallel.ai/)) | Solo Builder | High | High | Agents lack an immutable historical execution ledger of failed coding attempts. | **Attempts** | `rekall attempts list` | No (this is a scientific engineering log) |
 | 3 | **Handoffs Are Raw Dumps** | "transferring context as a one-time data dump... fails to preserve relationships" ([xtrace.ai](https://xtrace.ai/)) | Enterprise | Med | High | Handoffs push unstructured chat history instead of queryable state graphs. | **Timeline / Links** | `rekall handoff --target next-agent` | No |
 | 4 | **Agents Stepping On Each Other** | "conflicts can occur when AI agents have competing goals or vie for shared resources" ([milvus.io](https://milvus.io/)) | Small Team | High | High | No mutual exclusion or atomic file locks exist for standard coding agents. | **Claim-Lease** | `rekall claim <target> --ttl 5m` | Yes (if we treat claims like Jira assignment) |
 | 5 | **Missing The "Why" (No Decision Log)** | "aim to capture the rationale and choices made by AI agents... not just the 'what'" ([addyosmani.com](https://addyosmani.com/)) | Small Team | High | Med | Agents output raw diffs without documenting the architectural trade-offs made. | **Decisions** | `rekall propose-decision` | No (architectural documentation) |
-| 6 | **Credentials Leaked in Agent Memory** | "leakage of AI agent credentials... often categorised under Non-Human Identity exposure" ([threatngsecurity.com](https://threatngsecurity.com/)) | Enterprise | Med | High | API keys and secrets are fed as raw strings into the LLM context and logs. | **Env+Access Pointers** | Local `.env` reference schema | No |
+| 6 | **Credentials Leaked in Agent execution record** | "leakage of AI agent credentials... often categorised under Non-Human Identity exposure" ([threatngsecurity.com](https://threatngsecurity.com/)) | Enterprise | Med | High | API keys and secrets are fed as raw strings into the LLM context and logs. | **Env+Access Pointers** | Local `.env` reference schema | No |
 | 7 | **What Changed? (Audit Trails)** | "trace the contributing factors when operational workflows... encounter anomalies" ([servicenow.com](https://servicenow.com/)) | Enterprise | High | High | No chronological audit log exists detailing which agent mutated what state. | **Timeline** | Immutable `timeline.jsonl` | No |
 | 8 | **Duplicating High-Impact Actions** | "high-impact actions, such as sending emails... are processed only once" ([Medium](https://medium.com/)) | Enterprise | Med | High | MAS setups lack shared idempotency keys for tracking transaction events. | **Attempts (Idempotency)** | Add `idempotency_key` field to Attempt | No |
 | 9 | **Lost Dependencies & Related Docs** | "preserve the structured relationships between different pieces of information" ([xtrace.ai](https://xtrace.ai/)) | Small Team | Med | Med | Agents see isolated text files, not a graph of code-to-design relationships. | **Typed Links** | Defined cross-tool Link schema | Yes (could feel like generic 'relates to' tickets) |

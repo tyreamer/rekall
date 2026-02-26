@@ -1,10 +1,12 @@
+import json
 import os
 import tempfile
-import json
-import pytest
-from pathlib import Path
-from rekall.cli import cmd_validate, cmd_export, cmd_import, cmd_handoff, ExitCode
 from argparse import Namespace
+from pathlib import Path
+
+import pytest
+
+from rekall.cli import ExitCode, cmd_export, cmd_handoff, cmd_import, cmd_validate
 
 
 @pytest.fixture
@@ -214,6 +216,7 @@ def test_validate_json_schema(temp_store, capfd):
 
 def test_cmd_demo_os_output_windows(capfd, monkeypatch):
     import platform
+
     from rekall.cli import cmd_demo
 
     monkeypatch.setattr(platform, "system", lambda: "Windows")
@@ -230,6 +233,7 @@ def test_cmd_demo_os_output_windows(capfd, monkeypatch):
 
 def test_cmd_demo_os_output_mac(capfd, monkeypatch):
     import platform
+
     from rekall.cli import cmd_demo
 
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
@@ -245,6 +249,7 @@ def test_cmd_demo_os_output_mac(capfd, monkeypatch):
 
 def test_cmd_demo_os_output_linux(capfd, monkeypatch):
     import platform
+
     from rekall.cli import cmd_demo
 
     monkeypatch.setattr(platform, "system", lambda: "Linux")
@@ -317,7 +322,7 @@ def test_cmd_lock(temp_store):
 
 def test_cmd_guard_human_output(temp_store, capfd):
     """Guard output contains constraints + evidence refs section headers."""
-    from rekall.cli import cmd_guard, cmd_attempts_add, cmd_decisions_propose
+    from rekall.cli import cmd_attempts_add, cmd_decisions_propose, cmd_guard
 
     # Seed an attempt and decision so sections aren't empty
     cmd_attempts_add(
@@ -386,7 +391,7 @@ def test_cmd_guard_json_output(temp_store, capfd):
 
 def test_cmd_guard_strict_fails_no_constraints(temp_store):
     """--strict exits non-zero when no constraints defined."""
-    from rekall.cli import cmd_guard, ExitCode
+    from rekall.cli import ExitCode, cmd_guard
 
     args = Namespace(
         store_dir=str(temp_store),
@@ -426,32 +431,32 @@ def test_cmd_guard_emit_timeline_idempotent(temp_store):
     assert "Preflight guard run" in lines1[0]
 
 def test_cmd_decide_and_resume(temp_store, capfd):
-    from rekall.cli import cmd_decide, cmd_alias_resume
+    from rekall.cli import cmd_alias_resume, cmd_decide
     from rekall.core.state_store import StateStore
-    
+
     store = StateStore(temp_store)
     store.wait_for_approval(
-        "dec_123", 
-        "Approve?", 
-        ["yes", "no"], 
-        actor={"actor_id": "ag-1"}, 
-        action_id="action_123", 
+        "dec_123",
+        "Approve?",
+        ["yes", "no"],
+        actor={"actor_id": "ag-1"},
+        action_id="action_123",
         reason="Need human review"
     )
-    
+
     # Check resume command sees unresolved breakpoint
     args_resume = Namespace(store_dir=str(temp_store), json=False)
     cmd_alias_resume(args_resume)
     captured = capfd.readouterr()
     assert "UNRESOLVED breakpoints" in captured.out
     assert "action_123" in captured.out
-    
+
     # Make a decision using the CLI
     args_decide = Namespace(store_dir=str(temp_store), json=False, decision_id="dec_123", option="approve", note="looks good")
     cmd_decide(args_decide)
     captured = capfd.readouterr()
     assert "Decision recorded" in captured.out
-    
+
     # Check resume command sees resolved breakpoint
     cmd_alias_resume(args_resume)
     captured = capfd.readouterr()

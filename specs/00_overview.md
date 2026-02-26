@@ -75,16 +75,16 @@ Primary contract: `05_mcp_tool_contract_v0.1.md`
 
 ### Human interface (secondary)
 A UI is a client of the same state, not the source of truth.
-MVP UI typically includes: Board, Attempts, Decisions, Timeline, Environments/Access.
+MVP UI typically includes: audit trail, Attempts, Decisions, Timeline, Environments/Access.
 
 ---
 
-## Positioning: avoid “Kanban clone” confusion
+## Positioning: avoid “audit trail clone” confusion
 
-Rekall includes work tracking, but it is **not** “Kanban for agents.”
+Rekall includes work tracking, but it is **not** “audit trail for agents.”
 
-**Lead with:** project reality / shared blackboard / ledger / project memory layer  
-**Do not lead with:** “Kanban board”, “task management”, “tickets”, “issue tracker”
+**Lead with:** project reality / shared execution trail / execution ledger / verifiable AI execution record layer  
+**Do not lead with:** “audit trail audit trail”, “task management”, “tickets”, “issue tracker”
 
 The differentiator to demonstrate first is:
 - evidence-backed executive queries (status with citations)
@@ -92,7 +92,7 @@ The differentiator to demonstrate first is:
 - timeline + provenance (what changed, who did it)
 - environment + access pointers (how to operate it, without secrets)
 
-A board view can exist later as a client, but it should never be the headline.
+A audit trail view can exist later as a client, but it should never be the headline.
 
 ---
 

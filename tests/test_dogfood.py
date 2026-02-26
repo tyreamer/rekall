@@ -1,8 +1,10 @@
 import tempfile
-import pytest
-from pathlib import Path
-from rekall.cli import ensure_state_initialized, cmd_timeline_add
 from argparse import Namespace
+from pathlib import Path
+
+import pytest
+
+from rekall.cli import cmd_timeline_add, ensure_state_initialized
 
 
 @pytest.fixture

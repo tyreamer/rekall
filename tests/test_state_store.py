@@ -1,6 +1,8 @@
-import pytest
 from pathlib import Path
-from rekall.core.state_store import StateStore, SecretDetectedError, StateConflictError
+
+import pytest
+
+from rekall.core.state_store import SecretDetectedError, StateConflictError, StateStore
 
 SAMPLE_DIR = Path(__file__).parent.parent / "examples" / "sample_state_artifact"
 
@@ -28,7 +30,7 @@ def test_work_items_replayed(tmp_path):
     assert len(store.work_items) > 0
 
     # Check that at least one item has a computed version and claim status
-    for wid, item in store.work_items.items():
+    for _wid, item in store.work_items.items():
         assert "version" in item
         assert isinstance(item["version"], int)
         assert "claim" in item
@@ -95,7 +97,7 @@ def test_optimistic_concurrency(tmp_path):
     (tmp_path / "schema-version.txt").write_text("0.1")
     store = StateStore(tmp_path)
 
-    # Add a mock work item via the API if possible, or just mock memory for this specific test
+    # Add a mock work item via the API if possible, or just mock execution record for this specific test
     # But since initialize() replays work_items, we should at least have a manifest entry
     store.append_jsonl_idempotent("work_items", {"event_id": "dummy"}, "event_id")
     store.work_items["WI-test"] = {
@@ -122,7 +124,7 @@ def test_optimistic_concurrency(tmp_path):
 def test_state_revert_semantics(tmp_path):
     (tmp_path / "schema-version.txt").write_text("0.1")
     store = StateStore(tmp_path)
-    
+
     # 1. Add some initial events spanning time
     # For testing, we mock the datetime so we can control it, or just inject events with hardcoded timestamps.
     events = [
@@ -130,16 +132,16 @@ def test_state_revert_semantics(tmp_path):
         {"action_id": "A2", "timestamp": "2026-01-01T11:00:00Z", "data": "beta"},
         {"action_id": "A3", "timestamp": "2026-01-01T12:00:00Z", "data": "gamma"},
     ]
-    
+
     for e in events:
         store.append_jsonl_idempotent("actions.jsonl", e, "action_id")
-        
+
     # Verify all 3 are loaded
     loaded = store._load_stream("actions.jsonl")
     assert len(loaded) == 3
     assert loaded[0]["action_id"] == "A1"
     assert loaded[2]["action_id"] == "A3"
-    
+
     # 2. Append a StateRevert to 10:30 (should hide A2 and A3)
     # Since append_revert uses datetime.now(), we inject a manual revert event for testing
     revert_1 = {
@@ -150,21 +152,21 @@ def test_state_revert_semantics(tmp_path):
         "created_by": "test"
     }
     store.append_jsonl_idempotent("reverts.jsonl", revert_1, "revert_id")
-    
+
     # Verify A2 and A3 are hidden
     loaded = store._load_stream("actions.jsonl")
     assert len(loaded) == 1
     assert loaded[0]["action_id"] == "A1"
-    
+
     # 3. Add a new event representing the alternate timeline
     new_event = {"action_id": "A4", "timestamp": "2026-01-01T14:00:00Z", "data": "delta"}
     store.append_jsonl_idempotent("actions.jsonl", new_event, "action_id")
-    
+
     loaded = store._load_stream("actions.jsonl")
     assert len(loaded) == 2
     assert loaded[0]["action_id"] == "A1"
     assert loaded[1]["action_id"] == "A4"
-    
+
     # 4. Add another StateRevert to 15:00 (after A4). Since there are no events after 15:00, nothing changes
     revert_2 = {
         "revert_id": "rev-2",
@@ -174,10 +176,10 @@ def test_state_revert_semantics(tmp_path):
         "created_by": "test"
     }
     store.append_jsonl_idempotent("reverts.jsonl", revert_2, "revert_id")
-    
+
     loaded = store._load_stream("actions.jsonl")
     assert len(loaded) == 2  # A1 and A4 still visible
-    
+
     # 5. Raw history is preserved
     raw = store._load_stream_raw("actions.jsonl")
     assert len(raw) == 4

@@ -7,12 +7,11 @@ runs safe read-only probe calls.
 """
 
 import json
+import shlex
 import subprocess
 import sys
 import uuid
-import shlex
 from typing import Any, Dict, List, Optional, Tuple
-
 
 # Required tools per specs/05_mcp_tool_contract_v0.1.md \xa75
 REQUIRED_TOOLS = [

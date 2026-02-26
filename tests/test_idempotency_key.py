@@ -2,8 +2,9 @@
 
 import json
 import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 
 from rekall.core.state_store import StateStore
 

@@ -1,15 +1,15 @@
 import argparse
-import tarfile
-import sys
 import json
-from pathlib import Path
 import logging
+import sys
+import tarfile
 from enum import IntEnum
-from typing import Optional, Any
+from pathlib import Path
+from typing import Any, NoReturn, Optional
 
-from rekall.core.state_store import StateStore
+from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
 from rekall.core.handoff_generator import generate_boot_brief
-from rekall.core.executive_queries import query_executive_status, ExecutiveQueryType
+from rekall.core.state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ def die(
     is_json: bool,
     details: Optional[dict] = None,
     debug: bool = False,
-):
+) -> NoReturn:
     """Standardized exit formatter."""
     if is_json:
         payload = {"ok": False, "code": code.name, "message": message}
@@ -224,8 +224,8 @@ def cmd_init(args):
 
 def cmd_doctor(args):
     """Diagnostic command to check system health and configuration."""
-    import platform
     import os
+    import platform
 
     results = []
 
@@ -500,7 +500,7 @@ def cmd_validate(args):
 
 def cmd_validate_mcp(args):
     """MCP self-check: launch server, validate tools/list, schemas, and probe calls."""
-    from rekall.core.mcp_validator import run_mcp_validation, format_human_report
+    from rekall.core.mcp_validator import format_human_report, run_mcp_validation
 
     server_cmd = getattr(args, "server_cmd", None)
     if not server_cmd:
@@ -1135,7 +1135,7 @@ def cmd_decide(args):
         decision = args.option
         note = getattr(args, "note", "")
         actor = {"actor_type": "human", "actor_id": "cli_user"}
-        
+
         updated = store.capture_approval(
             decision_id=decision_id,
             decision_str=decision,
@@ -1269,7 +1269,7 @@ def cmd_checkout(args):
         to_target = args.to
         if not to_target:
             die(ExitCode.USER_ERROR, "--to is required", args.json)
-            
+
         # Check if it looks like an ISO timestamp, otherwise look it up
         if "T" in to_target and len(to_target) > 10:
             ts = to_target
@@ -1291,9 +1291,9 @@ def cmd_checkout(args):
                     break
             if not ts:
                 die(ExitCode.USER_ERROR, f"Event ID {to_target} not found.", args.json)
-        
+
         res = store.append_revert(to_timestamp=ts, actor={"actor_id": "cli_user"}, reason=getattr(args, "reason", None))
-        
+
         if args.json:
             print(json.dumps({"status": "success", "revert": res}))
         else:
@@ -1340,21 +1340,21 @@ def cmd_status(args):
     """Provides an executive summary of the current reality."""
     store_dir = Path(getattr(args, "store_dir", "project-state"))
     ensure_state_initialized(store_dir, args.json)
-    
+
     try:
         store = StateStore(store_dir)
-        
+
         project_meta = store._load_yaml("project.yaml") or {}
         goal = project_meta.get("current_goal") or project_meta.get("goal", "No goal defined")
         phase = project_meta.get("phase", "Unknown phase")
-        
+
         timeline = store._load_stream("timeline.jsonl")
         actions = store._load_stream("actions.jsonl")
         decisions = store._load_stream("decisions.jsonl")
         attempts = store._load_stream("attempts.jsonl")
         activity = store._load_stream("activity.jsonl")
         anchors_stream = store._load_stream("anchors.jsonl")
-        
+
         last_event_time = "Never"
         last_event_id = "N/A"
         last_event_hash = "N/A"
@@ -1372,7 +1372,7 @@ def cmd_status(args):
         waits = [e for e in actions if e.get("type", "") == "WaitingOnHuman"]
         resolved_actions = {d.get("action_id") for d in decisions if d.get("action_id")}
         resolved_decisions = {d.get("decision_id") for d in decisions if d.get("decision_id")}
-        
+
         for w in waits:
             w_did = w.get("decision_id")
             w_aid = w.get("action_id")
@@ -1381,13 +1381,13 @@ def cmd_status(args):
                 is_resolved = True
             elif w_aid and w_aid in resolved_actions:
                 is_resolved = True
-            
+
             if not is_resolved:
                 unresolved_waits.append(w)
-                
+
         if args.json:
             print(json.dumps({
-                "goal": goal, "phase": phase, 
+                "goal": goal, "phase": phase,
                 "head": {"timestamp": last_event_time, "id": last_event_id, "hash": last_event_hash},
                 "last_attempt": last_attempt,
                 "unresolved_waits": unresolved_waits
@@ -1402,7 +1402,7 @@ def cmd_status(args):
         print(f"Active HEAD: {last_event_time}")
         print(f"HEAD ID:     {last_event_id}")
         print(f"HEAD Hash:   {last_event_hash[:12]}... (verifiable)")
-        
+
         print("\n=== Last Attempt ===")
         if last_attempt:
             title = last_attempt.get('title', last_attempt.get('action_id', 'Unknown'))
@@ -1414,7 +1414,7 @@ def cmd_status(args):
             print(f"ID:      {last_attempt.get('attempt_id')}")
         else:
             print("None")
-            
+
         print("\n=== Pending Approvals ===")
         if unresolved_waits:
             for w in unresolved_waits:
@@ -1424,7 +1424,7 @@ def cmd_status(args):
                     print(f"  Prompt: {w.get('prompt')}")
         else:
             print("None")
-            
+
         print("\n=== Shadow Policy Constraints ===")
         policy_checks = [e for e in activity if e.get("type") == "PolicyCheck"]
         if policy_checks:
@@ -1447,7 +1447,7 @@ def cmd_status(args):
         else:
             print("None")
         print("")
-        
+
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Status failed: {str(e)}", args.json)
 
@@ -1459,28 +1459,28 @@ def cmd_verify(args):
         store = StateStore(base_dir)
         results = []
         overall_status = "\u2705"
-        
+
         streams = store.manifest.get("streams", {})
         for stream_name in streams:
             res = store.verify_stream_integrity(stream_name)
             results.append(res)
             if res["status"] == "\u274c":
                 overall_status = "\u274c"
-                
+
         if args.json:
             print(json.dumps({"status": overall_status, "streams": results}))
             return
-            
+
         print(f"\n[ rekall verify ] - Integrity: {overall_status}")
         for res in results:
             print(f"  {res['status']} {res['stream']:<20} ({res['count']} events)")
             if res["errors"]:
                 for err in res["errors"]:
                     print(f"    \u274c {err}")
-                    
+
         if overall_status == "\u274c":
             sys.exit(ExitCode.INTERNAL_ERROR)
-            
+
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Verification failed: {str(e)}", args.json)
 
@@ -1488,22 +1488,22 @@ def cmd_bundle(args):
     """Bundle the entire state directory into a portable tarball."""
     base_dir = Path(getattr(args, "store_dir", "."))
     ensure_state_initialized(base_dir, args.json)
-    
+
     out_file = Path(args.out)
     try:
         if not out_file.name.endswith((".tar.gz", ".tgz")):
             out_file = out_file.with_name(out_file.name + ".tar.gz")
-            
+
         logger.info(f"Bundling {base_dir} into {out_file}...")
-        
+
         with tarfile.open(out_file, "w:gz") as tar:
             tar.add(base_dir, arcname=base_dir.name)
-            
+
         if args.json:
             print(json.dumps({"status": "success", "bundle_path": str(out_file.absolute())}))
         else:
             print(f"\u2705 Bundle created: {out_file}")
-            
+
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Bundle failed: {str(e)}", args.json)
 
@@ -1713,21 +1713,21 @@ def main():
                     pass
 
     desc = """Rekall: verifiable AI execution record + execution ledger (not audit trail)
-    
+
 EXAMPLES:
   # Try it out
   rekall demo
-  
+
   # Check status & what's blocking you
   rekall status
   rekall blockers
-  
+
   # Validate system state before AI integration
   rekall validate --strict
-  
+
   # Dump standalone snapshots
   rekall export -o ./backup-state/
-  
+
   # Generate AI context prompts
   rekall handoff my_project -o ./handoff_test/
 """
@@ -1916,7 +1916,7 @@ EXAMPLES:
         "--store-dir", default=".", help="Directory of the current StateStore"
     )
     parser_resume.set_defaults(func=cmd_alias_resume)
-    
+
     # Checkout
     parser_checkout = subparsers.add_parser(
         "checkout",

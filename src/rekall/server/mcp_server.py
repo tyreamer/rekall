@@ -77,9 +77,10 @@ def project_get(args: dict) -> list:
 
 def project_onboard(args: dict) -> list:
     store = get_store()
-    from rekall.cli import build_guard_payload
-    from rekall.core.executive_queries import query_executive_status, ExecutiveQueryType
     import datetime
+
+    from rekall.cli import build_guard_payload
+    from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
 
     try:
         repo_name = store.project_config.get("project_id", store.base_dir.parent.name)
@@ -510,8 +511,9 @@ def exec_query(args: dict) -> list:
     store = get_store()
     # The original line `work_items = list(store.work_items.values())` was not used in the original exec_query logic.
     # The provided change redefines exec_query, so I'm using the new definition.
-    from rekall.core.executive_queries import query_executive_status, ExecutiveQueryType
     import dataclasses
+
+    from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
 
     try:
         q_type = ExecutiveQueryType(query_type)
@@ -669,30 +671,30 @@ def exec_natural_query(args: dict) -> list:
     query = args.get("query")
     if not project_id or not query:
         raise ValueError("project_id and query are required")
-        
+
     store = get_store()
     try:
         # Load the critical ledger streams
         timeline = store._load_stream("timeline.jsonl") or []
         attempts = store._load_stream("attempts.jsonl") or []
         decisions = store._load_stream("decisions.jsonl") or []
-        
+
         # Format the ledger for the LLM
         ledger_text = []
         ledger_text.append(f"====== PROJECT EXECUTION LEDGER for {project_id} ======")
-        
+
         ledger_text.append("\n--- TIMELINE EVENTS ---")
         for t in timeline[-25:]: # Limit to recent
             ledger_text.append(json.dumps(t))
-            
+
         ledger_text.append("\n--- RECENT ATTEMPTS ---")
         for a in attempts[-25:]:
             ledger_text.append(json.dumps(a))
-            
+
         ledger_text.append("\n--- RECENT DECISIONS ---")
         for d in decisions[-25:]:
             ledger_text.append(json.dumps(d))
-            
+
         system_instruction = f"""
 You are answering the user's query: "{query}"
 
@@ -700,7 +702,7 @@ Use the execution ledger provided above to formulate your answer.
 RULES:
 1. You MUST cite exact event IDs (e.g., attempt_id, decision_id, event_id) for every claim you make.
 2. If the evidence is missing from the ledger, explicitly state: "Evidence missing. A log entry for X is required."
-3. Do not invent or hallucinate events. 
+3. Do not invent or hallucinate events.
 """
         return [{"text": "\n".join(ledger_text) + "\n\n" + system_instruction}]
     except Exception as e:
@@ -800,13 +802,13 @@ def actuate_cli(args: dict) -> list:
     command = args.get("command")
     cwd = args.get("cwd", ".")
     actor = args.get("actor")
-    
+
     if not project_id or not action_id or not command or not actor:
         raise ValueError("project_id, action_id, command, and actor are required")
-        
+
     import subprocess
     import traceback
-    
+
     store = get_store()
     try:
         result = subprocess.run(command, cwd=cwd, shell=True, capture_output=True, text=True, timeout=120)
@@ -822,7 +824,7 @@ def actuate_cli(args: dict) -> list:
             "traceback": traceback.format_exc(),
             "success": False
         }
-        
+
     try:
         updated = store.capture_outcome(action_id, outcome_metadata, actor)
         return [{"status": "success" if outcome_metadata["success"] else "failed", "outcome": outcome_metadata, "record": updated}]
@@ -835,13 +837,13 @@ def actuate_file_write(args: dict) -> list:
     file_path = args.get("file_path")
     content = args.get("content", "")
     actor = args.get("actor")
-    
+
     if not project_id or not action_id or not file_path or not actor:
         raise ValueError("project_id, action_id, file_path, and actor are required")
-        
+
     store = get_store()
     from pathlib import Path
-    
+
     try:
         p = Path(file_path)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -858,7 +860,7 @@ def actuate_file_write(args: dict) -> list:
             "traceback": traceback.format_exc(),
             "success": False
         }
-        
+
     try:
         updated = store.capture_outcome(action_id, outcome_metadata, actor)
         return [{"status": "success" if outcome_metadata["success"] else "failed", "outcome": outcome_metadata, "record": updated}]

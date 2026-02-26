@@ -257,7 +257,7 @@ External dependencies MUST be modeled as typed links, not raw URLs.
 
 Minimum fields:
 - `link_id`
-- `type` (repo/doc/board/dashboard/logs/traces/runbook/demo/etc.)
+- `type` (repo/doc/audit trail/dashboard/logs/traces/runbook/demo/etc.)
 - `label`
 - `url`
 - optional: `system` (github/jira/notion/slack/figma/etc.)
@@ -374,5 +374,5 @@ This system is NOT:
 
 It IS:
 - the **vendor-neutral project truth layer**
-- the **portable project memory**
+- the **portable verifiable AI execution record**
 - the **agent-native coordination substrate**

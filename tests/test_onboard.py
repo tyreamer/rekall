@@ -1,8 +1,10 @@
 import tempfile
-import pytest
-from pathlib import Path
-from rekall.cli import cmd_onboard, ExitCode
 from argparse import Namespace
+from pathlib import Path
+
+import pytest
+
+from rekall.cli import ExitCode, cmd_onboard
 
 
 @pytest.fixture

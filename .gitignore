@@ -42,6 +42,10 @@ roadmap/
 envs.yaml
 access.yaml
 
+# Allow tracked project-state defaults (non-sensitive templates)
+!project-state/envs.yaml
+!project-state/access.yaml
+
 # Local development
 scratch/
 logs/
