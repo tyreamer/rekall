@@ -92,14 +92,6 @@ Cursor also supports file-based config via `mcp.json` for stdio servers—see th
 claude mcp add --transport stdio rekall -- rekall serve --store-dir ./project-state
 ```
 
-### Antigravity
-
-**Conceptual Steps:**
-1. Ensure the `rekall` CLI is installed and accessible.
-2. In the Antigravity UI, navigate to **MCP Servers → View raw config**.
-3. Add Rekall as a new `stdio` tool provider in the raw config JSON.
-
-**Raw config example** *(added via "View raw config" in the MCP Servers UI)*:
 ```json
 {
   "mcpServers": {
@@ -110,3 +102,37 @@ claude mcp add --transport stdio rekall -- rekall serve --store-dir ./project-st
   }
 }
 ```
+
+---
+
+## Windows Installation Note
+
+If you are using **pipx** on Windows:
+1. Run `pipx install git+https://github.com/tyreamer/rekall.git`.
+2. Ensure pipx is in your PATH by running `pipx ensurepath`.
+3. **Important**: You must restart your terminal or IDE after installation for the `rekall` command to be recognized by MCP clients.
+
+## Verifying Claude Code Connection
+
+Once configured, you can verify Rekall is active in **Claude Code**:
+
+1. **Check Status**: Run `claude mcp list` or `claude mcp get rekall`. It should show a green checkmark or "Connected".
+2. **In-Session**: Type `/mcp` inside a Claude Code session to see the list of active tools (e.g., `project.list`, `rekall.exec.query`).
+
+## Troubleshooting
+
+### 1. `project-state/` not found
+If the server fails to start because the state directory is missing, run:
+```bash
+rekall init
+```
+This initializes the required structure and onboarding artifacts.
+
+### 2. MCP Failed to Connect
+Run the built-in validator to check for protocol or environment issues:
+```bash
+rekall validate --mcp --server-cmd "rekall serve --store-dir ./project-state"
+```
+
+### 3. "Unexpected token" or "Stream corrupted"
+This usually happens if something is printing to **stdout** during initialization. Rekall is designed to send all logs to **stderr** during `rekall serve`. If you are using a wrapper script, ensure it does not print any banners or status messages to stdout.

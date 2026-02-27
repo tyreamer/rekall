@@ -43,11 +43,12 @@ rekall demo
 ## Quick Start (for humans & agents)
 ```bash
 cd /path/to/your-repo
-rekall onboard          # ← creates cheat sheet + project-state/
+rekall init          # ← creates cheat sheet + project-state/
 
 # Core Commands
 rekall status           # ← Quick executive summary of the current reality
 rekall guard            # ← Preflight check: summarized goals, risks, and recent work
+rekall serve            # ← [MCP] Launch stdio server for AI agents (Claude Code, etc.)
 rekall blockers         # ← List active blockers and their estimated impact
 ```
 

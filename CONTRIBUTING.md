@@ -78,6 +78,17 @@ Use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.yml). Include `r
 
 Use the [Feature Request template](.github/ISSUE_TEMPLATE/feature_request.yml). Explain why Rekall primitives fit.
 
+## Release Gate Checklist
+
+To ensure a high-quality release, all PRs touching CLI or MCP logic must satisfy this checklist:
+
+- [ ] `rekall --help` contains the `serve` subcommand.
+- [ ] `rekall serve --store-dir ./project-state` starts without printing to stdout (diagnostic logs go to stderr).
+- [ ] MCP handshake passes: `rekall validate --mcp --server-cmd "rekall serve --store-dir ./project-state"`.
+- [ ] Claude Code quickstart instructions verified on at least one OS (Windows/macOS/Linux).
+- [ ] Documentation links in `README.md` and `docs/` are correct and reachable.
+- [ ] No secrets or PII detected by `scripts/scan_secrets`.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).

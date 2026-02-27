@@ -10,6 +10,7 @@ from typing import Any, NoReturn, Optional
 from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
 from rekall.core.handoff_generator import generate_boot_brief
 from rekall.core.state_store import StateStore
+from rekall.server import mcp_server
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,9 @@ def ensure_state_initialized(store_dir: Path, is_json: bool = False):
         logger.info(
             f"State directory {store_dir}/ missing. Initializing minimal structure..."
         )
+    else:
+        # For JSON/MCP mode, write to stderr to avoid breaking stdout stream
+        sys.stderr.write(f"INFO: Initializing minimal structure in {store_dir}/...\n")
 
     try:
         store_dir.mkdir(parents=True, exist_ok=True)
@@ -207,19 +211,7 @@ def ensure_state_initialized(store_dir: Path, is_json: bool = False):
         )
 
 
-def cmd_init(args):
-    """Initializes a new Rekall project state directory."""
-    base_dir = Path(args.store_dir)
 
-    if base_dir.exists() and any(base_dir.iterdir()):
-        die(ExitCode.CONFLICT, f"Directory {base_dir} is not empty.", args.json)
-
-    ensure_state_initialized(base_dir, args.json)
-
-    if args.json:
-        print(json.dumps({"status": "success", "store_dir": str(base_dir)}))
-    else:
-        logger.info(f"Initialized empty Rekall state at {base_dir}/")
 
 
 def cmd_doctor(args):
@@ -1451,6 +1443,35 @@ def cmd_status(args):
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Status failed: {str(e)}", args.json)
 
+
+def cmd_serve(args):
+    """Launch the MCP server over stdio."""
+    # Force quiet mode for MCP to avoid polluting stdout
+    setup_logging(json_mode=True, quiet_mode=True)
+
+    # Resolve store_dir
+    if args.store_dir is not None:
+        resolved_store = args.store_dir
+    else:
+        resolved_store = getattr(args, "store_dir_flag", ".")
+    args.store_dir = resolved_store
+
+    base_dir = Path(args.store_dir)
+    ensure_state_initialized(base_dir, is_json=True)
+
+    try:
+        store = StateStore(base_dir)
+
+        # Inject store into mcp_server global
+        mcp_server._store = store
+
+        # Launch server loop
+        mcp_server.main()
+    except Exception as e:
+        # Exit silently or with a log that won't break JSON-RPC if possible
+        # but if we're here, the server hasn't really started.
+        die(ExitCode.INTERNAL_ERROR, f"MCP server failed: {str(e)}", args.json)
+
 def cmd_verify(args):
     """Verify cryptographic integrity of all execution streams."""
     base_dir = Path(getattr(args, "store_dir", "."))
@@ -1507,8 +1528,8 @@ def cmd_bundle(args):
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Bundle failed: {str(e)}", args.json)
 
-def cmd_onboard(args):
-    """Generates an onboarding \u201ccheat sheet\u201d for a repo."""
+def cmd_init(args):
+    """Initializes a new Rekall state directory and generates an onboarding cheat sheet."""
     import datetime
 
     # Target state dir: default to project-state if not specified
@@ -1656,25 +1677,25 @@ def cmd_onboard(args):
         artifacts_dir.mkdir(exist_ok=True)
 
         out_path = (
-            Path(args.out) if args.out else artifacts_dir / "onboard_cheatsheet.md"
+            Path(getattr(args, "out")) if getattr(args, "out", None) else artifacts_dir / "onboard_cheatsheet.md"
         )
 
-        if out_path.exists() and not args.force:
+        if out_path.exists() and not getattr(args, "force", False):
             die(
                 ExitCode.CONFLICT,
                 f"File {out_path} already exists. Use --force to overwrite.",
-                args.json,
+                getattr(args, "json", False),
             )
 
         out_path.write_text(content, encoding="utf-8")
 
         # 4. Success output
-        if args.print:
+        if getattr(args, "print", False):
             print("\n--- ONBOARDING CHEAT SHEET ---")
             print(content)
             print("--- END OF CHEAT SHEET ---\n")
 
-        if args.json:
+        if getattr(args, "json", False):
             print(json.dumps({"status": "success", "path": str(out_path)}))
         else:
             print(f"Created: {out_path}")
@@ -1686,8 +1707,8 @@ def cmd_onboard(args):
         die(
             ExitCode.INTERNAL_ERROR,
             f"Onboarding failed: {str(e)}",
-            args.json,
-            debug=args.debug,
+            getattr(args, "json", False),
+            debug=getattr(args, "debug", False),
         )
 
 
@@ -1776,11 +1797,26 @@ EXAMPLES:
     # Init
     parser_init = subparsers.add_parser(
         "init",
-        help="[Portability] Initialize a new Rekall directory.",
+        help="[Portability] Initialize a new Rekall directory and generate an onboarding cheat sheet.",
         parents=[shared_flags],
     )
     parser_init.add_argument(
-        "store_dir", nargs="?", default="project-state", help="Directory to initialize"
+        "store_dir", nargs="?", default="project-state", help="Directory to initialize (default: project-state)"
+    )
+    parser_init.add_argument(
+        "--state-dir", help="Custom state directory (e.g. .rekall)"
+    )
+    parser_init.add_argument(
+        "--dotdir", action="store_true", help="Shortcut for --state-dir .rekall"
+    )
+    parser_init.add_argument(
+        "--print", action="store_true", help="Also print the cheat sheet to stdout"
+    )
+    parser_init.add_argument(
+        "--out", "-o", help="Custom output path for the cheat sheet"
+    )
+    parser_init.add_argument(
+        "--force", action="store_true", help="Overwrite if file exists"
     )
     parser_init.set_defaults(func=cmd_init)
 
@@ -2132,33 +2168,7 @@ EXAMPLES:
     )
     parser_checkpoint.set_defaults(func=cmd_checkpoint)
 
-    # Onboard
-    parser_onboard = subparsers.add_parser(
-        "onboard",
-        help="[Handoff] Generate a repository onboarding cheat sheet.",
-        parents=[shared_flags],
-    )
-    parser_onboard.add_argument(
-        "--store-dir",
-        default="project-state",
-        help="Directory of the state store (default: project-state)",
-    )
-    parser_onboard.add_argument(
-        "--state-dir", help="Custom state directory (e.g. .rekall)"
-    )
-    parser_onboard.add_argument(
-        "--dotdir", action="store_true", help="Shortcut for --state-dir .rekall"
-    )
-    parser_onboard.add_argument(
-        "--print", action="store_true", help="Also print the cheat sheet to stdout"
-    )
-    parser_onboard.add_argument(
-        "--out", "-o", help="Custom output path for the cheat sheet"
-    )
-    parser_onboard.add_argument(
-        "--force", action="store_true", help="Overwrite if file exists"
-    )
-    parser_onboard.set_defaults(func=cmd_onboard)
+
 
     # Status
     parser_status = subparsers.add_parser(
@@ -2172,6 +2182,31 @@ EXAMPLES:
         help="Directory of the state store",
     )
     parser_status.set_defaults(func=cmd_status)
+
+    # Serve (MCP)
+    parser_serve = subparsers.add_parser(
+        "serve",
+        help="[MCP] Launch the Model Context Protocol server over stdio (for IDEs/Agents).",
+        parents=[shared_flags],
+    )
+    parser_serve.add_argument(
+        "store_dir",
+        nargs="?",
+        default=None,
+        help="Directory of the StateStore (positional, or use --store-dir)",
+    )
+    parser_serve.add_argument(
+        "--store-dir",
+        dest="store_dir_flag",
+        default=".",
+        help="Directory of the StateStore",
+    )
+    parser_serve.add_argument(
+        "--host",
+        default="stdio",
+        help="Host/transport for the MCP server. Currently only 'stdio' is supported.",
+    )
+    parser_serve.set_defaults(func=cmd_serve)
 
     args = parser.parse_args()
 
