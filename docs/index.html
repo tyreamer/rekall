@@ -4,127 +4,487 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rekall — Persistent Memory for AI Agents</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://buttons.github.io/buttons.js"></script>
-  <link rel="icon" href="https://github.com/tyreamer/rekall/raw/main/assets/icon.png" type="image/png">
+  <title>Rekall | Persistent Reality Layer for AI agents</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@300;400;500;600&display=swap"
+    rel="stylesheet">
   <style>
+    :root {
+      --emerald-lite: #10b981;
+      --emerald-deep: #059669;
+      --zinc-50: #fafafa;
+      --zinc-100: #f4f4f5;
+      --zinc-200: #e4e4e7;
+      --zinc-400: #a1a1aa;
+      --zinc-800: #27272a;
+      --zinc-900: #18181b;
+      --zinc-950: #09090b;
+      --glass: rgba(255, 255, 255, 0.03);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --accent-gradient: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: system-ui, -apple-system, sans-serif;
+      background-color: var(--zinc-950);
+      color: var(--zinc-50);
+      font-family: 'Inter', sans-serif;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    h1,
+    h2,
+    h3,
+    .font-display {
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    /* --- Background Effects --- */
+    .bg-glow {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -1;
+      background:
+        radial-gradient(circle at 10% 20%, rgba(16, 185, 129, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(59, 130, 246, 0.05) 0%, transparent 40%);
+    }
+
+    .bg-mesh {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -2;
+      background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.02'%3E%3Cpath d='M36 34v2h-2v-2h2zm0 8v2h-2v-2h2zm-8-8v2h-2v-2h2zm0 8v2h-2v-2h2zm-8-8v2h-2v-2h2zm0 8v2h-2v-2h2zm-8-8v2h-2v-2h2zm0 8v2h-2v-2h2zM34 20h2v2h-2v-2zm0 8h2v2h-2v-2zm-8-8h2v2h-2v-2zm0 8h2v2h-2v-2zm-8-8h2v2h-2v-2zm0 8h2v2h-2v-2zm-8-8h2v2h-2v-2zm0 8h2v2h-2v-2zM30 6h2v2h-2V6zm0 8h2v2h-2v-8zm-8-8h2v2h-2V6zm0 8h2v2h-2v-8zm-8-8h2v2h-2V6zm0 8h2v2h-2v-8zm-8-8h2v2h-2V6zm0 8h2v2h-2v-8zM20 52h2v2h-2v-2zm0 8h2v2h-2v-2zm-8-8h2v2h-2v-2zm0 8h2v2h-2v-2zm-8-8h2v2h-2v-2zm0 8h2v2h-2v-2zm-8-8h2v2h-2v-2zm0 8h2v2h-2v-2zM6 40h2v2H6v-2zm0 8h2v2H6v-2zm-8-8h2v2h-2v-2zm0 8h2v2h-2v-2zm-8-8h2v2h-2v-2zm0 8h2v2h-2v-2zm-8-8h2v2h-2v-2zm0 8h2v2h-2v-2z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+
+    /* --- Navigation --- */
+    nav {
+      padding: 1.5rem 0;
+      border-bottom: 1px solid var(--glass-border);
+      backdrop-filter: blur(10px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    nav .flex {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      font-size: 1.8rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: var(--accent-gradient);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .badge {
+      font-size: 0.65rem;
+      padding: 0.2rem 0.5rem;
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--emerald-lite);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+
+    .nav-link {
+      color: var(--zinc-400);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-link:hover {
+      color: var(--zinc-50);
+    }
+
+    /* --- Hero Section --- */
+    .hero {
+      padding: 8rem 0 6rem;
+      text-align: center;
+    }
+
+    .hero h1 {
+      font-size: clamp(3rem, 8vw, 5.5rem);
+      line-height: 1.1;
+      font-weight: 700;
+      margin-bottom: 2rem;
+      letter-spacing: -0.04em;
+    }
+
+    .text-gradient {
+      background: linear-gradient(to right, #fff, #10b981, #fff);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shine 5s linear infinite;
+    }
+
+    @keyframes shine {
+      to {
+        background-position: 200% center;
+      }
+    }
+
+    .hero p {
+      font-size: 1.4rem;
+      color: var(--zinc-400);
+      max-width: 800px;
+      margin: 0 auto 3rem;
+      font-weight: 300;
+    }
+
+    .hero strong {
+      color: var(--zinc-50);
+      font-weight: 600;
+    }
+
+    /* --- Reality Box / Video --- */
+    .preview-container {
+      position: relative;
+      max-width: 900px;
+      margin: 0 auto 6rem;
+      border-radius: 24px;
+      padding: 4px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
+      box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.5);
+    }
+
+    .preview-content {
+      background: var(--zinc-900);
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid var(--zinc-800);
+    }
+
+    .preview-content img {
+      width: 100%;
+      display: block;
+    }
+
+    /* --- Terminal / Install --- */
+    .terminal {
+      background: #000;
+      border: 1px solid var(--zinc-800);
+      border-radius: 12px;
+      padding: 1.5rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 1.5rem;
+      font-family: 'Monaco', 'Consolas', monospace;
+      cursor: pointer;
+      transition: border-color 0.3s, transform 0.2s;
+      position: relative;
+    }
+
+    .terminal:hover {
+      border-color: var(--emerald-lite);
+      transform: translateY(-2px);
+    }
+
+    .terminal span {
+      color: var(--emerald-lite);
+    }
+
+    .copy-icon {
+      color: var(--zinc-400);
+    }
+
+    .tooltip {
+      position: absolute;
+      top: -40px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--emerald-lite);
+      color: #000;
+      padding: 0.3rem 0.8rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+
+    /* --- Comparison Section --- */
+    .comparison {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--glass-border);
+      border-radius: 32px;
+      padding: 4rem;
+      margin-bottom: 6rem;
+      display: grid;
+      grid-template-cols: 1fr 1fr;
+      gap: 4rem;
+    }
+
+    .comparison-col h3 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      margin-bottom: 2rem;
+      color: var(--zinc-400);
+      border-bottom: 1px solid var(--glass-border);
+      padding-bottom: 0.5rem;
+    }
+
+    .comparison-col ul {
+      list-style: none;
+    }
+
+    .comparison-col li {
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.1rem;
+    }
+
+    .is li {
+      color: var(--emerald-lite);
+      font-weight: 500;
+    }
+
+    .is-not li {
+      color: var(--zinc-400);
+      opacity: 0.6;
+    }
+
+    .is li::before {
+      content: "✓";
+    }
+
+    .is-not li::before {
+      content: "×";
+    }
+
+    /* --- Features --- */
+    .features {
+      display: grid;
+      grid-template-cols: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      margin-bottom: 8rem;
+    }
+
+    .feature-card {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      padding: 2.5rem;
+      border-radius: 24px;
+      transition: transform 0.3s, background 0.3s;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-5px);
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    .feature-icon {
+      font-size: 2.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .feature-card h4 {
+      font-size: 1.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .feature-card p {
+      color: var(--zinc-400);
+      font-size: 0.95rem;
+    }
+
+    /* --- Footer --- */
+    footer {
+      padding: 6rem 0 4rem;
+      text-align: center;
+      border-top: 1px solid var(--glass-border);
+    }
+
+    footer p {
+      color: var(--zinc-800);
+      font-size: 0.8rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    /* --- Responsiveness --- */
+    @media (max-width: 768px) {
+      .hero h1 {
+        font-size: 3.5rem;
+      }
+
+      .comparison {
+        grid-template-cols: 1fr;
+        padding: 2rem;
+      }
+
+      .terminal {
+        font-size: 0.8rem;
+        width: 100%;
+        justify-content: space-between;
+      }
     }
   </style>
 </head>
 
-<body class="bg-zinc-950 text-white">
-  <nav class="border-b border-zinc-800">
-    <div class="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <span class="text-2xl font-bold text-emerald-400">rekall</span>
-        <span class="text-xs px-2 py-0.5 bg-emerald-900 text-emerald-300 rounded">beta</span>
+<body>
+  <div class="bg-glow"></div>
+  <div class="bg-mesh"></div>
+
+  <nav>
+    <div class="container flex">
+      <div class="logo">
+        rekall <span class="badge">beta</span>
       </div>
-      <a href="https://github.com/tyreamer/rekall" target="_blank"
-        class="text-sm hover:text-emerald-400 transition">View on GitHub →</a>
+      <a href="https://github.com/tyreamer/rekall" target="_blank" class="nav-link">GitHub ↗</a>
     </div>
   </nav>
 
-  <div class="max-w-5xl mx-auto px-6 py-20 text-center">
-    <h1 class="text-6xl font-bold tracking-tight mb-6">
-      Stop paying for the <span class="text-emerald-400">same mistake twice</span>
-    </h1>
-    <p class="text-2xl text-zinc-400 mb-12 max-w-3xl mx-auto">
-      Your autonomous agent just spent 47 minutes and $41 re-trying a failed migration it already proved wouldn't work.
-      <span class="text-white font-semibold">Rekall prevents repeat execution loops by giving agents a persistent, local
-        execution record.</span>
-    </p>
+  <main class="container">
+    <section class="hero">
+      <h1>Stop paying for the <br><span class="text-gradient">same mistake twice.</span></h1>
+      <p>
+        Your autonomous agent just spent 47 minutes and $41 re-trying a failed migration it already proved wouldn't
+        work.
+        <strong>Rekall prevents repeat execution loops by giving agents a persistent, local execution record.</strong>
+      </p>
 
-    <!-- Demo GIF -->
-    <div class="mx-auto max-w-3xl rounded-2xl overflow-hidden border border-zinc-800 mb-16 shadow-2xl">
-      <img src="https://raw.githubusercontent.com/tyreamer/rekall/main/assets/demo/rekall_demo.gif"
-        alt="Rekall demo — 15 seconds" class="w-full">
-    </div>
-
-    <!-- Install button -->
-    <div class="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
-      <button onclick="copyInstall()"
-        class="bg-emerald-500 hover:bg-emerald-600 transition text-black font-semibold text-xl px-10 py-6 rounded-2xl flex items-center gap-4">
-        <span>pipx install git+https://github.com/tyreamer/rekall.git</span>
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16v-4m4 4v4m4-8v8m4-4v-4" />
-        </svg>
-      </button>
-
-      <a href="https://github.com/tyreamer/rekall" target="_blank" class="github-button" data-size="large"
-        data-show-count="true" aria-label="Star tyreamer/rekall on GitHub">
-        Star
-      </a>
-    </div>
-
-    <!-- What Rekall is / isn't -->
-    <div class="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8 mb-16 max-w-2xl mx-auto text-left">
-      <h2 class="text-xl font-bold mb-8 text-zinc-300 uppercase tracking-widest text-center">What Rekall Is / Isn't</h2>
-      <div class="grid grid-cols-2 gap-8 text-center sm:text-left">
-        <div>
-          <h3
-            class="text-emerald-400 font-bold mb-4 uppercase text-xs tracking-tighter border-b border-emerald-900/50 pb-2">
-            IS</h3>
-          <ul class="text-sm space-y-2 text-zinc-300">
-            <li>• Verifiable AI execution record</li>
-            <li>• Tamper-evident audit trail</li>
-            <li>• Local-first, git-portable append-only ledger</li>
-          </ul>
-        </div>
-        <div>
-          <h3 class="text-rose-400 font-bold mb-4 uppercase text-xs tracking-tighter border-b border-rose-900/50 pb-2">
-            IS NOT</h3>
-          <ul class="text-sm space-y-2 text-zinc-500">
-            <li>• Chat transcript</li>
-            <li>• Vector store</li>
-            <li>• Stateful chat memory</li>
-            <li>• PM board / Jira replacement</li>
-          </ul>
+      <div class="preview-container">
+        <div class="preview-content">
+          <img src="https://raw.githubusercontent.com/tyreamer/rekall/main/assets/demo/rekall_demo.gif"
+            alt="Rekall Demo">
         </div>
       </div>
+
+      <div class="terminal" id="install-btn" onclick="copyInstall()">
+        <div id="copy-tooltip" class="tooltip">Copied!</div>
+        <code>pip install rekall.tools</code>
+        <svg xmlns="http://www.w3.org/2000/svg" class="copy-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+      </div>
+    </section>
+
+    <section class="comparison">
+      <div class="comparison-col is">
+        <h3>Built for Autonomous Agents</h3>
+        <ul>
+          <li>Verifiable AI execution record</li>
+          <li>Tamper-evident audit trail</li>
+          <li>Local-first, git-portable ledger</li>
+          <li>Zero-friction integration</li>
+        </ul>
+      </div>
+      <div class="comparison-col is-not">
+        <h3>What Rekall isn't</h3>
+        <ul>
+          <li>Chat transcript storage</li>
+          <li>Vector database / RAG</li>
+          <li>Stateful chat memory</li>
+          <li>Project Management board</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="features">
+      <a href="https://github.com/tyreamer/rekall/blob/main/docs/QUICKSTART.md" class="feature-card">
+        <div class="feature-icon">🚀</div>
+        <h4>Quickstart</h4>
+        <p>Initialize Rekall in any repository in seconds. Zero configuration needed to start recording.</p>
+      </a>
+      <a href="https://github.com/tyreamer/rekall" class="feature-card">
+        <div class="feature-icon">📖</div>
+        <h4>Full Docs</h4>
+        <p>Deep dive into the specs, MCP implementation, and advanced cryptographic validation.</p>
+      </a>
+      <a href="https://github.com/tyreamer/rekall/issues" class="feature-card">
+        <div class="feature-icon">💬</div>
+        <h4>Feedback</h4>
+        <p>Rekall is built in public. Join the conversation and help shape the roadmap for v0.2.</p>
+      </a>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>rekall.tools • open source • MIT • Built for the 2026 agent wave</p>
     </div>
-
-    <p class="text-zinc-500 text-sm italic">"One folder next to your code. No server. No UI. One command to initialize."
-    </p>
-  </div>
-
-  <!-- Quick links -->
-  <div class="bg-zinc-900 py-12">
-    <div class="max-w-5xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
-      <a href="https://github.com/tyreamer/rekall/blob/main/docs/QUICKSTART.md"
-        class="block p-6 hover:bg-zinc-800 rounded-2xl transition">
-        <div class="text-emerald-400 text-2xl mb-3">🚀</div>
-        <div class="font-semibold">Quickstart</div>
-        <div class="text-sm text-zinc-400">Initialize in any repo</div>
-      </a>
-      <a href="https://github.com/tyreamer/rekall" class="block p-6 hover:bg-zinc-800 rounded-2xl transition">
-        <div class="text-emerald-400 text-2xl mb-3">📖</div>
-        <div class="font-semibold">Full Docs</div>
-        <div class="text-sm text-zinc-400">Specs, MCP, advanced</div>
-      </a>
-      <a href="https://github.com/tyreamer/rekall/issues" class="block p-6 hover:bg-zinc-800 rounded-2xl transition">
-        <div class="text-emerald-400 text-2xl mb-3">💬</div>
-        <div class="font-semibold">Give Feedback</div>
-        <div class="text-sm text-zinc-400">Help shape v0.2</div>
-      </a>
-    </div>
-  </div>
-
-  <footer class="text-center py-12 text-zinc-500 text-sm">
-    <p>rekall.tools • open source • MIT • Built for the 2026 agent wave</p>
   </footer>
 
   <script>
     function copyInstall() {
-      navigator.clipboard.writeText('pipx install git+https://github.com/tyreamer/rekall.git');
-      const btn = document.querySelector('button');
-      const original = btn.innerHTML;
-      btn.innerHTML = '✅ Copied!';
-      setTimeout(() => btn.innerHTML = original, 2000);
+      const text = 'pip install rekall.tools';
+      navigator.clipboard.writeText(text);
+
+      const tooltip = document.getElementById('copy-tooltip');
+      tooltip.style.opacity = '1';
+
+      setTimeout(() => {
+        tooltip.style.opacity = '0';
+      }, 2000);
     }
   </script>
+
+  <!-- Tally Early Access Embed -->
+  <section class="container" style="padding: 6rem 0; text-align: center; border-top: 1px solid var(--glass-border);">
+    <h3
+      style="margin-bottom: 2rem; font-family: 'Outfit', sans-serif; font-size: 3.5rem; letter-spacing: -0.04em; font-weight: 700;">
+      Join the waitlist for <span class="text-gradient">Hub</span></h3>
+    <p style="color: var(--zinc-400); max-width: 600px; margin: 0 auto 4rem; font-size: 1.25rem; font-weight: 300;">
+      We're building a hosted coordination layer for teams of agents.
+      Secure, verifiable, and team-aware state management.
+    </p>
+    <div
+      style="position: relative; background: var(--zinc-950); border: 1px solid var(--glass-border); border-radius: 32px; padding: 2rem; max-width: 800px; margin: 0 auto; overflow: hidden; box-shadow: 0 30px 60px -12px rgba(0,0,0,0.5);">
+      <iframe
+        data-tally-src="https://tally.so/embed/Gxrrbj?alignLeft=1&hideTitle=1&transparentBackground=1&dynamicHeight=1&formEventsForwarding=1"
+        loading="lazy" width="100%" height="699" frameborder="0" marginheight="0" marginwidth="0"
+        title="Rekall Hub Early Access (Teams only)"></iframe>
+      <!-- Visual mask for the branding button -->
+      <div
+        style="position: absolute; bottom: 0; right: 0; width: 140px; height: 50px; background: var(--zinc-950); z-index: 10; pointer-events: none;">
+      </div>
+    </div>
+    <script>var d = document, w = "https://tally.so/widgets/embed.js", v = function () { "undefined" != typeof Tally ? Tally.loadEmbeds() : d.querySelectorAll("iframe[data-tally-src]:not([src])").forEach((function (e) { e.src = e.dataset.tallySrc })) }; if ("undefined" != typeof Tally) v(); else if (d.querySelector('script[src="' + w + '"]') == null) { var s = d.createElement("script"); s.src = w, s.onload = v, s.onerror = v, d.body.appendChild(s); }</script>
+  </section>
 </body>
 
 </html>
