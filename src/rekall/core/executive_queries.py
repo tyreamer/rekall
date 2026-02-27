@@ -152,7 +152,7 @@ def query_executive_status(
             res.summary.append(f"Found {len(recent)} activities since {since}.")
             res.evidence.extend(
                 [
-                    f"activity: {a['activity_id']} (target_type: {a.get('target_type')})"
+                    f"activity: {a.get('activity_id', a.get('check_id', 'unknown'))} (target_type: {a.get('target_type', a.get('type', 'unknown'))})"
                     for a in recent[:10]
                 ]
             )
@@ -246,7 +246,8 @@ def query_executive_status(
             res.summary.append(f"There are {len(resolved)} RESOLVED breakpoints ready for agent pickup.")
             for w, d in resolved[-3:]:
                 d_hash = d.get("event_hash", "N/A")[:8]
-                res.evidence.append(f"resolved_breakpoint: action_id={w.get('action_id')} decision={d.get('status')} [hash: {d_hash}...]")
+                d_text = d.get("decision", d.get("status", "unknown"))
+                res.evidence.append(f"resolved_breakpoint: action_id={w.get('action_id')} decision='{d_text}' [hash: {d_hash}...]")
 
         # Policy Check Evidence
         acts = store._load_jsonl("activity.jsonl")

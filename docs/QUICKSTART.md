@@ -27,13 +27,13 @@ pip install -e .
 ## The 5-Minute Tour
 Experience the core value of Rekall in under 5 minutes with zero schema knowledge required.
 
-### 1. Initialize & Onboard
-First, let's create a fresh execution ledger and generate an onboarding cheat sheet:
+### 1. Initialize
+First, let's create a fresh execution ledger and generate an initialization cheat sheet:
 ```bash
 cd /path/to/your-repo
-rekall onboard
+rekall init
 ```
-*(This creates a `project-state/` folder and an onboarding cheat sheet)*
+*(This creates a `project-state/` folder and an initialization cheat sheet)*
 
 ### 2. Check the Status
 Next, run the executive status command to see the active HEAD, the last attempt, and any unresolved human blockers:

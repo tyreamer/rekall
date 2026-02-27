@@ -126,7 +126,7 @@ If the server fails to start because the state directory is missing, run:
 ```bash
 rekall init
 ```
-This initializes the required structure and onboarding artifacts.
+This initializes the required structure and initialization artifacts.
 
 ### 2. MCP Failed to Connect
 Run the built-in validator to check for protocol or environment issues:

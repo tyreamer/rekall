@@ -75,7 +75,7 @@ def project_get(args: dict) -> list:
     return [{"project": cfg}]
 
 
-def project_onboard(args: dict) -> list:
+def project_init(args: dict) -> list:
     store = get_store()
     import datetime
 
@@ -193,7 +193,7 @@ def project_onboard(args: dict) -> list:
 
         artifacts_dir = store.base_dir / "artifacts"
         artifacts_dir.mkdir(exist_ok=True)
-        out_path = artifacts_dir / "onboard_cheatsheet.md"
+        out_path = artifacts_dir / "init_cheatsheet.md"
         out_path.write_text(content, encoding="utf-8")
 
         return [{"status": "success", "path": str(out_path), "content": content}]
@@ -910,8 +910,8 @@ TOOLS_DEF = [
         },
     },
     {
-        "name": "project.onboard",
-        "description": "Generate an onboarding cheat sheet for the project and return it as markdown.",
+        "name": "project.init",
+        "description": "Generate an initialization cheat sheet for the project and return it as markdown.",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
@@ -1447,7 +1447,7 @@ TOOLS_DEF = [
 TOOL_REGISTRY = {
     "project.list": project_list,
     "project.get": project_get,
-    "project.onboard": project_onboard,
+    "project.init": project_init,
     "work.list": work_list,
     "work.get": work_get,
     "attempt.list": attempt_list,

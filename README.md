@@ -1,26 +1,49 @@
-# Rekall — Project State Layer for AI Agents
+# Rekall — Stop paying for the same mistake twice
 
-[![CI](https://github.com/tyreamer/rekall/actions/workflows/ci.yml/badge.svg)](https://github.com/tyreamer/rekall/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-brightgreen.svg)](https://www.python.org/downloads/)
+Your autonomous agent just spent 47 minutes and $41 re-trying a failed migration it already proved wouldn't work.
 
-**Rekall is the verifiable, replayable AI execution record and audit trail for autonomous work.**
-*Not related to Google’s Rekall execution record forensics tool.*
+Rekall prevents repeat execution loops by giving agents a persistent, local execution record.
 
-Everything lives in a simple, git-friendly `project-state/` folder (YAML + JSONL). No more hallucinations about what was already tried, what decisions were made, or where the running services actually are.
+One folder next to your code. No server. No UI. One command to initialize.
 
-*Private beta v0.1.0-beta.1 — Feb 25 2026. Coming to PyPI soon.*
+```bash
+pipx install git+https://github.com/tyreamer/rekall.git
+rekall init
+```
+
+Run your agent normally.
+
+When it needs a human decision, it pauses and prints a `decision_id`.
+
+Come back later:
+```bash
+rekall decide <decision_id> --option "use SQLite"
+rekall resume
+```
+
+The agent continues where it left off.
+
+Every attempt, decision, and outcome becomes part of a tamper-evident, cryptographically verifiable execution record.
+
+---
 
 ## What Rekall is / isn't
-| IS | IS NOT |
-|----|--------|
-| verifiable AI execution record | stateful chat store |
-| deterministic execution audit trail | vector store |
-| tamper-evident replay substrate | task tracker |
-| evidence-backed status for AI agents | project memory |
-| local-first git-portable append-only execution ledger | long-term memory |
-| cryptographically signed provenance | chat transcript |
-| automated shadow audit trail | Jira replacement |
+
+### IS
+- Verifiable AI execution record
+- Tamper-evident audit trail
+- Local-first, git-portable append-only ledger
+
+### IS NOT
+- Chat transcript
+- Vector store
+- Stateful chat memory
+- PM board
+- Jira replacement
+
+---
+
+---
 
 *See the [Hero Example](docs/HERO_EXAMPLE.md) for a technical walkthrough of cryptographic evidence in action.*
 
@@ -115,7 +138,7 @@ If you are an AI agent, you should read the project's state to understand the co
 ### 1. Read the State
 Before making changes, understand the current context and invariants:
 ```bash
-cat project-state/artifacts/onboard_cheatsheet.md  # Best place to start
+cat project-state/artifacts/init_cheatsheet.md  # Best place to start
 rekall status
 rekall guard
 ```

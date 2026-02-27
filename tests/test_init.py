@@ -31,11 +31,11 @@ def test_init_auto_init(temp_repo, capfd):
 
     assert store_dir.exists()
     assert (store_dir / "project.yaml").exists()
-    cheat_sheet = store_dir / "artifacts" / "onboard_cheatsheet.md"
+    cheat_sheet = store_dir / "artifacts" / "init_cheatsheet.md"
     assert cheat_sheet.exists()
 
     content = cheat_sheet.read_text()
-    assert "# Onboarding Cheat Sheet" in content
+    assert "# Initialization Cheat Sheet" in content
     assert "What is Rekall?" in content
 
     captured = capfd.readouterr()
@@ -61,7 +61,7 @@ def test_init_existing_repo(temp_repo, capfd):
     )
     cmd_init(args)
 
-    cheat_sheet = store_dir / "artifacts" / "onboard_cheatsheet.md"
+    cheat_sheet = store_dir / "artifacts" / "init_cheatsheet.md"
     assert cheat_sheet.exists()
     assert "existing_proj" in cheat_sheet.read_text()
 
@@ -75,7 +75,7 @@ def test_init_force_overwrite(temp_repo):
 
     artifacts_dir = store_dir / "artifacts"
     artifacts_dir.mkdir()
-    cheat_sheet = artifacts_dir / "onboard_cheatsheet.md"
+    cheat_sheet = artifacts_dir / "init_cheatsheet.md"
     cheat_sheet.write_text("old content")
 
     # Without force should fail
@@ -97,7 +97,7 @@ def test_init_force_overwrite(temp_repo):
     args.force = True
     cmd_init(args)
     assert "old content" not in cheat_sheet.read_text()
-    assert "# Onboarding Cheat Sheet" in cheat_sheet.read_text()
+    assert "# Initialization Cheat Sheet" in cheat_sheet.read_text()
 
 
 def test_init_corrupted_jsonl(temp_repo, capfd):
@@ -124,7 +124,7 @@ def test_init_corrupted_jsonl(temp_repo, capfd):
     assert excinfo.value.code == ExitCode.INTERNAL_ERROR.value
 
     captured = capfd.readouterr()
-    assert "Onboarding failed" in captured.out
+    assert "Initialization failed" in captured.out
     assert "active.jsonl" in captured.out.lower()
 
 
@@ -145,8 +145,8 @@ def test_init_print_flag(temp_repo, capfd):
     cmd_init(args)
 
     captured = capfd.readouterr()
-    assert "--- ONBOARDING CHEAT SHEET ---" in captured.out
-    assert "# Onboarding Cheat Sheet" in captured.out
+    assert "--- INITIALIZATION CHEAT SHEET ---" in captured.out
+    assert "# Initialization Cheat Sheet" in captured.out
 
 
 def test_init_state_dir_flag(temp_repo):
@@ -166,7 +166,7 @@ def test_init_state_dir_flag(temp_repo):
     cmd_init(args)
 
     assert custom_dir.exists()
-    assert (custom_dir / "artifacts" / "onboard_cheatsheet.md").exists()
+    assert (custom_dir / "artifacts" / "init_cheatsheet.md").exists()
     assert not (temp_repo / "project-state").exists()
 
 
@@ -187,4 +187,4 @@ def test_init_dotdir_flag(temp_repo, monkeypatch):
     cmd_init(args)
 
     assert (temp_repo / ".rekall").exists()
-    assert (temp_repo / ".rekall" / "artifacts" / "onboard_cheatsheet.md").exists()
+    assert (temp_repo / ".rekall" / "artifacts" / "init_cheatsheet.md").exists()

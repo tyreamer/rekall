@@ -1,0 +1,17 @@
+version: "1.0"
+# Tier 0 Default Policy: Shadow mode (record but don't block)
+rules:
+  - id: "warn-destructive-shell"
+    description: "Destructive shell commands detected"
+    effect: "deny"
+    match:
+      action_type: "actuate_cli"
+      params:
+        command: ".*(rm -rf|del /s /q|format |mkfs|dd if=).*"
+  - id: "warn-sensitive-file-write"
+    description: "Writing to sensitive system files"
+    effect: "deny"
+    match:
+      action_type: "actuate_file_write"
+      params:
+        path: ".*(/etc/passwd|/etc/shadow|C:\\Windows\\System32).*"

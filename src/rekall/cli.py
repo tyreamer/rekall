@@ -1529,7 +1529,7 @@ def cmd_bundle(args):
         die(ExitCode.INTERNAL_ERROR, f"Bundle failed: {str(e)}", args.json)
 
 def cmd_init(args):
-    """Initializes a new Rekall state directory and generates an onboarding cheat sheet."""
+    """Initializes a new Rekall state directory and generates an initialization cheat sheet."""
     import datetime
 
     # Target state dir: default to project-state if not specified
@@ -1557,7 +1557,7 @@ def cmd_init(args):
             msg = "; ".join(malformed + errors)
             die(
                 ExitCode.INTERNAL_ERROR,
-                f"Onboarding failed: corrupted state files detected. {msg}",
+                f"Initialization failed: corrupted state files detected. {msg}",
                 args.json,
             )
 
@@ -1578,7 +1578,7 @@ def cmd_init(args):
 
         # 2. Build Markdown
         lines = []
-        lines.append(f"# Onboarding Cheat Sheet: {repo_name}")
+        lines.append(f"# Initialization Cheat Sheet: {repo_name}")
         lines.append(f"**Generated**: {timestamp}")
         lines.append(f"**execution ledger Last Updated**: {last_updated}")
         lines.append("")
@@ -1677,7 +1677,7 @@ def cmd_init(args):
         artifacts_dir.mkdir(exist_ok=True)
 
         out_path = (
-            Path(getattr(args, "out")) if getattr(args, "out", None) else artifacts_dir / "onboard_cheatsheet.md"
+            Path(getattr(args, "out")) if getattr(args, "out", None) else artifacts_dir / "init_cheatsheet.md"
         )
 
         if out_path.exists() and not getattr(args, "force", False):
@@ -1691,7 +1691,7 @@ def cmd_init(args):
 
         # 4. Success output
         if getattr(args, "print", False):
-            print("\n--- ONBOARDING CHEAT SHEET ---")
+            print("\n--- INITIALIZATION CHEAT SHEET ---")
             print(content)
             print("--- END OF CHEAT SHEET ---\n")
 
@@ -1706,7 +1706,7 @@ def cmd_init(args):
     except Exception as e:
         die(
             ExitCode.INTERNAL_ERROR,
-            f"Onboarding failed: {str(e)}",
+            f"Initialization failed: {str(e)}",
             getattr(args, "json", False),
             debug=getattr(args, "debug", False),
         )
@@ -1797,7 +1797,7 @@ EXAMPLES:
     # Init
     parser_init = subparsers.add_parser(
         "init",
-        help="[Portability] Initialize a new Rekall directory and generate an onboarding cheat sheet.",
+        help="[Portability] Create the Rekall vault and generate an initialization cheat sheet.",
         parents=[shared_flags],
     )
     parser_init.add_argument(
@@ -1946,7 +1946,7 @@ EXAMPLES:
     parser_blockers.set_defaults(func=cmd_alias_blockers)
 
     parser_resume = subparsers.add_parser(
-        "resume", help="[Executive] Query items to RESUME (open breakpoints/decisions).", parents=[shared_flags]
+        "resume", help="[Executive] Summarize resolved decisions and in-progress work for agent re-entry.", parents=[shared_flags]
     )
     parser_resume.add_argument(
         "--store-dir", default=".", help="Directory of the current StateStore"
@@ -2054,12 +2054,12 @@ EXAMPLES:
     # Decide
     parser_decide = subparsers.add_parser(
         "decide",
-        help="[Execution] Provide a decision (approve/reject) for an action breakpoint or decision request.",
+        help="[Execution] Provide a human decision (e.g. 'use SQLite') for a pending breakpoint or request.",
         parents=[shared_flags],
     )
     parser_decide.add_argument("decision_id", help="The Decision ID to decide upon")
     parser_decide.add_argument(
-        "--option", required=True, choices=["approve", "reject", "yes", "no"], help="The decision to make"
+        "--option", required=True, help="The decision to make (e.g. approve, reject, or a specific choice)"
     )
     parser_decide.add_argument(
         "--note", default="", help="Optional notes on the decision"
@@ -2173,7 +2173,7 @@ EXAMPLES:
     # Status
     parser_status = subparsers.add_parser(
         "status",
-        help="[Core] Executive summary of active HEAD, attempts, and blockers.",
+        help="[Status] See what happened (attempts, decisions, outcomes) and what's currently blocking you.",
         parents=[shared_flags],
     )
     parser_status.add_argument(
