@@ -1,19 +1,21 @@
-import json
 import io
+import json
 import sys
+import tempfile
 from argparse import Namespace
 from pathlib import Path
-import tempfile
+
 import pytest
 
 from rekall.cli import cmd_serve, main
+
 
 def test_serve_help(capfd):
     """Verify rekall serve --help includes the host flag and description."""
     with pytest.raises(SystemExit) as excinfo:
         sys.argv = ["rekall", "serve", "--help"]
         main()
-    
+
     assert excinfo.value.code == 0
     captured = capfd.readouterr()
     assert "serve" in captured.out
@@ -24,7 +26,7 @@ def test_serve_stdio_handshake(capfd, monkeypatch):
     """Verify rekall serve responds to initialize request and diagnostic logs go to stderr."""
     with tempfile.TemporaryDirectory() as d:
         base_dir = Path(d)
-        
+
         # Prepare input stream
         init_req = {
             "jsonrpc": "2.0",
@@ -55,7 +57,7 @@ def test_serve_stdio_handshake(capfd, monkeypatch):
         cmd_serve(args)
 
         captured = capfd.readouterr()
-        
+
         # stdout should contain ONLY the JSON-RPC response
         stdout_lines = captured.out.strip().split("\n")
         assert len(stdout_lines) == 1

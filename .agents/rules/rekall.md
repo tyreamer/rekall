@@ -14,6 +14,7 @@ trigger: always_on
 ## Execution hygiene
 - Always run `pwd` (or equivalent) before any command sequence and ensure it is the repo root.
 - Prefer relative paths only (e.g., `./src/...`, `./tests/...`).
+- ALWAYS run `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1` (Windows) or `bash scripts/verify.sh` (Unix/Mac) before any push to ensure zero CI regressions.
 
 Do NOT apologize.
 

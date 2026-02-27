@@ -1677,7 +1677,7 @@ def cmd_init(args):
         artifacts_dir.mkdir(exist_ok=True)
 
         out_path = (
-            Path(getattr(args, "out")) if getattr(args, "out", None) else artifacts_dir / "init_cheatsheet.md"
+            Path(args.out) if getattr(args, "out", None) else artifacts_dir / "init_cheatsheet.md"
         )
 
         if out_path.exists() and not getattr(args, "force", False):
