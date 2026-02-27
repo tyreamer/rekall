@@ -405,7 +405,7 @@ class StateStore:
             active_file = stream_dir / "active.jsonl"
             active_file.touch(exist_ok=True)
             self.manifest["streams"][stream_name] = {
-                "active_file": str(active_file.relative_to(self.base_dir)),
+                "active_file": str(active_file.relative_to(self.base_dir).as_posix()),
                 "segments": [],
                 "id_field": id_field,
                 "latest_hash": None
@@ -1388,6 +1388,7 @@ class StateStore:
             "decision_id": decision_id,
             "title": f"Approval response for decision {decision_id}",
             "status": "approved" if decision_str.lower() in ["approve", "approved", "yes", "allow"] else "rejected",
+            "decision": decision_str,
             "notes": note,
             "timestamp": now,
             "decided_by": actor

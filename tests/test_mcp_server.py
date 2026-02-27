@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from rekall.server import mcp_server
 from rekall.server.mcp_server import (
     get_store,
     project_get,
@@ -18,8 +19,7 @@ SAMPLE_DIR = Path(__file__).parent.parent / "examples" / "sample_state_artifact"
 def setup_store(monkeypatch):
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(SAMPLE_DIR))
     # force reload so tests always use the fixture
-    global _store
-    _store = None
+    mcp_server._store = None
     get_store()
     yield
 
@@ -86,8 +86,7 @@ def test_create_adds_new(monkeypatch, tmp_path):
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
 
-    global _store
-    _store = None
+    mcp_server._store = None
 
     actor = {"actor_type": "human", "actor_id": "u-1"}
     args = {
@@ -118,8 +117,7 @@ def test_claim_increments_version(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     store = get_store()
     wid = list(store.work_items.keys())[0]
@@ -151,8 +149,7 @@ def test_version_mismatch_conflict(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     store = get_store()
     wid = list(store.work_items.keys())[0]
@@ -178,8 +175,7 @@ def test_non_claimant_rejected(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     store = get_store()
     wid = list(store.work_items.keys())[0]
@@ -220,8 +216,7 @@ def test_renew_extends_lease(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     store = get_store()
     wid = list(store.work_items.keys())[0]
@@ -263,8 +258,7 @@ def test_release_clears_claim(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     store = get_store()
     wid = list(store.work_items.keys())[0]
@@ -300,8 +294,7 @@ def test_attempt_append_idempotency(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     from rekall.server.mcp_server import attempt_append
 
@@ -327,8 +320,7 @@ def test_decision_propose_idempotency(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     from rekall.server.mcp_server import decision_propose
 
@@ -352,8 +344,7 @@ def test_timeline_append_idempotency(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     from rekall.server.mcp_server import timeline_append
 
@@ -376,8 +367,7 @@ def test_decision_approve_forbidden_without_capability(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     from rekall.server.mcp_server import decision_approve, decision_propose
 
@@ -400,8 +390,7 @@ def test_decision_approve_success_with_capability(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     from rekall.server.mcp_server import decision_approve, decision_propose
 
@@ -434,8 +423,7 @@ def test_activity_event_emitted(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     from rekall.server.mcp_server import activity_list, attempt_append
 
@@ -465,8 +453,7 @@ def test_exec_query_on_track(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     from rekall.server.mcp_server import exec_query, get_store, work_update
 
@@ -508,8 +495,7 @@ def test_exec_query_blockers(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     from rekall.server.mcp_server import exec_query, get_store, work_update
 
@@ -541,8 +527,7 @@ def test_exec_query_changed_since(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     from rekall.server.mcp_server import exec_query, timeline_append
 
@@ -578,8 +563,7 @@ def test_exec_query_resume_in_30(monkeypatch, tmp_path):
 
     shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    global _store
-    _store = None
+    mcp_server._store = None
 
     from rekall.server.mcp_server import exec_query
 
@@ -604,8 +588,7 @@ def test_artifact_append_idempotency(monkeypatch, tmp_path):
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
     from rekall.server.mcp_server import artifact_append
 
-    global _store
-    _store = None
+    mcp_server._store = None
     actor = {"actor_type": "agent", "actor_id": "ag-1"}
     art = {"artifact_id": "art-1", "title": "PR"}
 
@@ -624,8 +607,7 @@ def test_research_append(monkeypatch, tmp_path):
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
     from rekall.server.mcp_server import research_append
 
-    global _store
-    _store = None
+    mcp_server._store = None
     actor = {"actor_type": "agent", "actor_id": "ag-1"}
     res_item = {"research_id": "res-1", "title": "Notes"}
 
@@ -642,8 +624,7 @@ def test_link_append(monkeypatch, tmp_path):
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
     from rekall.server.mcp_server import link_append
 
-    global _store
-    _store = None
+    mcp_server._store = None
     actor = {"actor_type": "agent", "actor_id": "ag-1"}
     link = {"edge_id": "edge-1", "from": {"node_type": "attempt", "id": "att-1"}}
 
@@ -658,8 +639,7 @@ def test_anchor_save_resume(monkeypatch, tmp_path):
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
     from rekall.server.mcp_server import anchor_resume, anchor_save
 
-    global _store
-    _store = None
+    mcp_server._store = None
     actor = {"actor_type": "agent", "actor_id": "ag-1"}
     anchor = {"anchor_id": "anch-1", "note": "Saving state"}
 
@@ -677,8 +657,7 @@ def test_digest_while_you_were_gone(monkeypatch, tmp_path):
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
     from rekall.server.mcp_server import digest_while_you_were_gone
 
-    global _store
-    _store = None
+    mcp_server._store = None
 
     res = digest_while_you_were_gone({"project_id": "prj_1"})[0]
     assert "summary" in res
@@ -696,8 +675,7 @@ def test_graph_trace(monkeypatch, tmp_path):
         link_append,
     )
 
-    global _store
-    _store = None
+    mcp_server._store = None
     actor = {"actor_type": "agent", "actor_id": "ag-1"}
 
     attempt = {"attempt_id": "att-1", "notes": "test"}
@@ -732,8 +710,7 @@ def test_propose_and_approve_capture_contract(monkeypatch, tmp_path):
         propose_action,
     )
 
-    global _store
-    _store = None
+    mcp_server._store = None
     actor = {"actor_type": "agent", "actor_id": "ag-1"}
 
     # 1. Propose action
@@ -806,8 +783,7 @@ def test_wait_for_approval_contract(monkeypatch, tmp_path):
         wait_for_approval,
     )
 
-    global _store
-    _store = None
+    mcp_server._store = None
     actor = {"actor_type": "agent", "actor_id": "ag-1"}
 
     # 1. Propose action
@@ -860,8 +836,7 @@ def test_actuator_cli(monkeypatch, tmp_path):
         propose_action,
     )
 
-    global _store
-    _store = None
+    mcp_server._store = None
     actor = {"actor_type": "agent", "actor_id": "ag-1"}
 
     # 1. Propose action
@@ -905,8 +880,7 @@ def test_actuator_file_write(monkeypatch, tmp_path):
         propose_action,
     )
 
-    global _store
-    _store = None
+    mcp_server._store = None
     actor = {"actor_type": "agent", "actor_id": "ag-1"}
 
     res1 = propose_action(
@@ -948,8 +922,7 @@ def test_policy_preflight(tmp_path, monkeypatch):
     monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
     from rekall.server.mcp_server import policy_preflight
 
-    global _store
-    _store = None
+    mcp_server._store = None
 
     # 1. Test safe action
     res = policy_preflight({

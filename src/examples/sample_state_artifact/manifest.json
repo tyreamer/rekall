@@ -1,0 +1,30 @@
+{
+  "schema_version": "0.1",
+  "streams": {
+    "work_items": {
+      "active_file": "streams/work_items/active.jsonl",
+      "segments": [],
+      "id_field": "event_id"
+    },
+    "activity": {
+      "active_file": "streams/activity/active.jsonl",
+      "segments": [],
+      "id_field": "activity_id"
+    },
+    "attempts": {
+      "active_file": "streams/attempts/active.jsonl",
+      "segments": [],
+      "id_field": "attempt_id"
+    },
+    "decisions": {
+      "active_file": "streams/decisions/active.jsonl",
+      "segments": [],
+      "id_field": "decision_id"
+    },
+    "timeline": {
+      "active_file": "streams/timeline/active.jsonl",
+      "segments": [],
+      "id_field": "event_id"
+    }
+  }
+}

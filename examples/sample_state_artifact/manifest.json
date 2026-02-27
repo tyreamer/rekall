@@ -4,7 +4,7 @@
       "active_file": "streams/work_items/active.jsonl",
       "segments": [],
       "id_field": "event_id",
-      "latest_hash": "2d5a86a04224f027b17e2a866b1f0f642d066b3e1b437fa8735587cd6edb9f28"
+      "latest_hash": "628bbb667df8220d0a7d75e72c430061a74e429d98b44549a888432ea7270c28"
     },
     "activity": {
       "active_file": "streams/activity/active.jsonl",
@@ -12,19 +12,19 @@
         "streams/activity/seg-0001.jsonl"
       ],
       "id_field": "activity_id",
-      "latest_hash": "94f43feec94e387f02457ee811c26735e783765350c78a35cf5e3befa4cbc173"
+      "latest_hash": "9ea6b25182a8e238674a50f9b7102b83aeab7c15659c8a00b2566d5d183f09c1"
     },
     "attempts": {
       "active_file": "streams/attempts/active.jsonl",
       "segments": [],
       "id_field": "attempt_id",
-      "latest_hash": "57a8da3fb3449b1d99d8fcea2a6db5352518e21178532152ccfbb5398fce0dcc"
+      "latest_hash": "3f5396eee04024036ae225f351cbbe62abd20a03baff1162ad6e89f41323dc7e"
     },
     "decisions": {
       "active_file": "streams/decisions/active.jsonl",
       "segments": [],
       "id_field": "decision_id",
-      "latest_hash": "e44a7f985a85dd243745ead2d384c937b9ec7054cdc63e591740dcceef606a31"
+      "latest_hash": "484cb8a66e7f0f0a371c73b3524f18c1a0b75fb9c48e525766fd800d17fb0463"
     },
     "timeline": {
       "active_file": "streams/timeline/active.jsonl",
@@ -32,31 +32,31 @@
       "id_field": "event_id"
     },
     "artifacts": {
-      "active_file": "streams\\artifacts\\active.jsonl",
+      "active_file": "streams/artifacts/active.jsonl",
       "segments": [],
       "id_field": "artifact_id"
     },
     "research": {
-      "active_file": "streams\\research\\active.jsonl",
+      "active_file": "streams/research/active.jsonl",
       "segments": [],
       "id_field": "research_id"
     },
     "links": {
-      "active_file": "streams\\links\\active.jsonl",
+      "active_file": "streams/links/active.jsonl",
       "segments": [],
       "id_field": "edge_id"
     },
     "anchors": {
-      "active_file": "streams\\anchors\\active.jsonl",
+      "active_file": "streams/anchors/active.jsonl",
       "segments": [],
       "id_field": "anchor_id",
-      "latest_hash": "3ed9f70530ca10e12c436f9b394bd41319c77605f759a5fd7ef6eff2deec5a6f"
+      "latest_hash": "7ef6e5e0dc9aaa90ff7fcb80f09eb99e0364fcb2dda09e84000503e28b62ee23"
     },
     "actions": {
-      "active_file": "streams\\actions\\active.jsonl",
+      "active_file": "streams/actions/active.jsonl",
       "segments": [],
       "id_field": "action_id",
-      "latest_hash": "a0d2bdea72cbced9936f539fdfc7854aa5394fea1bccdd62fdcc7bf12ee1908c"
+      "latest_hash": "64adf7227b41701c5e6e94515f07ed3982ab5017ade4334dc9a11dcf7f92e5e1"
     }
   },
   "last_checkpoint": null,

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,9 +9,12 @@
   <script src="https://buttons.github.io/buttons.js"></script>
   <link rel="icon" href="https://github.com/tyreamer/rekall/raw/main/assets/icon.png" type="image/png">
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+    }
   </style>
 </head>
+
 <body class="bg-zinc-950 text-white">
   <nav class="border-b border-zinc-800">
     <div class="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
@@ -18,52 +22,79 @@
         <span class="text-2xl font-bold text-emerald-400">rekall</span>
         <span class="text-xs px-2 py-0.5 bg-emerald-900 text-emerald-300 rounded">beta</span>
       </div>
-      <a href="https://github.com/tyreamer/rekall" target="_blank" 
-         class="text-sm hover:text-emerald-400 transition">View on GitHub →</a>
+      <a href="https://github.com/tyreamer/rekall" target="_blank"
+        class="text-sm hover:text-emerald-400 transition">View on GitHub →</a>
     </div>
   </nav>
 
   <div class="max-w-5xl mx-auto px-6 py-20 text-center">
     <h1 class="text-6xl font-bold tracking-tight mb-6">
-      Persistent memory<br>for your AI coding agents
+      Stop paying for the <span class="text-emerald-400">same mistake twice</span>
     </h1>
-    <p class="text-2xl text-zinc-400 mb-12 max-w-2xl mx-auto">
-      The reality blackboard + ledger.<br>
-      No more "what did we already try?" hallucinations.
+    <p class="text-2xl text-zinc-400 mb-12 max-w-3xl mx-auto">
+      Your autonomous agent just spent 47 minutes and $41 re-trying a failed migration it already proved wouldn't work.
+      <span class="text-white font-semibold">Rekall prevents repeat execution loops by giving agents a persistent, local
+        execution record.</span>
     </p>
 
     <!-- Demo GIF -->
     <div class="mx-auto max-w-3xl rounded-2xl overflow-hidden border border-zinc-800 mb-16 shadow-2xl">
-      <img src="https://raw.githubusercontent.com/tyreamer/rekall/main/assets/demo/rekall_demo.gif" 
-           alt="Rekall demo — 15 seconds" class="w-full">
+      <img src="https://raw.githubusercontent.com/tyreamer/rekall/main/assets/demo/rekall_demo.gif"
+        alt="Rekall demo — 15 seconds" class="w-full">
     </div>
 
     <!-- Install button -->
     <div class="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
-      <button onclick="copyInstall()" 
-              class="bg-emerald-500 hover:bg-emerald-600 transition text-black font-semibold text-xl px-10 py-6 rounded-2xl flex items-center gap-4">
+      <button onclick="copyInstall()"
+        class="bg-emerald-500 hover:bg-emerald-600 transition text-black font-semibold text-xl px-10 py-6 rounded-2xl flex items-center gap-4">
         <span>pipx install git+https://github.com/tyreamer/rekall.git</span>
         <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16v-4m4 4v4m4-8v8m4-4v-4" />
         </svg>
       </button>
-      
-      <a href="https://github.com/tyreamer/rekall" target="_blank"
-         class="github-button" 
-         data-size="large" 
-         data-show-count="true" 
-         aria-label="Star tyreamer/rekall on GitHub">
+
+      <a href="https://github.com/tyreamer/rekall" target="_blank" class="github-button" data-size="large"
+        data-show-count="true" aria-label="Star tyreamer/rekall on GitHub">
         Star
       </a>
     </div>
 
-    <p class="text-zinc-400">15 seconds to try the demo → <code class="bg-zinc-900 px-2 py-1 rounded">rekall onboard</code></p>
+    <!-- What Rekall is / isn't -->
+    <div class="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8 mb-16 max-w-2xl mx-auto text-left">
+      <h2 class="text-xl font-bold mb-8 text-zinc-300 uppercase tracking-widest text-center">What Rekall Is / Isn't</h2>
+      <div class="grid grid-cols-2 gap-8 text-center sm:text-left">
+        <div>
+          <h3
+            class="text-emerald-400 font-bold mb-4 uppercase text-xs tracking-tighter border-b border-emerald-900/50 pb-2">
+            IS</h3>
+          <ul class="text-sm space-y-2 text-zinc-300">
+            <li>• Verifiable AI execution record</li>
+            <li>• Tamper-evident audit trail</li>
+            <li>• Local-first, git-portable append-only ledger</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-rose-400 font-bold mb-4 uppercase text-xs tracking-tighter border-b border-rose-900/50 pb-2">
+            IS NOT</h3>
+          <ul class="text-sm space-y-2 text-zinc-500">
+            <li>• Chat transcript</li>
+            <li>• Vector store</li>
+            <li>• Stateful chat memory</li>
+            <li>• PM board / Jira replacement</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-zinc-500 text-sm italic">"One folder next to your code. No server. No UI. One command to initialize."
+    </p>
   </div>
 
   <!-- Quick links -->
   <div class="bg-zinc-900 py-12">
     <div class="max-w-5xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
-      <a href="https://github.com/tyreamer/rekall/blob/main/docs/QUICKSTART.md" class="block p-6 hover:bg-zinc-800 rounded-2xl transition">
+      <a href="https://github.com/tyreamer/rekall/blob/main/docs/QUICKSTART.md"
+        class="block p-6 hover:bg-zinc-800 rounded-2xl transition">
         <div class="text-emerald-400 text-2xl mb-3">🚀</div>
         <div class="font-semibold">Quickstart</div>
         <div class="text-sm text-zinc-400">Initialize in any repo</div>
@@ -95,4 +126,5 @@
     }
   </script>
 </body>
+
 </html>
