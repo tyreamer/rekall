@@ -8,18 +8,11 @@ Get a verifiable AI execution record running in 5 minutes.
 
 ## Install
 
-### Windows PowerShell
-```powershell
-python -m venv venv
-.\venv\Scripts\activate
-pip install -e .
-```
+### Task 1 — Run the Demo (~2 min)
 
-### macOS / Linux bash
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -e .
+pip install rekall.tools
+rekall demo
 ```
 
 *(Optional: Use `pipx install .` for global CLI wrapper usage).*

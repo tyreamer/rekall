@@ -9,7 +9,7 @@ This is a quick guide to help you kick the tires on Rekall. We're looking for fe
 ### Task 1 — Run the Demo (~2 min)
 
 ```bash
-pip install -e .        # or: pipx install .
+pip install rekall.tools
 rekall demo
 ```
 

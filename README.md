@@ -7,7 +7,7 @@ Rekall prevents repeat execution loops by giving agents a persistent, local exec
 One folder next to your code. No server. No UI. One command to initialize.
 
 ```bash
-pipx install git+https://github.com/tyreamer/rekall.git
+pip install rekall.tools
 rekall init
 ```
 
@@ -56,8 +56,8 @@ Every attempt, decision, and outcome becomes part of a tamper-evident, cryptogra
 
 ## See it in 30 seconds
 ```bash
-# Install directly from GitHub
-pipx install git+https://github.com/tyreamer/rekall.git
+# Install directly from PyPI
+pip install rekall.tools
 
 # Run the mocked demo lifecycle
 rekall demo
@@ -189,7 +189,7 @@ Run `rekall handoff <project_id>` when you're done to generate a `boot_brief.md`
 ## Ready to give your agents an execution record?
 ```bash
 # Zero-friction install
-pipx install git+https://github.com/tyreamer/rekall.git
+pip install rekall.tools
 
 # Try the demo
 rekall demo
