@@ -532,10 +532,11 @@ def test_exec_query_changed_since(monkeypatch, tmp_path):
     from rekall.server.mcp_server import exec_query, timeline_append
 
     # Add an event
+    eid = f"evt-new-{uuid.uuid4().hex[:8]}"
     timeline_append(
         {
             "project_id": "prj_646d63703ec5",
-            "event": {"event_id": "evt-new-1", "message": "hello"},
+            "event": {"event_id": eid, "message": "hello"},
             "actor": {"actor_type": "human", "actor_id": "u-1"},
         }
     )
@@ -941,3 +942,37 @@ def test_policy_preflight(tmp_path, monkeypatch):
     assert res["effect"] == "deny"
     assert "Destructive" in res["reason"]
 
+def test_guard_query():
+    from rekall.server.mcp_server import guard_query
+    result = guard_query({"project_id": "prj_646d63703ec5"})
+    assert isinstance(result, list)
+    assert len(result) == 1
+    payload = result[0]
+    assert payload["ok"] is True
+    assert "guard" in payload
+    assert "project" in payload
+    assert "recent_decisions" in payload
+    assert "recent_attempts" in payload
+
+
+def test_guard_query_missing_project_id():
+    from rekall.server.mcp_server import guard_query
+    with pytest.raises(ValueError, match="project_id is required"):
+        guard_query({})
+def test_exec_query_dispatcher(monkeypatch):
+    from rekall.server.mcp_server import exec_natural_query
+    # 1. Test canonical fallback
+    args = {"project_id": "prj_646d63703ec5", "query_type": "ON_TRACK"}
+    res = exec_natural_query(args)[0]
+    assert "executive_response" in res
+    assert res["executive_response"]["confidence"] == "high"
+
+
+def test_exec_query_dispatcher_natural():
+    from rekall.server.mcp_server import exec_natural_query
+    # 2. Test natural language path
+    args = {"project_id": "prj_646d63703ec5", "query": "What is the status?"}
+    res = exec_natural_query(args)[0]
+    assert "text" in res
+    assert "PROJECT EXECUTION LEDGER" in res["text"]
+    assert "TIMELINE EVENTS" in res["text"]

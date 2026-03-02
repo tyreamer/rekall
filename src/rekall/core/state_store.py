@@ -1834,3 +1834,13 @@ class StateStore:
             report["summary"]["status"] = "\u274c"
 
         return report
+    def get_snapshot(self) -> Dict[str, Any]:
+        """Returns a serializable snapshot of the current state."""
+        return {
+            "project_config": self.project_config,
+            "work_items": self.work_items,
+            "activity": self._load_stream("activity.jsonl", hot_only=True)[-50:],  # Last 50 items
+            "timeline": self._load_stream("timeline.jsonl", hot_only=True)[-50:],
+            "manifest": self.manifest,
+            "initialized_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }

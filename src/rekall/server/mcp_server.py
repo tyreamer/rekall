@@ -667,35 +667,53 @@ def policy_preflight(args: dict) -> list:
         return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
 
 def exec_natural_query(args: dict) -> list:
+    """Unified dispatcher for exec.query. Supports both canonical types and natural language."""
     project_id = args.get("project_id")
+    query_type = args.get("query_type")
     query = args.get("query")
-    if not project_id or not query:
-        raise ValueError("project_id and query are required")
+    since = args.get("since")
+
+    if not project_id:
+        raise ValueError("project_id is required")
 
     store = get_store()
-    try:
-        # Load the critical ledger streams
-        timeline = store._load_stream("timeline.jsonl") or []
-        attempts = store._load_stream("attempts.jsonl") or []
-        decisions = store._load_stream("decisions.jsonl") or []
 
-        # Format the ledger for the LLM
-        ledger_text = []
-        ledger_text.append(f"====== PROJECT EXECUTION LEDGER for {project_id} ======")
+    # 1. Dispatch to Canonical if query_type is provided
+    if query_type:
+        from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
+        import dataclasses
+        try:
+            q_type = ExecutiveQueryType(query_type)
+            resp = query_executive_status(store, q_type, since)
+            return [{"executive_response": dataclasses.asdict(resp)}]
+        except Exception as e:
+            return [{"error": {"code": "VALIDATION_ERROR", "message": f"Canonical query failed: {e}"}}]
 
-        ledger_text.append("\n--- TIMELINE EVENTS ---")
-        for t in timeline[-25:]: # Limit to recent
-            ledger_text.append(json.dumps(t))
+    # 2. Natural Language context generation
+    if query:
+        try:
+            # Load the critical ledger streams
+            timeline = store._load_stream("timeline.jsonl") or []
+            attempts = store._load_stream("attempts.jsonl") or []
+            decisions = store._load_stream("decisions.jsonl") or []
 
-        ledger_text.append("\n--- RECENT ATTEMPTS ---")
-        for a in attempts[-25:]:
-            ledger_text.append(json.dumps(a))
+            # Format the ledger for the LLM
+            ledger_text = []
+            ledger_text.append(f"====== PROJECT EXECUTION LEDGER for {project_id} ======")
+            
+            ledger_text.append("\n--- TIMELINE EVENTS ---")
+            for t in timeline[-25:]:
+                ledger_text.append(json.dumps(t))
 
-        ledger_text.append("\n--- RECENT DECISIONS ---")
-        for d in decisions[-25:]:
-            ledger_text.append(json.dumps(d))
+            ledger_text.append("\n--- RECENT ATTEMPTS ---")
+            for a in attempts[-25:]:
+                ledger_text.append(json.dumps(a))
 
-        system_instruction = f"""
+            ledger_text.append("\n--- RECENT DECISIONS ---")
+            for d in decisions[-25:]:
+                ledger_text.append(json.dumps(d))
+
+            system_instruction = f"""
 You are answering the user's query: "{query}"
 
 Use the execution ledger provided above to formulate your answer.
@@ -704,9 +722,14 @@ RULES:
 2. If the evidence is missing from the ledger, explicitly state: "Evidence missing. A log entry for X is required."
 3. Do not invent or hallucinate events.
 """
-        return [{"text": "\n".join(ledger_text) + "\n\n" + system_instruction}]
-    except Exception as e:
-        return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
+            return [{"text": "\n".join(ledger_text) + "\n\n" + system_instruction}]
+        except Exception as e:
+            return [{"error": {"code": "VALIDATION_ERROR", "message": f"Natural query generation failed: {e}"}}]
+    
+    # 3. Default: Return project status if no type/query
+    from rekall.cli import build_guard_payload
+    payload = build_guard_payload(store)
+    return [{"ok": True, "message": "Specify query_type or query for detailed info.", "status": payload.get("project", {}).get("status")}]
 
 
 def propose_action(args: dict) -> list:
@@ -1178,30 +1201,11 @@ TOOLS_DEF = [
     },
     {
         "name": "exec.query",
-        "description": "Execute a canonical executive status query.",
+        "description": "DEPRECATED in favor of unified query tool below.",
         "inputSchema": {
             "type": "object",
-            "required": ["project_id", "query_type"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "query_type": {
-                    "type": "string",
-                    "enum": [
-                        "ON_TRACK",
-                        "BLOCKERS",
-                        "CHANGED_SINCE",
-                        "NEXT_7_DAYS",
-                        "RECENT_DECISIONS",
-                        "FAILED_ATTEMPTS",
-                        "WHERE_RUNNING_ACCESS",
-                        "RESUME_IN_30",
-                    ],
-                },
-                "since": {
-                    "type": "string",
-                    "description": "ISO timestamp for CHANGED_SINCE queries",
-                },
-            },
+            "required": ["project_id"],
+            "properties": {"project_id": {"type": "string"}},
         },
     },
     {
@@ -1327,7 +1331,7 @@ TOOLS_DEF = [
         },
     },
     {
-        "name": "rekall.propose_action",
+        "name": "propose_action",
         "description": "Propose an action before executing it to record intent and a deterministic action hash.",
         "inputSchema": {
             "type": "object",
@@ -1345,7 +1349,7 @@ TOOLS_DEF = [
         },
     },
     {
-        "name": "rekall.capture_approval",
+        "name": "capture_approval",
         "description": "Capture human or agent approval/rejection for an action or decision.",
         "inputSchema": {
             "type": "object",
@@ -1364,7 +1368,7 @@ TOOLS_DEF = [
         },
     },
     {
-        "name": "rekall.wait_for_approval",
+        "name": "wait_for_approval",
         "description": "Signal that the agent is pausing and waiting for a human to approve an action or decision. Returns a PAUSE_AND_EXIT instruction.",
         "inputSchema": {
             "type": "object",
@@ -1385,7 +1389,7 @@ TOOLS_DEF = [
         },
     },
     {
-        "name": "rekall.capture_outcome",
+        "name": "capture_outcome",
         "description": "Capture the result metadata of an executed action.",
         "inputSchema": {
             "type": "object",
@@ -1401,7 +1405,7 @@ TOOLS_DEF = [
         },
     },
     {
-        "name": "rekall.actuate_cli",
+        "name": "actuate_cli",
         "description": "A wrapped actuator to execute a shell command and capture its outcome automatically.",
         "inputSchema": {
             "type": "object",
@@ -1416,7 +1420,7 @@ TOOLS_DEF = [
         },
     },
     {
-        "name": "rekall.actuate_file_write",
+        "name": "actuate_file_write",
         "description": "A wrapped actuator to write a file and capture its outcome automatically.",
         "inputSchema": {
             "type": "object",
@@ -1431,14 +1435,28 @@ TOOLS_DEF = [
         },
     },
     {
-        "name": "rekall.exec.query",
-        "description": "Query the execution ledger with a natural language question. Returns ledger data and strict citation rules.",
+        "name": "exec.query",
+        "description": "Query the execution ledger. Returns canonical results if query_type is provided, or natural language insights if query is provided.",
         "inputSchema": {
             "type": "object",
-            "required": ["project_id", "query"],
+            "required": ["project_id"],
             "properties": {
                 "project_id": {"type": "string"},
-                "query": {"type": "string", "description": "Natural language question"}
+                "query_type": {
+                    "type": "string",
+                    "enum": [
+                        "ON_TRACK",
+                        "BLOCKERS",
+                        "CHANGED_SINCE",
+                        "NEXT_7_DAYS",
+                        "RECENT_DECISIONS",
+                        "FAILED_ATTEMPTS",
+                        "WHERE_RUNNING_ACCESS",
+                        "RESUME_IN_30",
+                    ],
+                },
+                "query": {"type": "string", "description": "Natural language question"},
+                "since": {"type": "string", "description": "ISO timestamp for CHANGED_SINCE"},
             },
         },
     },
@@ -1465,7 +1483,7 @@ TOOL_REGISTRY = {
     "decision.propose": decision_propose,
     "decision.approve": decision_approve,
     "timeline.append": timeline_append,
-    "exec.query": exec_query,
+    "exec.query": exec_natural_query,  # Prefer natural query if possible, or dispatcher
     "guard.query": guard_query,
     "artifact.append": artifact_append,
     "research.append": research_append,
@@ -1475,13 +1493,12 @@ TOOL_REGISTRY = {
     "digest.while_you_were_gone": digest_while_you_were_gone,
     "graph.trace": graph_trace,
     "policy.preflight": policy_preflight,
-    "rekall.propose_action": propose_action,
-    "rekall.wait_for_approval": wait_for_approval,
-    "rekall.capture_approval": capture_approval,
-    "rekall.capture_outcome": capture_outcome,
-    "rekall.actuate_cli": actuate_cli,
-    "rekall.actuate_file_write": actuate_file_write,
-    "rekall.exec.query": exec_natural_query,
+    "propose_action": propose_action,
+    "wait_for_approval": wait_for_approval,
+    "capture_approval": capture_approval,
+    "capture_outcome": capture_outcome,
+    "actuate_cli": actuate_cli,
+    "actuate_file_write": actuate_file_write,
 }
 
 
@@ -1520,6 +1537,8 @@ def handle_request(req: dict):
                 try:
                     result_data = TOOL_REGISTRY[name](args)
                     is_error = False
+                    
+                    # 1. Check if the tool returned an error object
                     if (
                         len(result_data) == 1
                         and isinstance(result_data[0], dict)
@@ -1527,23 +1546,35 @@ def handle_request(req: dict):
                     ):
                         is_error = True
                         err_obj = result_data[0]["error"]
-                        response_content = json.dumps(err_obj)
+                        response_text = json.dumps(err_obj, indent=2)
                     else:
-                        response_content = (
-                            json.dumps(result_data[0]) if result_data else "{}"
-                        )
+                        # 2. Extract text if present, otherwise dump JSON
+                        first = result_data[0] if result_data else {}
+                        if isinstance(first, dict) and "text" in first:
+                            response_text = str(first["text"])
+                        elif isinstance(first, dict) and "executive_response" in first:
+                            # Special handling for executive responses to make them readable
+                            response_text = json.dumps(first["executive_response"], indent=2)
+                        else:
+                            response_text = json.dumps(first, indent=2)
 
                     send_response(
                         {
                             "jsonrpc": "2.0",
                             "id": req_id,
                             "result": {
-                                "content": [{"type": "text", "text": response_content}],
+                                "content": [{"type": "text", "text": response_text}],
                                 "isError": is_error,
                             },
                         }
                     )
                 except Exception as e:
+                    import traceback
+                    tb = traceback.format_exc()
+                    logger.error(f"Tool execution failed: {tb}")
+                    # Print to stderr for visibility in Claude dashboard
+                    print(f"ERROR: {tb}", file=sys.stderr)
+                    
                     send_response(
                         {
                             "jsonrpc": "2.0",
@@ -1552,9 +1583,7 @@ def handle_request(req: dict):
                                 "content": [
                                     {
                                         "type": "text",
-                                        "text": json.dumps(
-                                            {"code": "UNKNOWN", "message": str(e)}
-                                        ),
+                                        "text": f"Error executing tool '{name}': {str(e)}\n\n{tb}"
                                     }
                                 ],
                                 "isError": True,
