@@ -1157,7 +1157,7 @@ def cmd_decide(args):
 def cmd_gc(args):
     """Prunes old segment files that are already included in snapshots."""
     store_dir = resolve_vault_dir(args.store_dir)
-    ensure_state_initialized(store_dir, args.json, init_mode=True)
+    ensure_state_initialized(store_dir, args.json)
 
     try:
         store = StateStore(store_dir)
@@ -1343,7 +1343,7 @@ def cmd_lock(args):
 def cmd_status(args):
     """Provides an executive summary of the current reality."""
     store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
-    ensure_state_initialized(store_dir, args.json, init_mode=True)
+    ensure_state_initialized(store_dir, args.json)
 
     try:
         store = StateStore(store_dir)

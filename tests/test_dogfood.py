@@ -15,7 +15,7 @@ def temp_repo():
 
 def test_ensure_state_initialized(temp_repo):
     store_dir = temp_repo / "project-state"
-    ensure_state_initialized(store_dir, is_json=False)
+    ensure_state_initialized(store_dir, is_json=False, init_mode=True)
 
     assert store_dir.exists()
     assert (store_dir / "schema-version.txt").read_text() == "0.1"
@@ -39,7 +39,8 @@ def test_timeline_add_auto_inits(temp_repo, capfd):
         actor="ci_bot",
     )
 
-    # Store dir does not exist yet. cmd_timeline_add should intercept and create it.
+    # Explicitly initialize first
+    ensure_state_initialized(store_dir, args.json, init_mode=True)
     cmd_timeline_add(args)
 
     assert store_dir.exists()

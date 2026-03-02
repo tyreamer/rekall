@@ -14,12 +14,8 @@ from rekall.cli import ExitCode, cmd_checkpoint, cmd_validate
 def temp_store():
     with tempfile.TemporaryDirectory() as d:
         base_dir = Path(d)
-        (base_dir / "schema-version.txt").write_text("0.1")
-        (base_dir / "project.yaml").write_text(
-            "project_id: test_proj\ndescription: Test\nrepo_url: https://github.com/test"
-        )
-        (base_dir / "envs.yaml").write_text("dev: {}")
-        (base_dir / "access.yaml").write_text("roles: {}")
+        from rekall.cli import ensure_state_initialized
+        ensure_state_initialized(base_dir, is_json=True, init_mode=True)
 
         event = {
             "event_id": "e1",
@@ -27,15 +23,10 @@ def temp_store():
             "work_item_id": "wi_1",
             "patch": {"title": "Test Item", "status": "todo", "priority": "p1"},
         }
-        (base_dir / "streams/work_items").mkdir(parents=True, exist_ok=True)
-        (base_dir / "streams/work_items").mkdir(parents=True, exist_ok=True)
-        (base_dir / "streams/work_items/active.jsonl").write_text(
-            json.dumps(event) + "\n"
-        )
-        for f in ["activity", "attempts", "decisions", "timeline"]:
-            d = base_dir / "streams" / f
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "active.jsonl").touch()
+        # Add a work item to ensure some state exists if needed
+        from rekall.core.state_store import StateStore
+        store = StateStore(base_dir)
+        store.append_jsonl_idempotent("work_items", event, "event_id")
         yield base_dir
 
 

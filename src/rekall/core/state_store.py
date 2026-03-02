@@ -66,38 +66,58 @@ def sanitize_url(url: str) -> str:
 
 def resolve_vault_dir(start_dir: Optional[Union[str, Path]] = None) -> Path:
     """
-    Search order (current dir upward):
+    Search order:
     0) REKALL_STATE_DIR or REKALL_ARTIFACT_PATH environment variables
-    1) ./project-state/ if it exists and contains a manifest.json
-    2) ./.rekall/project-state/ if it exists
-    3) nearest ancestor containing manifest.json (or head)
-    4) fallback: ./project-state (but do NOT create structure silently)
+    1) If start_dir provided, check if it IS the vault or contains one
+    2) Search upward from starting point for standard names
+    3) Fallback
     """
     import os
     env_dir = os.getenv("REKALL_STATE_DIR") or os.getenv("REKALL_ARTIFACT_PATH")
     if env_dir:
         return Path(env_dir).resolve()
 
-    base = Path(start_dir).resolve() if start_dir else Path.cwd().resolve()
+    # Search candidates relative to any directory
+    T1 = "project-state"
+    T2 = ".rekall/project-state"
 
-    # Check upward
-    for d in [base] + list(base.parents):
-        # 1) ./project-state
-        ps = d / "project-state"
-        if ps.is_dir() and (ps / "manifest.json").exists():
-            return ps
+    # 1) Determine search starting point and explicit preference
+    if start_dir:
+        pref = Path(start_dir).resolve()
+        search_start = pref
+    else:
+        pref = None
+        search_start = Path.cwd().resolve()
 
-        # 2) ./.rekall/project-state
-        rp = d / ".rekall" / "project-state"
-        if rp.is_dir() and (rp / "manifest.json").exists():
-            return rp
+    # 2) If the path IS the vault, we are done.
+    if (search_start / "manifest.json").exists():
+        return search_start
 
-        # 3) current dir has manifest directly
+    # 3) Check targets within search_start
+    for t in [T1, T2]:
+        if (search_start / t / "manifest.json").exists():
+            return (search_start / t).resolve()
+
+    # 4) Search upward
+    # If search_start IS one of our target names, start search from parent.
+    # e.g. if we are IN "project-state", search from its parent.
+    curr = search_start
+    if curr.name == "project-state":
+        curr = curr.parent
+    
+    for d in [curr] + list(curr.parents):
+        for t in [T1, T2]:
+            candidate = d / t
+            if candidate.is_dir() and (candidate / "manifest.json").exists():
+                return candidate.resolve()
+        # Also check if the dir has a manifest directly (root of repo style)
         if (d / "manifest.json").exists():
-            return d
+            return d.resolve()
 
-    # 4) Fallback
-    return base / "project-state"
+    # 5) Fallback
+    if pref:
+        return pref
+    return Path.cwd().resolve() / "project-state"
 
 
 

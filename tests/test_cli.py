@@ -16,7 +16,7 @@ def temp_store():
         from rekall.cli import ensure_state_initialized
         from rekall.core.state_store import StateStore
 
-        ensure_state_initialized(base_dir, is_json=True)
+        ensure_state_initialized(base_dir, is_json=True, init_mode=True)
 
         event = {
             "event_id": "e1",

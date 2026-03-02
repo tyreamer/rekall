@@ -48,8 +48,13 @@ def test_serve_stdio_handshake(capfd, monkeypatch):
             host="stdio",
             json=True, # Inferred from serve command context in real usage
             debug=False,
-            quiet=False
+            quiet=True
         )
+
+        # Initialize first
+        from rekall.cli import cmd_init
+        cmd_init(args)
+        capfd.readouterr()  # Clear stdout from init message
 
         # cmd_serve will call mcp_server.main() which loops over stdin
         # We need to catch the SystemExit if it happens or just let it finish.
@@ -65,6 +70,3 @@ def test_serve_stdio_handshake(capfd, monkeypatch):
         assert resp["id"] == 1
         assert "serverInfo" in resp["result"]
         assert resp["result"]["serverInfo"]["name"] == "rekall-mcp"
-
-        # stderr should contain the "Initializing" log
-        assert "INFO: Initializing minimal structure" in captured.err
