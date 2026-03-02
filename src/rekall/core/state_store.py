@@ -474,10 +474,20 @@ class StateStore:
                 f"Record exceeds maximum size of {BloatConfig.MAX_RECORD_BYTES} bytes"
             )
 
-        # 5. Atomic Append with Locking logic (simplified for now)
+        # 5. Atomic Append with Locking logic
         lock_file = active_path.with_suffix(".lock")
+        import time
         try:
-            # Basic file locking (wait-and-retry could be added)
+            # Check for stale lock (older than 30s)
+            if lock_file.exists():
+                try:
+                    if time.time() - lock_file.stat().st_mtime > 30:
+                        logger.warning(f"Unlinking stale lock: {lock_file}")
+                        lock_file.unlink(missing_ok=True)
+                except (FileNotFoundError, PermissionError):
+                    pass
+
+            # Basic file locking
             with open(lock_file, "x"):
                 pass
 
@@ -516,7 +526,7 @@ class StateStore:
 
         finally:
             if lock_file.exists():
-                lock_file.unlink()
+                lock_file.unlink(missing_ok=True)
 
         return record
 
@@ -1834,3 +1844,13 @@ class StateStore:
             report["summary"]["status"] = "\u274c"
 
         return report
+    def get_snapshot(self) -> Dict[str, Any]:
+        """Returns a serializable snapshot of the current state."""
+        return {
+            "project_config": self.project_config,
+            "work_items": self.work_items,
+            "activity": self._load_stream("activity.jsonl", hot_only=True)[-50:],  # Last 50 items
+            "timeline": self._load_stream("timeline.jsonl", hot_only=True)[-50:],
+            "manifest": self.manifest,
+            "initialized_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }

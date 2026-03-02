@@ -532,10 +532,11 @@ def test_exec_query_changed_since(monkeypatch, tmp_path):
     from rekall.server.mcp_server import exec_query, timeline_append
 
     # Add an event
+    eid = f"evt-new-{uuid.uuid4().hex[:8]}"
     timeline_append(
         {
             "project_id": "prj_646d63703ec5",
-            "event": {"event_id": "evt-new-1", "message": "hello"},
+            "event": {"event_id": eid, "message": "hello"},
             "actor": {"actor_type": "human", "actor_id": "u-1"},
         }
     )
@@ -941,3 +942,122 @@ def test_policy_preflight(tmp_path, monkeypatch):
     assert res["effect"] == "deny"
     assert "Destructive" in res["reason"]
 
+def test_guard_query():
+    from rekall.server.mcp_server import guard_query
+    result = guard_query({"project_id": "prj_646d63703ec5"})
+    assert isinstance(result, list)
+    assert len(result) == 1
+    payload = result[0]
+    assert payload["ok"] is True
+    assert "guard" in payload
+    assert "project" in payload
+    assert "recent_decisions" in payload
+    assert "recent_attempts" in payload
+
+
+def test_guard_query_missing_project_id():
+    from rekall.server.mcp_server import guard_query
+    with pytest.raises(ValueError, match="project_id is required"):
+        guard_query({})
+def test_exec_query_dispatcher(monkeypatch):
+    from rekall.server.mcp_server import exec_natural_query
+    # 1. Test canonical fallback
+    args = {"project_id": "prj_646d63703ec5", "query_type": "ON_TRACK"}
+    res = exec_natural_query(args)[0]
+    assert "executive_response" in res
+    assert res["executive_response"]["confidence"] == "high"
+
+
+def test_exec_query_dispatcher_natural():
+    from rekall.server.mcp_server import exec_natural_query
+    # 2. Test natural language path
+    args = {"project_id": "prj_646d63703ec5", "query": "What is the status?"}
+    res = exec_natural_query(args)[0]
+    assert "text" in res
+    assert "PROJECT EXECUTION LEDGER" in res["text"]
+    assert "TIMELINE EVENTS" in res["text"]
+
+
+def test_stale_lock_cleanup(monkeypatch, tmp_path):
+    import json
+    import time
+
+    from rekall.core.state_store import StateStore
+
+    # 1. Setup store with required files
+    store_dir = tmp_path / "store"
+    store_dir.mkdir()
+    (store_dir / "schema-version.txt").write_text("0.1", encoding="utf-8")
+    (store_dir / "project.yaml").write_text("project_id: prj_1", encoding="utf-8")
+    (store_dir / "envs.yaml").write_text("environments: {}", encoding="utf-8")
+    (store_dir / "access.yaml").write_text("roles: {}", encoding="utf-8")
+
+    # Create manifest to prevent initialization errors
+    manifest = {
+        "streams": {},
+        "last_checkpoint": None,
+        "schema_version": "0.1",
+    }
+    (store_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    store = StateStore(store_dir)
+
+    # 2. Create a "stale" lock file (31s old)
+    stream_name = "activity"
+    stream_dir = store_dir / "streams" / stream_name
+    stream_dir.mkdir(parents=True)
+    active_file = stream_dir / "active.jsonl"
+    active_file.touch()
+    lock_file = active_file.with_suffix(".lock")
+    lock_file.touch()
+
+    # Backdate the lock file
+    old_time = time.time() - 60
+    import os
+    os.utime(lock_file, (old_time, old_time))
+
+    # 3. Running an append should cleanup the lock and succeed
+    store.append_jsonl_idempotent(stream_name, {"type": "TestEvent", "id": "1"}, "id")
+
+    assert not lock_file.exists()
+    assert len(store._load_stream(stream_name)) == 1
+
+
+def test_mcp_handle_request_tool_crash(monkeypatch):
+    import json
+    import sys
+    from io import StringIO
+
+    from rekall.server import mcp_server
+
+    # Mock send_response to capture output
+    output = StringIO()
+    monkeypatch.setattr(mcp_server, "send_response", lambda x: output.write(json.dumps(x) + "\n"))
+
+    # Mock a tool to crash
+    def crashing_tool(args):
+        raise RuntimeError("BOOM")
+
+    monkeypatch.setitem(mcp_server.TOOL_REGISTRY, "crash.tool", crashing_tool)
+
+    # Simulate tool call
+    req = {
+        "jsonrpc": "2.0",
+        "id": "123",
+        "method": "tools/call",
+        "params": {
+            "name": "crash.tool",
+            "arguments": {}
+        }
+    }
+
+    # Suppress stderr print during test
+    monkeypatch.setattr(sys, "stderr", StringIO())
+
+    mcp_server.handle_request(req)
+
+    res = json.loads(output.getvalue())
+    assert res["id"] == "123"
+    assert "isError" in res["result"]
+    assert res["result"]["isError"] is True
+    assert "Error executing tool 'crash.tool': BOOM" in res["result"]["content"][0]["text"]

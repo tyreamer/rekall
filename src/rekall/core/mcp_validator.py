@@ -210,7 +210,6 @@ def run_mcp_validation(
             cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
             text=True,
             shell=use_shell,
         )
