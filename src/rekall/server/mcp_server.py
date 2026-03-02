@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
@@ -9,20 +8,81 @@ from rekall.core.state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
+_base_dir: Optional[Path] = None
 _store: Optional[StateStore] = None
 
 
 def get_store() -> StateStore:
-    global _store
+    global _store, _base_dir
     if _store is None:
-        default_artifact = (
-            Path(__file__).parent.parent.parent.parent
-            / "examples"
-            / "sample_state_artifact"
-        )
-        artifact_path = os.getenv("REKALL_ARTIFACT_PATH", str(default_artifact))
-        _store = StateStore(Path(artifact_path))
+        if _base_dir is None:
+            # Fallback for direct import/test
+            from rekall.core.state_store import resolve_vault_dir
+            _base_dir = resolve_vault_dir()
+
+        if not (_base_dir / "manifest.json").exists():
+             raise ValueError("Rekall vault not initialized. Call project.bootstrap first.")
+
+        _store = StateStore(_base_dir)
     return _store
+
+
+def project_bootstrap(args: dict) -> list:
+    """Zero-setup path: ensures vault exists and metadata is set."""
+    global _base_dir, _store
+    if _base_dir is None:
+        from rekall.core.state_store import resolve_vault_dir
+        _base_dir = resolve_vault_dir()
+
+    from rekall.cli import ensure_state_initialized
+    ensure_state_initialized(_base_dir, is_json=True, init_mode=True)
+
+    # Now we can safely create the store
+    _store = StateStore(_base_dir)
+
+    # Optionally set metadata
+    patch = {}
+    if "goal" in args:
+        patch["goal"] = args["goal"]
+    if "phase" in args:
+        patch["phase"] = args["phase"]
+    if "status" in args:
+        patch["status"] = args["status"]
+    if "confidence" in args:
+        patch["confidence"] = args["confidence"]
+
+    actor = args.get("actor", {"actor_id": "agent_bootstrap"})
+    if patch:
+        _store.patch_project_meta(patch, actor=actor)
+
+    meta = _store.get_project_meta()
+
+    return [{
+        "status": "success",
+        "message": "Project bootstrapped successfully.",
+        "vault_path": str(_base_dir),
+        "metadata": meta,
+        "recommendations": [
+            "Use decision.propose to document architectural choices.",
+            "Use attempt.append to log your progress.",
+            "Run status / blockers regularly to stay in sync with the human owner."
+        ]
+    }]
+
+
+def project_meta_get(args: dict) -> list:
+    store = get_store()
+    return [{"metadata": store.get_project_meta()}]
+
+
+def project_meta_patch(args: dict) -> list:
+    store = get_store()
+    patch = args.get("patch", {})
+    actor = args.get("actor", {"actor_id": "agent_meta_patch"})
+    idemp = args.get("idempotency_key")
+
+    res = store.patch_project_meta(patch, actor=actor, idempotency_key=idemp)
+    return [{"metadata": res}]
 
 
 def _paginate(
@@ -912,6 +972,38 @@ def guard_query(args: dict) -> list:
 
 TOOLS_DEF = [
     {
+        "name": "project.bootstrap",
+        "description": "Idempotent startup tool. Ensures vault exists, sets project metadata, and returns current state.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string"},
+                "phase": {"type": "string"},
+                "status": {"type": "string"},
+                "confidence": {"type": "string"},
+                "actor": {"type": "object"}
+            }
+        }
+    },
+    {
+        "name": "project.meta.get",
+        "description": "Get project metadata (goal, phase, status, etc).",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "project.meta.patch",
+        "description": "Partially update project metadata.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["patch"],
+            "properties": {
+                "patch": {"type": "object"},
+                "actor": {"type": "object"},
+                "idempotency_key": {"type": "string"}
+            }
+        }
+    },
+    {
         "name": "project.list",
         "description": "List projects visible to caller.",
         "inputSchema": {
@@ -1467,6 +1559,9 @@ TOOLS_DEF = [
 ]
 
 TOOL_REGISTRY = {
+    "project.bootstrap": project_bootstrap,
+    "project.meta.get": project_meta_get,
+    "project.meta.patch": project_meta_patch,
     "project.list": project_list,
     "project.get": project_get,
     "project.init": project_init,

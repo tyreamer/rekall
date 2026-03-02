@@ -9,7 +9,7 @@ from typing import Any, NoReturn, Optional
 
 from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
 from rekall.core.handoff_generator import generate_boot_brief
-from rekall.core.state_store import StateStore
+from rekall.core.state_store import StateStore, resolve_vault_dir
 from rekall.server import mcp_server
 from rekall.server.dashboard import start_dashboard
 
@@ -130,7 +130,7 @@ def setup_logging(json_mode: bool = False, quiet_mode: bool = False):
         )
 
 
-def ensure_state_initialized(store_dir: Path, is_json: bool = False):
+def ensure_state_initialized(store_dir: Path, is_json: bool = False, init_mode: bool = False):
     """Ensures the state directory and its minimal required files exist."""
     if (
         store_dir.exists()
@@ -138,6 +138,9 @@ def ensure_state_initialized(store_dir: Path, is_json: bool = False):
         and (store_dir / "manifest.json").exists()
     ):
         return
+
+    if not init_mode:
+        die(ExitCode.NOT_FOUND, "No Rekall vault found. Run `rekall init` (or let your agent run project.bootstrap via MCP).", is_json)
 
     if not is_json:
         logger.info(
@@ -246,7 +249,7 @@ def cmd_doctor(args):
     )
 
     # 3. project-state / store_dir presence
-    store_dir = Path(getattr(args, "store_dir", "project-state"))
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
     exists = store_dir.exists()
     results.append(
         {
@@ -352,6 +355,9 @@ def cmd_demo(args):
         # Re-use init logic to stage the directory
         cmd_init(args)
 
+        # The actual vault might be in temporary_dir/project-state
+        temp_path = resolve_vault_dir(temp_path)
+
         # Mock some events for the demo
         store = StateStore(temp_path)
         actor = {"actor_id": "demo_user"}
@@ -423,7 +429,7 @@ def cmd_validate(args):
         cmd_validate_mcp(args)
         return
 
-    base_dir = Path(args.store_dir)
+    base_dir = resolve_vault_dir(args.store_dir)
 
     if not base_dir.exists():
         die(ExitCode.NOT_FOUND, f"Directory {base_dir} does not exist.", args.json)
@@ -524,7 +530,7 @@ def cmd_validate_mcp(args):
 
 def cmd_snapshot(args):
     """Compile the state store into a single standalone snapshot.json (compact format)."""
-    base_dir = Path(args.store_dir)
+    base_dir = resolve_vault_dir(args.store_dir)
     try:
         store = StateStore(base_dir)
 
@@ -586,7 +592,7 @@ def cmd_export(args):
     """Copies the StateStore entirely to a requested output directory matching v0.1 Spec."""
     import shutil
 
-    base_dir = Path(args.store_dir)
+    base_dir = resolve_vault_dir(args.store_dir)
     out_dir = Path(args.out)
 
     try:
@@ -667,7 +673,7 @@ def cmd_import(args):
 
 def cmd_handoff(args):
     """Synthesizes project state to create boot_brief.md and exports snapshot.json."""
-    base_dir = Path(args.store_dir)
+    base_dir = resolve_vault_dir(args.store_dir)
     out_dir = Path(args.out)
     project_id = args.project_id
 
@@ -766,7 +772,7 @@ def cmd_features(args):
 
 def execute_alias_query(args, qtype: ExecutiveQueryType):
     """Wrapper to run existing ExecutiveQueries directly from CLI."""
-    base_dir = Path(args.store_dir)
+    base_dir = resolve_vault_dir(args.store_dir)
     ensure_state_initialized(base_dir, args.json)
 
     try:
@@ -954,11 +960,16 @@ def build_guard_payload(store: StateStore) -> dict:
 
 def cmd_guard(args):
     """Drift guard / invariant preflight check."""
-    base_dir = Path(args.store_dir)
+    base_dir = resolve_vault_dir(args.store_dir)
     ensure_state_initialized(base_dir, args.json)
 
     try:
         store = StateStore(base_dir)
+        meta = store.get_project_meta()
+        if (not meta.get("goal") or not meta.get("phase")) and not args.json:
+             print(f"{Theme.ICON_WARNING} Warning: Project metadata (goal/phase) is not set.")
+             print("  Agents should run `project.bootstrap` to maintain this.")
+
         payload = build_guard_payload(store)
 
         # Strict checks
@@ -1077,7 +1088,7 @@ def cmd_guard(args):
 
 
 def cmd_attempts_add(args):
-    base_dir = Path(args.store_dir)
+    base_dir = resolve_vault_dir(args.store_dir)
     try:
         store = StateStore(base_dir)
         attempt = {
@@ -1098,7 +1109,7 @@ def cmd_attempts_add(args):
 
 
 def cmd_decisions_propose(args):
-    base_dir = Path(args.store_dir)
+    base_dir = resolve_vault_dir(args.store_dir)
     try:
         store = StateStore(base_dir)
         decision = {
@@ -1120,7 +1131,7 @@ def cmd_decisions_propose(args):
 
 def cmd_decide(args):
     """Capture a human decision for an action or decision request."""
-    base_dir = Path(getattr(args, "store_dir", "."))
+    base_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
     ensure_state_initialized(base_dir, args.json)
     try:
         store = StateStore(base_dir)
@@ -1145,7 +1156,7 @@ def cmd_decide(args):
 
 def cmd_gc(args):
     """Prunes old segment files that are already included in snapshots."""
-    store_dir = Path(args.store_dir)
+    store_dir = resolve_vault_dir(args.store_dir)
     ensure_state_initialized(store_dir, args.json)
 
     try:
@@ -1160,7 +1171,7 @@ def cmd_gc(args):
 
 
 def cmd_timeline_add(args):
-    base_dir = Path(args.store_dir)
+    base_dir = resolve_vault_dir(args.store_dir)
     ensure_state_initialized(base_dir, args.json)
     try:
         store = StateStore(base_dir)
@@ -1187,7 +1198,7 @@ def cmd_checkpoint(args):
     """Create a durable checkpoint: export state + append timeline milestone."""
     import shutil
 
-    base_dir = Path(args.store_dir)
+    base_dir = resolve_vault_dir(args.store_dir)
     out_dir = Path(args.out)
     label = getattr(args, "label", None) or "checkpoint"
     actor_id = getattr(args, "actor", "cli_user")
@@ -1255,7 +1266,7 @@ def cmd_checkpoint(args):
 
 def cmd_checkout(args):
     """Rewinds the active HEAD to a specific point in time by appending a StateRevert."""
-    base_dir = Path(getattr(args, "store_dir", "."))
+    base_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
     ensure_state_initialized(base_dir, args.json)
     try:
         store = StateStore(base_dir)
@@ -1297,7 +1308,7 @@ def cmd_checkout(args):
 
 
 def cmd_lock(args):
-    base_dir = Path(args.store_dir)
+    base_dir = resolve_vault_dir(args.store_dir)
     try:
         store = StateStore(base_dir)
 
@@ -1331,15 +1342,27 @@ def cmd_lock(args):
 
 def cmd_status(args):
     """Provides an executive summary of the current reality."""
-    store_dir = Path(getattr(args, "store_dir", "project-state"))
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
     ensure_state_initialized(store_dir, args.json)
 
     try:
         store = StateStore(store_dir)
 
         project_meta = store._load_yaml("project.yaml") or {}
-        goal = project_meta.get("current_goal") or project_meta.get("goal", "No goal defined")
-        phase = project_meta.get("phase", "Unknown phase")
+        goal = project_meta.get("current_goal") or project_meta.get("goal")
+        phase = project_meta.get("phase")
+
+        # Disclaimer if meta missing
+        meta_missing = not goal or not phase
+        if meta_missing and not args.json:
+            print(f"\n{Theme.ICON_WARNING} [ Agent Metadata Missing ]")
+            print("  This is agent-managed metadata. To fix:")
+            print("  1. Let your agent run `project.bootstrap` via MCP")
+            print("  2. Or run: `rekall meta set goal=\"Your Goal\" phase=\"Planning\"` as fallback.")
+            print("-" * 50)
+
+        goal = goal or "not set"
+        phase = phase or "not set"
 
         timeline = store._load_stream("timeline.jsonl")
         actions = store._load_stream("actions.jsonl")
@@ -1445,6 +1468,121 @@ def cmd_status(args):
         die(ExitCode.INTERNAL_ERROR, f"Status failed: {str(e)}", args.json)
 
 
+def cmd_meta_get(args):
+    """Get project metadata."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
+    ensure_state_initialized(store_dir, args.json)
+    try:
+        store = StateStore(store_dir)
+        meta = store.get_project_meta()
+        if args.json:
+            print(json.dumps(meta, indent=2))
+        else:
+            print("\n[ rekall meta get ]")
+            for k, v in meta.items():
+                print(f"  {k:<15}: {v}")
+            print("")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Meta get failed: {str(e)}", args.json)
+
+
+def cmd_meta_set(args):
+    """Set project metadata (replaces/adds fields)."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
+    ensure_state_initialized(store_dir, args.json)
+    try:
+        store = StateStore(store_dir)
+        # Convert list of k=v to dict
+        patch = {}
+        for kv in args.fields:
+            if "=" in kv:
+                k, v = kv.split("=", 1)
+                patch[k] = v
+            else:
+                die(ExitCode.USER_ERROR, f"Invalid field format: {kv}. Use k=v", args.json)
+
+        actor = {"actor_id": getattr(args, "actor", "cli_user")}
+        res = store.patch_project_meta(patch, actor=actor)
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print("\u2705 Project metadata updated.")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Meta set failed: {str(e)}", args.json)
+
+
+def cmd_meta_patch(args):
+    """Patch project metadata via JSON payload."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
+    ensure_state_initialized(store_dir, args.json)
+    try:
+        store = StateStore(store_dir)
+        patch = json.loads(args.payload)
+        actor = {"actor_id": getattr(args, "actor", "cli_user")}
+        res = store.patch_project_meta(patch, actor=actor)
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print("\u2705 Project metadata patched.")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Meta patch failed: {str(e)}", args.json)
+
+
+def cmd_onboard(args):
+    """Generate the Rekall skill pack and integration guide."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
+    ensure_state_initialized(store_dir, args.json, init_mode=True)
+
+    try:
+        StateStore(store_dir)
+        art_dir = store_dir / "artifacts"
+        art_dir.mkdir(exist_ok=True)
+
+        skill_path = art_dir / "rekall_skill.md"
+
+        skill_content = """# Rekall Agent Skill Pack
+
+This file defines the operating contract for any AI agent integrating with this Rekall vault.
+
+## 1. Startup Routine
+Every time you start work, you MUST call `project.bootstrap`.
+- This ensures the vault is healthy.
+- It returns the current `goal`, `phase`, and `status`.
+- It provides important paths and next-step recommendations.
+
+## 2. Decision & Attempt Logging
+Rekall is an append-only execution ledger. Do not rely on your internal memory for long-term state.
+- **Log Decisions**: Call `decisions.propose` for any architectural or significant logic change.
+- **Log Attempts**: Call `attempts.add` for every unit of work (e.g. "Implementing auth", "Fixing bug X"). Include evidence (test results, file paths).
+
+## 3. Approval Breakpoints
+- If a decision high-risk or requires human sign-off, use the `decisions` API with a "PENDING" state (or follow the specific MCP tool guidance for breakpoints).
+- Stop and wait for human `rekall decide` if you reach an ambiguity you cannot resolve with 90% confidence.
+
+## 4. Idempotency & Secrets
+- Use `idempotency_key` (e.g. hash of inputs) to avoid duplicate logs on retries.
+- **NO SECRETS**: Never log API keys, tokens, or passwords. Redact them to `[REDACTED]` before calling Rekall tools.
+"""
+
+        with open(skill_path, "w", encoding="utf-8") as f:
+            f.write(skill_content)
+
+        if not args.json:
+            print(f"\n{Theme.ICON_SUCCESS} Generated universal skill pack: {skill_path}")
+            print("\n--- INTEGRATION GUIDE ---")
+            print("To wire Rekall into your agent (Cursor, Claude, etc.):")
+            print("1. Add the following to your agent's system instructions or config file:")
+            print(f"   \"Always follow the protocol in {skill_path.relative_to(Path.cwd())}\"")
+            print("2. Ensure the Rekall MCP server is configured in your IDE/agent settings.")
+            print("3. Start every session by calling `project.bootstrap`.")
+            print("--------------------------\n")
+        else:
+            print(json.dumps({"status": "success", "skill_pack": str(skill_path)}))
+
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Onboarding failed: {str(e)}", args.json)
+
+
 def cmd_serve(args):
     """Launch the MCP server over stdio."""
     # Force quiet mode for MCP to avoid polluting stdout
@@ -1457,20 +1595,20 @@ def cmd_serve(args):
         resolved_store = getattr(args, "store_dir_flag", ".")
     args.store_dir = resolved_store
 
-    base_dir = Path(args.store_dir)
-    ensure_state_initialized(base_dir, is_json=True)
+    base_dir = resolve_vault_dir(args.store_dir)
 
     try:
-        store = StateStore(base_dir)
-
         # Success Criterion: Launch Rekall Dashboard if interactive
         if sys.stdin.isatty():
-            dashboard_server, port = start_dashboard(store)
-            print(f"{Theme.ICON_ROCKET} Rekall Dashboard active at http://127.0.0.1:{port}", file=sys.stderr)
+            # If store does not exist, we just skip dashboard or start it later. For now, try initializing if it exists.
+            if base_dir.exists() and (base_dir / "manifest.json").exists():
+                store = StateStore(base_dir)
+                dashboard_server, port = start_dashboard(store)
+                print(f"{Theme.ICON_ROCKET} Rekall Dashboard active at http://127.0.0.1:{port}", file=sys.stderr)
             print(f"{Theme.ICON_INFO} MCP Server (stdio) active and waiting for agent commands...", file=sys.stderr)
 
-        # Inject store into mcp_server global
-        mcp_server._store = store
+        # Inject base_dir into mcp_server global so it can lazy init
+        mcp_server._base_dir = base_dir
 
         # Launch server loop
         mcp_server.main()
@@ -1481,7 +1619,7 @@ def cmd_serve(args):
 
 def cmd_verify(args):
     """Verify cryptographic integrity of all execution streams."""
-    base_dir = Path(getattr(args, "store_dir", "."))
+    base_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
     ensure_state_initialized(base_dir, args.json)
     try:
         store = StateStore(base_dir)
@@ -1514,7 +1652,7 @@ def cmd_verify(args):
 
 def cmd_bundle(args):
     """Bundle the entire state directory into a portable tarball."""
-    base_dir = Path(getattr(args, "store_dir", "."))
+    base_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
     ensure_state_initialized(base_dir, args.json)
 
     out_file = Path(args.out)
@@ -1545,10 +1683,10 @@ def cmd_init(args):
     elif getattr(args, "dotdir", False):
         store_dir = Path(".rekall")
     else:
-        store_dir = Path(getattr(args, "store_dir", "project-state"))
+        store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
 
     # Auto-init if missing
-    ensure_state_initialized(store_dir, args.json)
+    ensure_state_initialized(store_dir, args.json, init_mode=True)
 
     try:
         store = StateStore(store_dir)
@@ -2214,6 +2352,37 @@ EXAMPLES:
         help="Host/transport for the MCP server. Currently only 'stdio' is supported.",
     )
     parser_serve.set_defaults(func=cmd_serve)
+
+    # Meta
+    parser_meta = subparsers.add_parser(
+        "meta", help="[Status] Manage agent-owned project metadata.", parents=[shared_flags]
+    )
+    meta_subparsers = parser_meta.add_subparsers(dest="subcommand", required=True)
+
+    parser_meta_get = meta_subparsers.add_parser("get", help="Get current metadata.")
+    parser_meta_get.add_argument("--store-dir", help="StateStore directory")
+    parser_meta_get.set_defaults(func=cmd_meta_get)
+
+    parser_meta_set = meta_subparsers.add_parser("set", help="Set metadata fields (k=v).")
+    parser_meta_set.add_argument("fields", nargs="+", help="Fields to set (e.g. goal=\"Done X\" phase=\"Beta\")")
+    parser_meta_set.add_argument("--store-dir", help="StateStore directory")
+    parser_meta_set.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_meta_set.set_defaults(func=cmd_meta_set)
+
+    parser_meta_patch = meta_subparsers.add_parser("patch", help="Patch metadata via JSON.")
+    parser_meta_patch.add_argument("payload", help="JSON payload to patch")
+    parser_meta_patch.add_argument("--store-dir", help="StateStore directory")
+    parser_meta_patch.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_meta_patch.set_defaults(func=cmd_meta_patch)
+
+    # Onboard
+    parser_onboard = subparsers.add_parser(
+        "onboard",
+        help="[Portability] Generate the Rekall skill pack for agents.",
+        parents=[shared_flags],
+    )
+    parser_onboard.add_argument("--store-dir", help="StateStore directory")
+    parser_onboard.set_defaults(func=cmd_onboard)
 
     args = parser.parse_args()
 

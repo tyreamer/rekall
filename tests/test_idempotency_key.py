@@ -15,7 +15,7 @@ def store():
         base_dir = Path(d)
         from rekall.cli import ensure_state_initialized
 
-        ensure_state_initialized(base_dir, is_json=True)
+        ensure_state_initialized(base_dir, is_json=True, init_mode=True)
 
         event = {
             "event_id": "e1",

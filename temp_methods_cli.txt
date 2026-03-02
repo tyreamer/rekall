@@ -1,0 +1,34 @@
+53 def use_ascii(cls):
+73 def autoprobe(cls):
+84 def die(
+124 def setup_logging(json_mode: bool = False, quiet_mode: bool = False):
+133 def ensure_state_initialized(store_dir: Path, is_json: bool = False):
+218 def cmd_doctor(args):
+341 def cmd_demo(args):
+412 def cmd_validate(args):
+494 def cmd_validate_mcp(args):
+525 def cmd_snapshot(args):
+585 def cmd_export(args):
+624 def cmd_import(args):
+668 def cmd_handoff(args):
+741 def cmd_features(args):
+767 def execute_alias_query(args, qtype: ExecutiveQueryType):
+806 def cmd_alias_status(args):
+810 def cmd_alias_blockers(args):
+814 def cmd_alias_resume(args):
+818 def build_guard_payload(store: StateStore) -> dict:
+955 def cmd_guard(args):
+1079 def cmd_attempts_add(args):
+1100 def cmd_decisions_propose(args):
+1121 def cmd_decide(args):
+1146 def cmd_gc(args):
+1162 def cmd_timeline_add(args):
+1186 def cmd_checkpoint(args):
+1256 def cmd_checkout(args):
+1299 def cmd_lock(args):
+1332 def cmd_status(args):
+1448 def cmd_serve(args):
+1482 def cmd_verify(args):
+1515 def cmd_bundle(args):
+1538 def cmd_init(args):
+1722 def main():

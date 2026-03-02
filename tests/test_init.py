@@ -10,7 +10,7 @@ from rekall.cli import ExitCode, cmd_init
 @pytest.fixture
 def temp_repo():
     with tempfile.TemporaryDirectory() as d:
-        yield Path(d)
+        yield Path(d).resolve()
 
 
 def test_init_auto_init(temp_repo, capfd):

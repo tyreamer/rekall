@@ -16,9 +16,21 @@ SAMPLE_DIR = Path(__file__).parent.parent / "examples" / "sample_state_artifact"
 
 
 @pytest.fixture(autouse=True)
-def setup_store(monkeypatch):
-    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(SAMPLE_DIR))
+def setup_store(monkeypatch, tmp_path):
+    # Use a real temporary directory for the store
+    store_dir = tmp_path / "project-state"
+    store_dir.mkdir()
+    (store_dir / "manifest.json").write_text('{"project_id": "prj_646d63703ec5", "schema_version": "0.1"}')
+    (store_dir / "schema-version.txt").write_text("0.1")
+
+    # Copy sample data if needed, but for these tests we might just want a fresh store
+    # or copy the sample one. Let's copy the sample one to be safe with existing test data.
+    import shutil
+    shutil.copytree(SAMPLE_DIR, store_dir, dirs_exist_ok=True)
+
+    monkeypatch.setenv("REKALL_STATE_DIR", str(store_dir))
     # force reload so tests always use the fixture
+    mcp_server._base_dir = store_dir
     mcp_server._store = None
     get_store()
     yield
@@ -1061,3 +1073,51 @@ def test_mcp_handle_request_tool_crash(monkeypatch):
     assert "isError" in res["result"]
     assert res["result"]["isError"] is True
     assert "Error executing tool 'crash.tool': BOOM" in res["result"]["content"][0]["text"]
+
+def test_project_bootstrap(monkeypatch, tmp_path):
+    # Start with an empty directory (no project-state)
+    monkeypatch.setenv("REKALL_STATE_DIR", str(tmp_path / "project-state"))
+    mcp_server._store = None
+    mcp_server._base_dir = tmp_path / "project-state"
+
+    from rekall.server.mcp_server import project_bootstrap
+
+    args = {
+        "goal": "Test Goal",
+        "phase": "Alpha",
+        "status": "STARTED"
+    }
+
+    res = project_bootstrap(args)[0]
+    assert res["status"] == "success"
+    assert res["metadata"]["goal"] == "Test Goal"
+    assert res["metadata"]["phase"] == "Alpha"
+    assert (tmp_path / "project-state" / "manifest.json").exists()
+
+
+def test_project_meta_get_patch(monkeypatch, tmp_path):
+    import shutil
+    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
+    monkeypatch.setenv("REKALL_STATE_DIR", str(tmp_path))
+    mcp_server._store = None
+    mcp_server._base_dir = tmp_path
+
+    from rekall.server.mcp_server import project_meta_get, project_meta_patch
+
+    # Get initial
+    res1 = project_meta_get({})[0]
+    assert "metadata" in res1
+
+    # Patch
+    patch_args = {
+        "patch": {"goal": "Updated Goal", "confidence": "0.99"},
+        "actor": {"actor_id": "test_agent"}
+    }
+    res2 = project_meta_patch(patch_args)[0]
+    assert res2["metadata"]["goal"] == "Updated Goal"
+    assert res2["metadata"]["confidence"] == "0.99"
+
+    # Verify persistence
+    mcp_server._store = None
+    res3 = project_meta_get({})[0]
+    assert res3["metadata"]["goal"] == "Updated Goal"
