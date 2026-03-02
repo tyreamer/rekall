@@ -1,8 +1,7 @@
 import json
 import logging
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
-from typing import Any, Optional
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +42,13 @@ DASHBOARD_HTML = """
         }
         .logo { font-size: 1.5rem; font-weight: 700; color: var(--emerald); }
         .badge { font-size: 0.7rem; background: rgba(16,185,129,0.1); color: var(--emerald); padding: 0.2rem 0.5rem; border-radius: 999px; }
-        
+
         .grid { display: grid; grid-template-cols: 1fr 350px; gap: 2rem; }
         .card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px; padding: 1.5rem; overflow: hidden; }
-        
+
         .work-items { list-style: none; padding: 0; }
-        .work-item { 
-            padding: 1rem; border-bottom: 1px solid var(--glass-border); 
+        .work-item {
+            padding: 1rem; border-bottom: 1px solid var(--glass-border);
             display: flex; justify-content: space-between; align-items: flex-start;
         }
         .status { font-size: 0.75rem; text-transform: uppercase; padding: 0.2rem 0.4rem; border-radius: 4px; font-weight: 600; }
@@ -57,11 +56,11 @@ DASHBOARD_HTML = """
         .status-in_progress { background: #1e3a8a; color: #93c5fd; }
         .status-blocked { background: #7f1d1d; color: #fecaca; }
         .status-done { background: #064e3b; color: #6ee7b7; }
-        
+
         .activity-feed { font-size: 0.85rem; }
         .activity-item { padding: 0.75rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .activity-item .timestamp { color: var(--zinc-400); font-size: 0.7rem; }
-        
+
         pre { background: #000; padding: 1rem; border-radius: 8px; font-size: 0.8rem; overflow-x: auto; color: #d4d4d8; }
     </style>
 </head>
@@ -70,7 +69,7 @@ DASHBOARD_HTML = """
         <div class="logo">Rekall <span class="badge">Rekall Dashboard</span></div>
         <div id="project-id" style="color: var(--zinc-400)">-</div>
     </div>
-    
+
     <div class="grid">
         <div class="main">
             <div class="card">
@@ -95,10 +94,10 @@ DASHBOARD_HTML = """
             try {
                 const res = await fetch('/api/state');
                 const data = await res.json();
-                
+
                 document.getElementById('project-id').textContent = data.project_config.project_id || 'unnamed-project';
                 document.getElementById('raw-state').textContent = JSON.stringify(data, null, 2);
-                
+
                 // Render Work Items
                 const wiList = document.getElementById('work-items-list');
                 wiList.innerHTML = '';
@@ -114,7 +113,7 @@ DASHBOARD_HTML = """
                     `;
                     wiList.appendChild(el);
                 });
-                
+
                 // Render Activity
                 const actList = document.getElementById('activity-list');
                 actList.innerHTML = '';
@@ -128,12 +127,12 @@ DASHBOARD_HTML = """
                     `;
                     actList.appendChild(el);
                 });
-                
+
             } catch (e) {
                 console.error("Failed to fetch state", e);
             }
         }
-        
+
         refresh();
         setInterval(refresh, 5000);
     </script>
@@ -169,7 +168,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 def start_dashboard(store, port=8888):
     DashboardHandler.store = store
     server = HTTPServer(('127.0.0.1', port), DashboardHandler)
-    
+
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, port

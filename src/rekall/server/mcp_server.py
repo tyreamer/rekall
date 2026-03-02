@@ -680,8 +680,12 @@ def exec_natural_query(args: dict) -> list:
 
     # 1. Dispatch to Canonical if query_type is provided
     if query_type:
-        from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
         import dataclasses
+
+        from rekall.core.executive_queries import (
+            ExecutiveQueryType,
+            query_executive_status,
+        )
         try:
             q_type = ExecutiveQueryType(query_type)
             resp = query_executive_status(store, q_type, since)
@@ -700,7 +704,7 @@ def exec_natural_query(args: dict) -> list:
             # Format the ledger for the LLM
             ledger_text = []
             ledger_text.append(f"====== PROJECT EXECUTION LEDGER for {project_id} ======")
-            
+
             ledger_text.append("\n--- TIMELINE EVENTS ---")
             for t in timeline[-25:]:
                 ledger_text.append(json.dumps(t))
@@ -725,7 +729,7 @@ RULES:
             return [{"text": "\n".join(ledger_text) + "\n\n" + system_instruction}]
         except Exception as e:
             return [{"error": {"code": "VALIDATION_ERROR", "message": f"Natural query generation failed: {e}"}}]
-    
+
     # 3. Default: Return project status if no type/query
     from rekall.cli import build_guard_payload
     payload = build_guard_payload(store)
@@ -1537,7 +1541,7 @@ def handle_request(req: dict):
                 try:
                     result_data = TOOL_REGISTRY[name](args)
                     is_error = False
-                    
+
                     # 1. Check if the tool returned an error object
                     if (
                         len(result_data) == 1
@@ -1574,7 +1578,7 @@ def handle_request(req: dict):
                     logger.error(f"Tool execution failed: {tb}")
                     # Print to stderr for visibility in Claude dashboard
                     print(f"ERROR: {tb}", file=sys.stderr)
-                    
+
                     send_response(
                         {
                             "jsonrpc": "2.0",

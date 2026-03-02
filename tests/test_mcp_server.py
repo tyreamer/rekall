@@ -979,10 +979,11 @@ def test_exec_query_dispatcher_natural():
 
 
 def test_stale_lock_cleanup(monkeypatch, tmp_path):
-    import time
     import json
+    import time
+
     from rekall.core.state_store import StateStore
-    
+
     # 1. Setup store with required files
     store_dir = tmp_path / "store"
     store_dir.mkdir()
@@ -990,7 +991,7 @@ def test_stale_lock_cleanup(monkeypatch, tmp_path):
     (store_dir / "project.yaml").write_text("project_id: prj_1", encoding="utf-8")
     (store_dir / "envs.yaml").write_text("environments: {}", encoding="utf-8")
     (store_dir / "access.yaml").write_text("roles: {}", encoding="utf-8")
-    
+
     # Create manifest to prevent initialization errors
     manifest = {
         "streams": {},
@@ -1000,7 +1001,7 @@ def test_stale_lock_cleanup(monkeypatch, tmp_path):
     (store_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     store = StateStore(store_dir)
-    
+
     # 2. Create a "stale" lock file (31s old)
     stream_name = "activity"
     stream_dir = store_dir / "streams" / stream_name
@@ -1009,35 +1010,36 @@ def test_stale_lock_cleanup(monkeypatch, tmp_path):
     active_file.touch()
     lock_file = active_file.with_suffix(".lock")
     lock_file.touch()
-    
+
     # Backdate the lock file
     old_time = time.time() - 60
     import os
     os.utime(lock_file, (old_time, old_time))
-    
+
     # 3. Running an append should cleanup the lock and succeed
     store.append_jsonl_idempotent(stream_name, {"type": "TestEvent", "id": "1"}, "id")
-    
+
     assert not lock_file.exists()
     assert len(store._load_stream(stream_name)) == 1
 
 
 def test_mcp_handle_request_tool_crash(monkeypatch):
-    from rekall.server import mcp_server
     import json
     import sys
     from io import StringIO
-    
+
+    from rekall.server import mcp_server
+
     # Mock send_response to capture output
     output = StringIO()
     monkeypatch.setattr(mcp_server, "send_response", lambda x: output.write(json.dumps(x) + "\n"))
-    
+
     # Mock a tool to crash
     def crashing_tool(args):
         raise RuntimeError("BOOM")
-    
+
     monkeypatch.setitem(mcp_server.TOOL_REGISTRY, "crash.tool", crashing_tool)
-    
+
     # Simulate tool call
     req = {
         "jsonrpc": "2.0",
@@ -1048,12 +1050,12 @@ def test_mcp_handle_request_tool_crash(monkeypatch):
             "arguments": {}
         }
     }
-    
+
     # Suppress stderr print during test
     monkeypatch.setattr(sys, "stderr", StringIO())
-    
+
     mcp_server.handle_request(req)
-    
+
     res = json.loads(output.getvalue())
     assert res["id"] == "123"
     assert "isError" in res["result"]
