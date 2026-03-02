@@ -104,7 +104,7 @@ def resolve_vault_dir(start_dir: Optional[Union[str, Path]] = None) -> Path:
     curr = search_start
     if curr.name == "project-state":
         curr = curr.parent
-    
+
     for d in [curr] + list(curr.parents):
         for t in [T1, T2]:
             candidate = d / t
