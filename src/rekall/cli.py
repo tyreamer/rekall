@@ -1463,10 +1463,10 @@ def cmd_serve(args):
     try:
         store = StateStore(base_dir)
 
-        # Success Criterion: Launch Reality Dashboard if interactive
+        # Success Criterion: Launch Rekall Dashboard if interactive
         if sys.stdin.isatty():
             dashboard_server, port = start_dashboard(store)
-            print(f"{Theme.ICON_ROCKET} Reality Dashboard active at http://127.0.0.1:{port}", file=sys.stderr)
+            print(f"{Theme.ICON_ROCKET} Rekall Dashboard active at http://127.0.0.1:{port}", file=sys.stderr)
             print(f"{Theme.ICON_INFO} MCP Server (stdio) active and waiting for agent commands...", file=sys.stderr)
 
         # Inject store into mcp_server global
