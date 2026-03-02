@@ -7,7 +7,7 @@ import re
 import shutil
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import yaml
 
@@ -60,6 +60,45 @@ def sanitize_url(url: str) -> str:
     if "?" in url:
         url = url.split("?")[0]
     return url
+
+
+
+
+def resolve_vault_dir(start_dir: Optional[Union[str, Path]] = None) -> Path:
+    """
+    Search order (current dir upward):
+    0) REKALL_STATE_DIR or REKALL_ARTIFACT_PATH environment variables
+    1) ./project-state/ if it exists and contains a manifest.json
+    2) ./.rekall/project-state/ if it exists
+    3) nearest ancestor containing manifest.json (or head)
+    4) fallback: ./project-state (but do NOT create structure silently)
+    """
+    import os
+    env_dir = os.getenv("REKALL_STATE_DIR") or os.getenv("REKALL_ARTIFACT_PATH")
+    if env_dir:
+        return Path(env_dir).resolve()
+
+    base = Path(start_dir).resolve() if start_dir else Path.cwd().resolve()
+
+    # Check upward
+    for d in [base] + list(base.parents):
+        # 1) ./project-state
+        ps = d / "project-state"
+        if ps.is_dir() and (ps / "manifest.json").exists():
+            return ps
+
+        # 2) ./.rekall/project-state
+        rp = d / ".rekall" / "project-state"
+        if rp.is_dir() and (rp / "manifest.json").exists():
+            return rp
+
+        # 3) current dir has manifest directly
+        if (d / "manifest.json").exists():
+            return d
+
+    # 4) Fallback
+    return base / "project-state"
+
 
 
 class BloatConfig:
@@ -261,6 +300,36 @@ class StateStore:
             data = yaml.safe_load(f) or {}
             detect_secrets(data)
             return data
+
+    def _save_yaml(self, filename: str, data: Dict[str, Any]):
+        filepath = self.base_dir / filename
+        detect_secrets(data)
+        with open(filepath, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, sort_keys=False)
+
+    def get_project_meta(self) -> Dict[str, Any]:
+        """Returns the current project metadata."""
+        return self.project_config
+
+    def patch_project_meta(
+        self, patch: Dict[str, Any], actor: Dict[str, Any], idempotency_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Partially updates project.yaml and appends a timeline event."""
+        detect_secrets(patch)
+        self.project_config.update(patch)
+        self.project_config["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        self._save_yaml("project.yaml", self.project_config)
+
+        # Append to timeline
+        event = {
+            "type": "project.meta.updated",
+            "patch": patch,
+            "current": self.project_config
+        }
+        self.append_timeline(event, actor=actor, idempotency_key=idempotency_key)
+
+        return self.project_config
 
     def _load_jsonl(self, filename: str) -> List[Dict[str, Any]]:
         """Loads all records from a jsonl stream (including all segments) applying HEAD semantics."""

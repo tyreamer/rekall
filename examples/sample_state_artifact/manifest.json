@@ -4,7 +4,7 @@
       "active_file": "streams/work_items/active.jsonl",
       "segments": [],
       "id_field": "event_id",
-      "latest_hash": "628bbb667df8220d0a7d75e72c430061a74e429d98b44549a888432ea7270c28"
+      "latest_hash": "7a0369e736940098a8fbef7ff637192d4f54636b2c306ec5bc4dfe3da10f132d"
     },
     "activity": {
       "active_file": "streams/activity/active.jsonl",
@@ -12,24 +12,25 @@
         "streams/activity/seg-0001.jsonl"
       ],
       "id_field": "activity_id",
-      "latest_hash": "9ea6b25182a8e238674a50f9b7102b83aeab7c15659c8a00b2566d5d183f09c1"
+      "latest_hash": "a849500fdc8928694ed89f2d326ac01d84d1c35232ab037f7e79428d0fd7f5b1"
     },
     "attempts": {
       "active_file": "streams/attempts/active.jsonl",
       "segments": [],
       "id_field": "attempt_id",
-      "latest_hash": "3f5396eee04024036ae225f351cbbe62abd20a03baff1162ad6e89f41323dc7e"
+      "latest_hash": "f122b8d9d26c445d730c5358fbf6b953e6efaf4a9668fb2445187f08d6ec9fa3"
     },
     "decisions": {
       "active_file": "streams/decisions/active.jsonl",
       "segments": [],
       "id_field": "decision_id",
-      "latest_hash": "484cb8a66e7f0f0a371c73b3524f18c1a0b75fb9c48e525766fd800d17fb0463"
+      "latest_hash": "4fb21251666ced47f05eccc339a6b08c891add2dbcfec3488dcd41f26a075e50"
     },
     "timeline": {
       "active_file": "streams/timeline/active.jsonl",
       "segments": [],
-      "id_field": "event_id"
+      "id_field": "event_id",
+      "latest_hash": "4633efd7b69a0e2d5299d5fc82f51dbeff27b06c455d05bd5134d2117f08a271"
     },
     "artifacts": {
       "active_file": "streams/artifacts/active.jsonl",
@@ -50,13 +51,13 @@
       "active_file": "streams/anchors/active.jsonl",
       "segments": [],
       "id_field": "anchor_id",
-      "latest_hash": "7ef6e5e0dc9aaa90ff7fcb80f09eb99e0364fcb2dda09e84000503e28b62ee23"
+      "latest_hash": "720977453df4e6ff521aeda93cb59903adb31cc9539bb6d524a219b51a60aee5"
     },
     "actions": {
       "active_file": "streams/actions/active.jsonl",
       "segments": [],
       "id_field": "action_id",
-      "latest_hash": "64adf7227b41701c5e6e94515f07ed3982ab5017ade4334dc9a11dcf7f92e5e1"
+      "latest_hash": "7f6c7361972ea3df42c1a3b69e232e3b8568960e700c39c5ec084a488a0660ee"
     }
   },
   "last_checkpoint": null,
