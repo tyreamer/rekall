@@ -355,6 +355,9 @@ def cmd_demo(args):
         # Re-use init logic to stage the directory
         cmd_init(args)
 
+        # The actual vault might be in temporary_dir/project-state
+        temp_path = resolve_vault_dir(temp_path)
+
         # Mock some events for the demo
         store = StateStore(temp_path)
         actor = {"actor_id": "demo_user"}
