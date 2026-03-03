@@ -1005,7 +1005,7 @@ def test_stale_lock_cleanup(monkeypatch, tmp_path):
     (store_dir / "access.yaml").write_text("roles: {}", encoding="utf-8")
 
     # Create manifest to prevent initialization errors
-    manifest = {
+    manifest: dict = {
         "streams": {},
         "last_checkpoint": None,
         "schema_version": "0.1",

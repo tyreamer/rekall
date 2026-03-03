@@ -38,7 +38,9 @@ class TestCheckpointExport:
             store_dir=str(temp_store),
             out=str(out_dir),
             json=False,
-            label="pre-deploy",
+            type="milestone",
+            title="pre-deploy",
+            summary="test summary",
             actor="cli_user",
             event_id=None,
             project_id="test_proj",
@@ -76,7 +78,9 @@ class TestCheckpointTimeline:
             store_dir=str(temp_store),
             out=str(out_dir),
             json=False,
-            label="v1",
+            type="milestone",
+            title="v1",
+            summary="test summary",
             actor="cli_user",
             event_id=None,
             project_id="test_proj",
@@ -89,7 +93,34 @@ class TestCheckpointTimeline:
 
         evt = json.loads(lines[0])
         assert evt["type"] == "milestone"
-        assert "Checkpoint created: v1" in evt["summary"]
+        assert "test summary" in evt["summary"]
+
+    def test_checkpoint_task_done(self, temp_store):
+        args = Namespace(
+            store_dir=str(temp_store),
+            out=None,
+            json=False,
+            type="task_done",
+            title="Completed feature X",
+            summary="Did some work",
+            actor="cli_user",
+            event_id=None,
+            project_id="test_proj",
+        )
+        cmd_checkpoint(args)
+
+        with open(temp_store / "streams/work_items/active.jsonl") as f:
+            lines = [line for line in f.readlines() if line.strip()]
+        assert len(lines) == 2
+        evt = json.loads(lines[-1])
+        assert evt["type"] == "WORK_ITEM_CREATED"
+
+        with open(temp_store / "streams/timeline/active.jsonl") as f:
+            lines = [line for line in f.readlines() if line.strip()]
+        assert len(lines) == 1
+        evt = json.loads(lines[0])
+        assert evt["type"] == "milestone"
+        assert "Task completed: Completed feature X" in evt["summary"]
 
     def test_idempotent_with_event_id(self, temp_store):
         """If event_id is provided and command runs twice, only one timeline event."""
@@ -98,7 +129,9 @@ class TestCheckpointTimeline:
             store_dir=str(temp_store),
             out=str(out_dir),
             json=False,
-            label="idempotent-test",
+            type="milestone",
+            title="idempotent-test",
+            summary="test summary",
             actor="cli_user",
             event_id="fixed_checkpoint_001",
             project_id="test_proj",
@@ -119,7 +152,9 @@ class TestCheckpointTimeline:
             store_dir=str(temp_store),
             out=str(temp_store / "ckpt_a"),
             json=False,
-            label="run1",
+            type="milestone",
+            title="run1",
+            summary="test run1",
             actor="cli_user",
             event_id=None,
             project_id="test_proj",
@@ -128,7 +163,9 @@ class TestCheckpointTimeline:
             store_dir=str(temp_store),
             out=str(temp_store / "ckpt_b"),
             json=False,
-            label="run2",
+            type="milestone",
+            title="run2",
+            summary="test run2",
             actor="cli_user",
             event_id=None,
             project_id="test_proj",
@@ -150,7 +187,9 @@ class TestCheckpointJSON:
             store_dir=str(temp_store),
             out=str(out_dir),
             json=True,
-            label="json-test",
+            type="milestone",
+            title="json-test",
+            summary="test json output",
             actor="cli_user",
             event_id=None,
             project_id="test_proj",
@@ -161,9 +200,8 @@ class TestCheckpointJSON:
         data = json.loads(captured.out)
 
         assert data["ok"] is True
-        assert "export_path" in data
-        assert "timeline_event_id" in data
-        assert len(data["timeline_event_id"]) > 0
+        assert "id" in data
+        assert data["type"] == "milestone"
 
     def test_json_with_event_id(self, temp_store, capfd):
         out_dir = temp_store / "ckpt_json2"
@@ -171,7 +209,9 @@ class TestCheckpointJSON:
             store_dir=str(temp_store),
             out=str(out_dir),
             json=True,
-            label="json-eid",
+            type="milestone",
+            title="json-eid",
+            summary="test eid",
             actor="tester",
             event_id="custom_evt_42",
             project_id="test_proj",
@@ -180,7 +220,7 @@ class TestCheckpointJSON:
 
         captured = capfd.readouterr()
         data = json.loads(captured.out)
-        assert data["timeline_event_id"] == "custom_evt_42"
+        assert data["id"] == "custom_evt_42"
 
 
 class TestCheckpointEdgeCases:
@@ -189,7 +229,9 @@ class TestCheckpointEdgeCases:
             store_dir="/nonexistent/path",
             out="/tmp/out",
             json=False,
-            label="x",
+            type="milestone",
+            title="x",
+            summary="x",
             actor="x",
             event_id=None,
             project_id="test_proj",

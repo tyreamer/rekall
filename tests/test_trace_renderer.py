@@ -2,7 +2,7 @@ from rekall.core.trace_renderer import render_decision_trace
 
 
 def test_render_decision_trace():
-    graph_result = {
+    graph_result: dict = {
         "bundles": {
             "decision": [
                 {
@@ -69,6 +69,6 @@ def test_render_decision_trace():
 
 
 def test_render_decision_trace_empty():
-    graph_result = {}
+    graph_result: dict = {}
     markdown = render_decision_trace(graph_result)
     assert markdown == "No decision found in trace."
