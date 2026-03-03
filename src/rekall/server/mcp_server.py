@@ -659,6 +659,28 @@ def anchor_save(args: dict) -> list:
         updated = store.save_anchor(
             anchor, actor, reason=reason, idempotency_key=idempotency_key
         )
+        drift = store.check_drift()
+        if drift:
+            updated["drift_warning"] = drift
+
+        import subprocess
+        timeline = store._load_stream_raw("timeline.jsonl", hot_only=False)
+        checkpointed_shas = {t.get("git_sha") for t in timeline if t.get("git_sha")}
+        res = subprocess.run(["git", "log", "-n", "50", "--format=%h"], capture_output=True, text=True)
+        uncheckpointed = 0
+        if res.returncode == 0:
+            for sha in res.stdout.strip().split("\n"):
+                if not sha:
+                    continue
+                if sha in checkpointed_shas:
+                    break
+                uncheckpointed += 1
+
+        updated["session_summary"] = {
+            "uncheckpointed_commits": uncheckpointed,
+            "backfill_recommendation": "Run 'rekall checkpoint --commit <sha>' to backfill missing commits." if uncheckpointed > 0 else "All commits are checkpointed."
+        }
+
         return [{"anchor": updated}]
     except Exception as e:
         err_code = "VALIDATION_ERROR"
@@ -674,9 +696,13 @@ def anchor_resume(args: dict) -> list:
         raise ValueError("project_id is required")
     store = get_store()
     try:
+        drift = store.check_drift()
         res = store.resume_anchor(anchor_id)
         if "error" in res:
             return [{"error": {"code": "NOT_FOUND", "message": res["error"]}}]
+        store.start_session()
+        if drift:
+            res["drift_warning"] = drift
         return [res]
     except Exception as e:
         return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
@@ -964,8 +990,176 @@ def guard_query(args: dict) -> list:
     store = get_store()
     from rekall.cli import build_guard_payload
 
+    drift = store.check_drift()
+    store.start_session()
+
     payload = build_guard_payload(store)
-    return [{"ok": True, "guard": "PASS", **payload}]
+    out = {"ok": True, "guard": "PASS", **payload}
+    if drift:
+        out["drift_warning"] = drift
+    return [out]
+
+
+def rekall_checkpoint(args: dict) -> list:
+    project_id = args.get("project_id")
+    if not project_id:
+        raise ValueError("project_id is required")
+
+    ctype = args.get("type", "milestone")
+    title = args.get("title", "checkpoint")
+    summary = args.get("summary", "")
+    tags = args.get("tags", [])
+    commit_arg = args.get("git_commit")
+    actor = args.get("actor")
+    if not actor:
+        actor = {"actor_id": "mcp_assistant"}
+
+    store = get_store()
+
+    import logging
+    import subprocess
+    import uuid
+    logger = logging.getLogger(__name__)
+
+    git_sha = None
+    git_subject = None
+    if commit_arg:
+        try:
+            if commit_arg.lower() == "auto":
+                res = subprocess.run(["git", "log", "-1", "--format=%h|%s"], capture_output=True, text=True, check=True)
+                parts = res.stdout.strip().split("|", 1)
+                if len(parts) == 2:
+                    git_sha, git_subject = parts
+            else:
+                git_sha = commit_arg
+                res = subprocess.run(["git", "log", "-1", "--format=%s", commit_arg], capture_output=True, text=True, check=True)
+                git_subject = res.stdout.strip()
+        except Exception as e:
+            logger.warning(f"Failed to resolve git commit {commit_arg}: {e}")
+
+    record_id = str(uuid.uuid4())
+    record = {
+        "title": title,
+        "summary": summary,
+        "tags": tags,
+    }
+
+    if ctype == "milestone":
+        record["type"] = "milestone"
+        record["event_id"] = record_id
+    elif ctype == "task_done":
+        record["type"] = "task"
+        record["work_item_id"] = record_id
+        record["status"] = "done"
+        record["intent"] = summary
+    elif ctype == "attempt_failed":
+        record["type"] = "attempt_failed"
+        record["attempt_id"] = record_id
+        record["outcome"] = "failure"
+    elif ctype == "decision":
+        record["type"] = "decision"
+        record["decision_id"] = record_id
+        record["status"] = "approved"
+    elif ctype == "artifact":
+        record["type"] = "artifact"
+        record["artifact_id"] = record_id
+
+    if git_sha:
+        record["git_sha"] = git_sha
+        record["git_subject"] = git_subject
+
+    try:
+        if ctype == "task_done":
+            store.create_work_item(record, actor=actor)
+            store.append_timeline({
+                "type": "milestone",
+                "summary": f"Task completed: {title}",
+                "work_item_id": record_id
+            }, actor=actor)
+            tid = record_id
+        elif ctype == "decision":
+            store.append_decision(record, actor=actor)
+            tid = record_id
+        elif ctype == "attempt_failed":
+            store.append_attempt(record, actor=actor)
+            tid = record_id
+        elif ctype == "artifact":
+            store.append_artifact(record, actor=actor)
+            tid = record_id
+        else:
+            record["details"] = summary
+            res_tl = store.append_timeline(record, actor=actor)
+            tid = res_tl.get("event_id", record_id)
+
+        out = {"ok": True, "type": ctype, "id": tid}
+        if git_sha:
+            out["git_sha"] = git_sha
+        return [out]
+    except Exception as e:
+        err_code = "VALIDATION_ERROR"
+        if "Secret detected" in str(e):
+            err_code = "SECRET_DETECTED"
+        return [{"error": {"code": err_code, "message": str(e)}}]
+
+
+def actuate_commit(args: dict) -> list:
+    project_id = args.get("project_id")
+    message = args.get("message")
+    actor = args.get("actor")
+    if not project_id:
+        raise ValueError("project_id is required")
+    if not message:
+        raise ValueError("message is required")
+    if not actor:
+        actor = {"actor_id": "mcp_assistant"}
+
+    store = get_store()
+    import logging
+    import subprocess
+    import uuid
+    logging.getLogger(__name__)
+
+    try:
+        res = subprocess.run(["git", "commit", "-m", message], capture_output=True, text=True)
+        if res.returncode != 0:
+            return [{"error": {"code": "VALIDATION_ERROR", "message": f"Git commit failed: {res.stderr or res.stdout}"}}]
+
+        git_sha = subprocess.run(["git", "log", "-1", "--format=%h"], capture_output=True, text=True).stdout.strip()
+        git_subject = subprocess.run(["git", "log", "-1", "--format=%s"], capture_output=True, text=True).stdout.strip()
+
+        record_id = str(uuid.uuid4())
+        record = {
+            "type": "task",
+            "title": git_subject,
+            "summary": "Auto-checkpointed via actuate_commit",
+            "work_item_id": record_id,
+            "status": "done",
+            "intent": "Auto-checkpointed git commit",
+            "git_sha": git_sha,
+            "git_subject": git_subject,
+        }
+
+        store.create_work_item(record, actor=actor)
+        store.append_timeline({
+            "type": "milestone",
+            "summary": f"Task completed: {git_subject}",
+            "work_item_id": record_id,
+            "git_sha": git_sha,
+            "git_subject": git_subject,
+        }, actor=actor)
+
+        store.start_session()
+        store.record_write()
+
+        out = {
+            "ok": True,
+            "git_sha": git_sha,
+            "work_item_id": record_id,
+            "message": "Commit and checkpoint successful."
+        }
+        return [out]
+    except Exception as e:
+        return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
 
 
 # --- MCP JSON-RPC Server Core ---
@@ -1399,6 +1593,45 @@ TOOLS_DEF = [
         },
     },
     {
+        "name": "rekall_checkpoint",
+        "description": "Record a timeline checkpoint (task_done, decision, etc) and optionally attach git commit.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "type": {
+                    "type": "string",
+                    "description": "task_done | decision | attempt_failed | artifact | milestone"
+                },
+                "title": {"type": "string"},
+                "summary": {"type": "string"},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                "git_commit": {
+                    "type": "string",
+                    "description": "'auto' to resolve HEAD, or a specific SHA"
+                },
+                "actor": {"type": "object"}
+            }
+        }
+    },
+    {
+        "name": "actuate_commit",
+        "description": "Execute git commit and automatically checkpoint to Rekall.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id", "message"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "message": {"type": "string", "description": "Git commit message"},
+                "actor": {"type": "object"}
+            }
+        }
+    },
+    {
         "name": "graph.trace",
         "description": "Trace a provenance graph from a root node.",
         "inputSchema": {
@@ -1598,6 +1831,8 @@ TOOL_REGISTRY = {
     "capture_outcome": capture_outcome,
     "actuate_cli": actuate_cli,
     "actuate_file_write": actuate_file_write,
+    "rekall_checkpoint": rekall_checkpoint,
+    "actuate_commit": actuate_commit,
 }
 
 

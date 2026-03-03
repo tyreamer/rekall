@@ -184,3 +184,38 @@ def test_state_revert_semantics(tmp_path):
     raw = store._load_stream_raw("actions.jsonl")
     assert len(raw) == 4
     assert [e["action_id"] for e in raw] == ["A1", "A2", "A3", "A4"]
+
+def test_session_tracking(tmp_path):
+    from rekall.cli import ensure_state_initialized
+    ensure_state_initialized(tmp_path, is_json=False, init_mode=True)
+    store = StateStore(tmp_path)
+
+    # Session not started yet, drift warning is None
+    assert store.check_drift() is None
+
+    # Start session
+    store.start_session()
+
+    # Last write is none, so it uses start_at. Should not be drifting immediately.
+    assert store.check_drift() is None
+
+    # Simulate time travel 25 minutes into the past
+    import datetime
+    import json
+    session_file = store._get_session_file()
+    data = json.loads(session_file.read_text(encoding="utf-8"))
+
+    past_time = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=25)).isoformat()
+    data["session_start_at"] = past_time
+    session_file.write_text(json.dumps(data), encoding="utf-8")
+
+    # Now drift warning should appear
+    warning = store.check_drift()
+    assert warning is not None
+    assert "Drift warning" in warning
+
+    # Record a write
+    store.record_write()
+
+    # Now it should be OK again
+    assert store.check_drift() is None

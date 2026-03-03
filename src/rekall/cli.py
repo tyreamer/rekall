@@ -971,6 +971,8 @@ def cmd_guard(args):
              print("  Agents should run `project.bootstrap` to maintain this.")
 
         payload = build_guard_payload(store)
+        drift = store.check_drift()
+        store.start_session()
 
         # Strict checks
         if args.strict:
@@ -981,16 +983,15 @@ def cmd_guard(args):
                 problems.append("No decisions found in decisions.jsonl")
             if problems:
                 if args.json:
-                    print(
-                        json.dumps(
-                            {
-                                "ok": False,
-                                "guard": "FAIL",
-                                "problems": problems,
-                                **payload,
-                            }
-                        )
-                    )
+                    out = {
+                        "ok": False,
+                        "guard": "FAIL",
+                        "problems": problems,
+                        **payload,
+                    }
+                    if drift:
+                        out["drift_warning"] = drift
+                    print(json.dumps(out))
                 else:
                     print("\n\u274c GUARD PREFLIGHT FAILED")
                     for p in problems:
@@ -1016,11 +1017,10 @@ def cmd_guard(args):
 
         # Output
         if args.json:
-            print(
-                json.dumps(
-                    {"ok": True, "guard": "PASS", **payload}, indent=2, default=str
-                )
-            )
+            out = {"ok": True, "guard": "PASS", **payload}
+            if drift:
+                out["drift_warning"] = drift
+            print(json.dumps(out, indent=2, default=str))
         else:
             p = payload["project"]
             print("\n" + "=" * 55)
@@ -1195,14 +1195,19 @@ def cmd_timeline_add(args):
 
 
 def cmd_checkpoint(args):
-    """Create a durable checkpoint: export state + append timeline milestone."""
+    """Create a durable checkpoint: record timeline/activity and optionally export state."""
     import shutil
+    import subprocess
+    import uuid
 
     base_dir = resolve_vault_dir(args.store_dir)
-    out_dir = Path(args.out)
-    label = getattr(args, "label", None) or "checkpoint"
     actor_id = getattr(args, "actor", "cli_user")
     event_id = getattr(args, "event_id", None)
+    ctype = getattr(args, "type", "milestone")
+    title = getattr(args, "title", None) or getattr(args, "label", None) or "checkpoint"
+    summary = getattr(args, "summary", "")
+    tags = getattr(args, "tags", []) or []
+    out_dir_arg = getattr(args, "out", None)
 
     if not base_dir.exists():
         die(ExitCode.NOT_FOUND, f"Directory {base_dir} does not exist.", args.json)
@@ -1210,58 +1215,112 @@ def cmd_checkpoint(args):
     try:
         store = StateStore(base_dir)
 
-        # 1. Folder-based export (reuse export logic)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        # YAMLs and Manifest
-        for f in [
-            "schema-version.txt",
-            "project.yaml",
-            "envs.yaml",
-            "access.yaml",
-            "manifest.json",
-        ]:
-            src = base_dir / f
-            if src.exists():
-                shutil.copy2(src, out_dir / f)
+        # Handle git integration
+        git_sha = None
+        git_subject = None
+        commit_arg = getattr(args, "commit", None)
+        if commit_arg:
+            try:
+                if commit_arg.lower() == "auto":
+                    # Get HEAD short sha and subject
+                    res = subprocess.run(["git", "log", "-1", "--format=%h|%s"], capture_output=True, text=True, check=True)
+                    parts = res.stdout.strip().split("|", 1)
+                    if len(parts) == 2:
+                        git_sha, git_subject = parts
+                else:
+                    git_sha = commit_arg
+                    res = subprocess.run(["git", "log", "-1", "--format=%s", commit_arg], capture_output=True, text=True, check=True)
+                    git_subject = res.stdout.strip()
+            except Exception as e:
+                logger.warning(f"Failed to resolve git commit {commit_arg}: {e}")
 
-        # Streams
-        src_streams = base_dir / "streams"
-        if src_streams.exists():
-            shutil.copytree(src_streams, out_dir / "streams", dirs_exist_ok=True)
-
-        export_path = str(out_dir.resolve())
-
-        # 2. Append timeline milestone
         actor = {"actor_id": actor_id}
-        event = {
-            "type": "milestone",
-            "summary": f"Checkpoint created: {label}",
-            "details": f"Exported to {export_path}",
-            "evidence_links": [
-                {"kind": "link", "id": export_path, "note": "checkpoint export path"}
-            ],
+
+        # Build common record
+        record_id = event_id or str(uuid.uuid4())
+        record = {
+            "type": ctype,
+            "title": title,
+            "summary": summary,
+            "tags": tags,
         }
-        if event_id:
-            event["event_id"] = event_id
+        if ctype == "milestone":
+            record["event_id"] = record_id
+        elif ctype == "task_done":
+            record["work_item_id"] = record_id
+            record["status"] = "done"
+        elif ctype == "attempt_failed":
+            record["attempt_id"] = record_id
+            record["outcome"] = "failure"
+        elif ctype == "decision":
+            record["decision_id"] = record_id
+            record["status"] = "approved"
+        elif ctype == "artifact":
+            record["artifact_id"] = record_id
 
-        result = store.append_timeline(event, actor=actor)
-        tid = result.get("event_id", "unknown")
+        if git_sha:
+            record["git_sha"] = git_sha
+            record["git_subject"] = git_subject
 
-        # 3. Output
+        # Checkpoint routing
+        if ctype == "task_done":
+            store.create_work_item(record, actor=actor)
+            store.append_timeline({
+                "type": "milestone",
+                "summary": f"Task completed: {title}",
+                "work_item_id": record_id
+            }, actor=actor)
+            tid = record_id
+        elif ctype == "decision":
+            store.append_decision(record, actor=actor)
+            tid = record_id
+        elif ctype == "attempt_failed":
+            store.append_attempt(record, actor=actor)
+            tid = record_id
+        elif ctype == "artifact":
+            store.append_artifact(record, actor=actor)
+            tid = record_id
+        else: # milestone
+            record["details"] = summary
+            result = store.append_timeline(record, actor=actor)
+            tid = result.get("event_id", record_id)
+
+        # Optional folder-based export
+        export_path = None
+        if out_dir_arg:
+            out_dir = Path(out_dir_arg)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            for f in ["schema-version.txt", "project.yaml", "envs.yaml", "access.yaml", "manifest.json"]:
+                src = base_dir / f
+                if src.exists():
+                    shutil.copy2(src, out_dir / f)
+
+            src_streams = base_dir / "streams"
+            if src_streams.exists():
+                shutil.copytree(src_streams, out_dir / "streams", dirs_exist_ok=True)
+            export_path = str(out_dir.resolve())
+
+        # Output
+        out_payload = {"ok": True, "type": ctype, "id": tid}
+        if export_path:
+            out_payload["export_path"] = export_path
+        if git_sha:
+            out_payload["git_sha"] = git_sha
+
         if args.json:
-            print(
-                json.dumps(
-                    {"ok": True, "export_path": export_path, "timeline_event_id": tid}
-                )
-            )
+            print(json.dumps(out_payload))
         else:
-            print("\n\u2705 Checkpoint saved")
-            print(f"   Export path : {export_path}")
-            print(f"   Timeline ID : {tid}")
-            print(f"   Label       : {label}\n")
+            print(f"\n\\u2705 Checkpoint saved [{ctype}]")
+            print(f"   ID          : {tid}")
+            print(f"   Title       : {title}")
+            if git_sha:
+                print(f"   Git Commit  : {git_sha} ({git_subject})")
+            if export_path:
+                print(f"   Export path : {export_path}")
+            print("")
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Checkpoint failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Checkpoint failed: {str(e)}", getattr(args, "json", False))
 
 
 def cmd_checkout(args):
@@ -1402,12 +1461,16 @@ def cmd_status(args):
                 unresolved_waits.append(w)
 
         if args.json:
-            print(json.dumps({
+            out = {
                 "goal": goal, "phase": phase,
                 "head": {"timestamp": last_event_time, "id": last_event_id, "hash": last_event_hash},
                 "last_attempt": last_attempt,
                 "unresolved_waits": unresolved_waits
-            }))
+            }
+            drift = store.check_drift()
+            if drift:
+                out["drift_warning"] = drift
+            print(json.dumps(out))
             return
 
         print("\n[ rekall status ]")
@@ -1857,6 +1920,175 @@ def cmd_init(args):
         )
 
 
+def cmd_hooks(args):
+    """Manage Git hooks for Rekall."""
+    import stat
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    git_dir = Path(".git")
+    if not git_dir.exists():
+        die(ExitCode.USER_ERROR, "Not inside a Git repository (.git not found).", args.json)
+
+    hooks_dir = git_dir / "hooks"
+    hooks_dir.mkdir(exist_ok=True)
+
+    post_commit_path = hooks_dir / "post-commit"
+    pre_push_path = hooks_dir / "pre-push"
+
+    if args.subcommand == "install":
+        # Install post-commit
+        post_commit_script = "#!/bin/sh\necho '\\n\\033[33m\U0001f4a1 Rekall Reminder: Checkpoint your work!\\033[0m'\necho 'Run: rekall checkpoint --type task_done --summary \"...\" --commit auto\\n'\n"
+        post_commit_path.write_text(post_commit_script, encoding="utf-8")
+        post_commit_path.chmod(post_commit_path.stat().st_mode | stat.S_IEXEC)
+
+        # Install pre-push
+        pre_push_script = "#!/bin/sh\nrekall hooks pre-push"
+        if getattr(args, "enforce", False):
+            pre_push_script += " --enforce\n"
+        else:
+            pre_push_script += "\n"
+
+        pre_push_path.write_text(pre_push_script, encoding="utf-8")
+        pre_push_path.chmod(pre_push_path.stat().st_mode | stat.S_IEXEC)
+
+        print("\u2705 Rekall hooks installed (post-commit, pre-push)")
+
+    elif args.subcommand == "uninstall":
+        if post_commit_path.exists() and "rekall" in post_commit_path.read_text(encoding="utf-8").lower():
+            post_commit_path.unlink()
+        if pre_push_path.exists() and "rekall hooks" in pre_push_path.read_text(encoding="utf-8"):
+            pre_push_path.unlink()
+        print("\u2705 Rekall hooks uninstalled")
+
+    elif args.subcommand == "pre-push":
+        # Check commit coverage
+        base_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
+        try:
+            store = StateStore(base_dir)
+            timeline = store._load_stream_raw("timeline.jsonl", hot_only=False)
+            checkpointed_shas = {t.get("git_sha") for t in timeline if t.get("git_sha")}
+
+            # Get last 50 commits
+            res = subprocess.run(["git", "log", "-n", "50", "--format=%h"], capture_output=True, text=True)
+            if res.returncode != 0:
+                sys.exit(0)
+
+            recent_shas = res.stdout.strip().split("\n")
+            uncheckpointed = 0
+            for sha in recent_shas:
+                if not sha:
+                    continue
+                if sha in checkpointed_shas:
+                    break
+                uncheckpointed += 1
+
+            threshold = getattr(args, "threshold", 1)
+            enforce = getattr(args, "enforce", False)
+
+            if uncheckpointed > threshold:
+                msg = f"\u26a0\ufe0f  Rekall warning: You have {uncheckpointed} commits since the last checkpoint (threshold: {threshold})."
+                if enforce:
+                    print(f"\n\u274c BLOCKED: {msg}")
+                    print("Please run `rekall checkpoint` to record your work before pushing.")
+                    sys.exit(1)
+                else:
+                    print(f"\n{msg}")
+                    print("Consider running `rekall checkpoint` soon.")
+
+        except Exception as e:
+            # Best effort
+            logger.debug(f"Pre-push check skipped/failed: {e}")
+
+def cmd_commit(args):
+    """Execute git commit and automatically checkpoint."""
+    import argparse
+    import subprocess
+    import sys
+
+    commit_cmd = ["git", "commit"]
+    if getattr(args, "message", None):
+        commit_cmd.extend(["-m", args.message])
+    if getattr(args, "all", False):
+        commit_cmd.append("-a")
+
+    res = subprocess.run(commit_cmd)
+    if res.returncode != 0:
+        sys.exit(res.returncode)
+
+    print("\n\u2728 Auto-checkpointing to Rekall...")
+    checkpoint_args = argparse.Namespace(
+        store_dir=args.store_dir,
+        json=args.json,
+        actor=args.actor,
+        type="task_done",
+        title="Git commit auto-checkpoint" if not getattr(args, "message", None) else args.message,
+        summary="Auto-checkpointed from rekall commit",
+        tags=[],
+        commit="auto",
+        label=None,
+        event_id=None,
+        out=None
+    )
+    cmd_checkpoint(checkpoint_args)
+
+def cmd_assistants(args):
+    """Manage AI assistant integrations for Rekall."""
+    import json
+    from pathlib import Path
+
+    if args.subcommand == "init":
+        instruction = (
+            "You are operating in a Rekall-managed workspace. "
+            "You must use the `rekall_checkpoint` MCP tool or the `rekall checkpoint` CLI "
+            "to record task completions, decisions, and artifacts. "
+            "When committing code, use `rekall commit` or `rekall_checkpoint --commit auto`. "
+            "Always attach a Git commit to your checkpoints when applicable."
+        )
+
+        # Copilot
+        copilot_dir = Path(".github")
+        copilot_dir.mkdir(exist_ok=True)
+        copilot_file = copilot_dir / "copilot-instructions.md"
+        if not copilot_file.exists() or getattr(args, "force", False):
+            copilot_file.write_text(instruction + "\n", encoding="utf-8")
+            print("\u2705 Created .github/copilot-instructions.md")
+
+        # Cursor
+        cursor_dir = Path(".cursor/rules")
+        cursor_dir.mkdir(parents=True, exist_ok=True)
+        cursor_file = cursor_dir / "rekall.md"
+        if not cursor_file.exists() or getattr(args, "force", False):
+            cursor_file.write_text(instruction + "\n", encoding="utf-8")
+            print("\u2705 Created .cursor/rules/rekall.md")
+
+        # Windsurf
+        windsurf_file = Path(".windsurfrules")
+        if not windsurf_file.exists() or getattr(args, "force", False):
+            windsurf_file.write_text(instruction + "\n", encoding="utf-8")
+            print("\u2705 Created .windsurfrules")
+
+        # Claude
+        claude_dir = Path(".claude")
+        claude_dir.mkdir(exist_ok=True)
+        claude_file = claude_dir / "settings.json"
+        if not claude_file.exists() or getattr(args, "force", False):
+            settings = {
+                "customInstructions": instruction
+            }
+            if claude_file.exists():
+                try:
+                    with open(claude_file, "r") as f:
+                        settings = json.load(f)
+                    settings["customInstructions"] = instruction
+                except Exception:
+                    pass
+            claude_file.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+            print("\u2705 Created/Updated .claude/settings.json")
+
+        print("\n\U0001f916 Assistant integration rules established.")
+
 def main():
     # Detect terminal capabilities and set icons accordingly
     Theme.autoprobe()
@@ -2290,20 +2522,45 @@ EXAMPLES:
     # Checkpoint
     parser_checkpoint = subparsers.add_parser(
         "checkpoint",
-        help="[Resilience] Export state + mark timeline milestone (local save-game).",
+        help="[Resilience] Record a timeline checkpoint (task_done, decision, etc) and optionally export state.",
         parents=[shared_flags],
     )
     parser_checkpoint.add_argument(
-        "project_id", help="The Project ID being checkpointed"
+        "project_id", nargs="?", default=None, help="The Project ID being checkpointed (legacy)"
     )
     parser_checkpoint.add_argument(
-        "--out", "-o", required=True, help="Output directory for the checkpoint export"
+        "--type",
+        choices=["task_done", "decision", "attempt_failed", "artifact", "milestone"],
+        default="milestone",
+        help="Type of checkpoint to record",
+    )
+    parser_checkpoint.add_argument(
+        "--title", default=None, help="Title or label for the checkpoint"
+    )
+    parser_checkpoint.add_argument(
+        "--label", default=None, help="Legacy alias for --title"
+    )
+    parser_checkpoint.add_argument(
+        "--summary", default="", help="Detailed summary for the checkpoint"
+    )
+    parser_checkpoint.add_argument(
+        "--tags", nargs="*", default=[], help="Optional tags"
+    )
+    parser_checkpoint.add_argument(
+        "--commit",
+        default=None,
+        help="Git commit SHA to attach, or 'auto' to resolve HEAD automatically",
+    )
+    parser_checkpoint.add_argument(
+        "--include-files",
+        action="store_true",
+        help="Include file list from git commit",
+    )
+    parser_checkpoint.add_argument(
+        "--out", "-o", default=None, help="Optional output directory for state export"
     )
     parser_checkpoint.add_argument(
         "--store-dir", default=".", help="Directory of the StateStore"
-    )
-    parser_checkpoint.add_argument(
-        "--label", default="checkpoint", help="Human-readable label for this checkpoint"
     )
     parser_checkpoint.add_argument("--actor", default="cli_user", help="Actor ID")
     parser_checkpoint.add_argument(
@@ -2383,6 +2640,51 @@ EXAMPLES:
     )
     parser_onboard.add_argument("--store-dir", help="StateStore directory")
     parser_onboard.set_defaults(func=cmd_onboard)
+
+    # Hooks
+    parser_hooks = subparsers.add_parser(
+        "hooks",
+        help="[Adoption] Install or run Rekall Git hooks.",
+        parents=[shared_flags],
+    )
+    hooks_subparsers = parser_hooks.add_subparsers(dest="subcommand", required=True)
+
+    parser_hooks_install = hooks_subparsers.add_parser("install", help="Install git hooks.")
+    parser_hooks_install.add_argument("--enforce", action="store_true", help="Enforce checkpoints via pre-push")
+    parser_hooks_install.set_defaults(func=cmd_hooks)
+
+    parser_hooks_uninstall = hooks_subparsers.add_parser("uninstall", help="Uninstall git hooks.")
+    parser_hooks_uninstall.set_defaults(func=cmd_hooks)
+
+    parser_hooks_prepush = hooks_subparsers.add_parser("pre-push", help="Internal pre-push check.")
+    parser_hooks_prepush.add_argument("--threshold", type=int, default=1, help="Commits allowed without checkpoint")
+    parser_hooks_prepush.add_argument("--enforce", action="store_true", help="Fail if threshold exceeded")
+    parser_hooks_prepush.add_argument("--store-dir", default=".", help="StateStore directory")
+    parser_hooks_prepush.set_defaults(func=cmd_hooks)
+
+    # Commit
+    parser_commit = subparsers.add_parser(
+        "commit",
+        help="[Adoption] Execute git commit and auto-checkpoint.",
+        parents=[shared_flags],
+    )
+    parser_commit.add_argument("-m", "--message", help="Commit message")
+    parser_commit.add_argument("-a", "--all", action="store_true", help="Commit all changed files")
+    parser_commit.add_argument("--store-dir", default=".", help="StateStore directory")
+    parser_commit.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_commit.set_defaults(func=cmd_commit)
+
+    # Assistants
+    parser_assistants = subparsers.add_parser(
+        "assistants",
+        help="[Adoption] Manage AI assistant integrations.",
+        parents=[shared_flags],
+    )
+    assistants_subparsers = parser_assistants.add_subparsers(dest="subcommand", required=True)
+
+    parser_assistants_init = assistants_subparsers.add_parser("init", help="Generate integration rules for agents.")
+    parser_assistants_init.add_argument("--force", action="store_true", help="Overwrite existing rules")
+    parser_assistants_init.set_defaults(func=cmd_assistants)
 
     args = parser.parse_args()
 

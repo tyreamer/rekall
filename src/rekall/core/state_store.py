@@ -53,7 +53,7 @@ SECRET_PATTERNS = [
 ]
 
 
-def sanitize_url(url: str) -> str:
+def sanitize_url(url: Optional[str]) -> Optional[str]:
     """Strips query parameters from URL to avoid leaking secrets."""
     if not url:
         return url
@@ -161,6 +161,51 @@ class StateStore:
         self._idemp_cache: Dict[str, Set[str]] = {}  # stream_name -> set of IDs
 
         self.initialize()
+
+    def _get_session_file(self) -> Path:
+        p = self.base_dir / "runtime" / "session.json"
+        p.parent.mkdir(exist_ok=True)
+        return p
+
+    def start_session(self):
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        session = {"session_start_at": now, "last_write_at": None}
+        self._get_session_file().write_text(json.dumps(session), encoding="utf-8")
+
+    def record_write(self):
+        sf = self._get_session_file()
+        if not sf.exists():
+            return
+        try:
+            session = json.loads(sf.read_text(encoding="utf-8"))
+            import datetime
+            session["last_write_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            sf.write_text(json.dumps(session), encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Failed to record write in session: {e}")
+
+    def check_drift(self) -> Optional[str]:
+        sf = self._get_session_file()
+        if not sf.exists():
+            return None
+        try:
+            session = json.loads(sf.read_text(encoding="utf-8"))
+            import datetime
+            now = datetime.datetime.now(datetime.timezone.utc)
+            start_str = session.get("session_start_at")
+            if not start_str:
+                return None
+            start_at = datetime.datetime.fromisoformat(start_str)
+            last_write = session.get("last_write_at")
+            last_activity = datetime.datetime.fromisoformat(last_write) if last_write else start_at
+
+            diff_mins = (now - last_activity).total_seconds() / 60
+            if diff_mins > 20:
+                return f"Drift warning: No writes recorded in the last {int(diff_mins)} minutes. Friendly reminder to checkpoint to Rekall."
+        except Exception as e:
+            logger.warning(f"Failed to check drift: {e}")
+        return None
 
     def initialize(self):
         """Load configuration and replay state."""
@@ -607,6 +652,9 @@ class StateStore:
             self.manifest["streams"][stream_name]["latest_hash"] = event_hash
             self._save_manifest()
 
+            # Record session activity
+            self.record_write()
+
             # Update cache
             if rid:
                 self._idemp_cache[stream_name].add(rid)
@@ -618,6 +666,17 @@ class StateStore:
                 lock_file.unlink(missing_ok=True)
 
         return record
+
+    def append_decision(self, record: Dict[str, Any], actor: Dict[str, Any], idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+        record["actor"] = actor
+        if idempotency_key:
+            record["idempotency_key"] = idempotency_key
+        if "decision_id" not in record:
+            import uuid
+            record["decision_id"] = str(uuid.uuid4())
+        return self.append_jsonl_idempotent("decisions.jsonl", record, "decision_id")
+
+
 
     def _generate_work_items_snapshot(self, last_segment_index: int):
         stream_info = self.manifest["streams"].get("work_items")

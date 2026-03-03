@@ -1,0 +1,12 @@
+tests\test_trace_renderer.py:72: error: Need type annotation for "graph_result" (hint: "graph_result: dict[<type>, <type>] = ...")  [var-annotated]
+src\rekall\server\mcp_server.py:1081: error: "StateStore" has no attribute "append_decision"; maybe "approve_decision" or "propose_decision"?  [attr-defined]
+src\rekall\server\mcp_server.py:1091: error: Incompatible types in assignment (expression has type "dict[str, Any]", variable has type "CompletedProcess[str]")  [assignment]
+src\rekall\server\mcp_server.py:1092: error: "CompletedProcess[str]" has no attribute "get"  [attr-defined]
+src\rekall\cli.py:1275: error: "StateStore" has no attribute "append_decision"; maybe "approve_decision" or "propose_decision"?  [attr-defined]
+tests\test_state_store.py:72: error: Argument 1 to "sanitize_url" has incompatible type "None"; expected "str"  [arg-type]
+tests\test_mcp_validate.py:43: error: Item "None" of "Optional[str]" has no attribute "lower"  [union-attr]
+tests\test_mcp_validate.py:49: error: Item "None" of "Optional[str]" has no attribute "lower"  [union-attr]
+tests\test_mcp_validate.py:55: error: Item "None" of "Optional[str]" has no attribute "lower"  [union-attr]
+tests\test_mcp_validate.py:61: error: Item "None" of "Optional[str]" has no attribute "lower"  [union-attr]
+tests\test_mcp_server.py:1008: error: Need type annotation for "manifest"  [var-annotated]
+Found 11 errors in 6 files (checked 24 source files)

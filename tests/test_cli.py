@@ -463,3 +463,59 @@ def test_cmd_decide_and_resume(temp_store, capfd):
     assert "RESOLVED breakpoints" in captured.out
     assert "action_123" in captured.out
 
+def test_cmd_hooks_install_uninstall(tmp_path, monkeypatch):
+    from rekall.cli import cmd_hooks
+
+    monkeypatch.chdir(tmp_path)
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+
+    args = Namespace(subcommand="install", enforce=True, json=False)
+    cmd_hooks(args)
+
+    assert (git_dir / "hooks" / "post-commit").exists()
+    assert (git_dir / "hooks" / "pre-push").exists()
+    assert "--enforce" in (git_dir / "hooks" / "pre-push").read_text(encoding="utf-8")
+
+    args = Namespace(subcommand="uninstall", json=False)
+    cmd_hooks(args)
+
+    assert not (git_dir / "hooks" / "post-commit").exists()
+    assert not (git_dir / "hooks" / "pre-push").exists()
+
+def test_cmd_assistants_init(tmp_path, monkeypatch):
+    from rekall.cli import cmd_assistants
+
+    monkeypatch.chdir(tmp_path)
+    args = Namespace(subcommand="init", force=False, json=False)
+    cmd_assistants(args)
+
+    assert (tmp_path / ".github" / "copilot-instructions.md").exists()
+    assert (tmp_path / ".cursor" / "rules" / "rekall.md").exists()
+    assert (tmp_path / ".claude" / "settings.json").exists()
+    assert (tmp_path / ".windsurfrules").exists()
+
+def test_cmd_commit(tmp_path, monkeypatch, capfd):
+    import subprocess
+
+    from rekall.cli import cmd_commit
+
+    monkeypatch.chdir(tmp_path)
+
+    def mock_run(cmd, **kwargs):
+        class MockRes:
+            returncode = 0
+            stdout = "abcd123|mock subject" if "log" in cmd else "mocked output"
+        return MockRes()
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    from rekall.cli import ensure_state_initialized
+    ensure_state_initialized(tmp_path, is_json=False, init_mode=True)
+
+    args = Namespace(message="test commit msg", all=False, store_dir=str(tmp_path), json=False, actor="tester")
+    cmd_commit(args)
+
+    captured = capfd.readouterr()
+    assert "Auto-checkpointing" in captured.out
+
