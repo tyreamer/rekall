@@ -1,0 +1,3 @@
+{
+  "customInstructions": "You are operating in a Rekall-managed workspace. You must use the `rekall_checkpoint` MCP tool or the `rekall checkpoint` CLI to record task completions, decisions, and artifacts. When committing code, use `rekall commit` or `rekall_checkpoint --commit auto`. Always attach a Git commit to your checkpoints when applicable."
+}

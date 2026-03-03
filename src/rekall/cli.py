@@ -1625,6 +1625,11 @@ Rekall is an append-only execution ledger. Do not rely on your internal memory f
 ## 4. Idempotency & Secrets
 - Use `idempotency_key` (e.g. hash of inputs) to avoid duplicate logs on retries.
 - **NO SECRETS**: Never log API keys, tokens, or passwords. Redact them to `[REDACTED]` before calling Rekall tools.
+
+## 5. Active Checkpointing
+After every git commit, immediately checkpoint Rekall before starting the next task.
+- **CLI Example**: `rekall checkpoint --type task_done --title "Implemented auth" --summary "Added JWT login" --commit auto`
+- **MCP Example**: Call `rekall_checkpoint` with `{"type": "task_done", "title": "Implemented auth", "summary": "Added JWT login", "git.commit": "auto"}`
 """
 
         with open(skill_path, "w", encoding="utf-8") as f:
@@ -1939,12 +1944,23 @@ def cmd_hooks(args):
 
     if args.subcommand == "install":
         # Install post-commit
-        post_commit_script = "#!/bin/sh\necho '\\n\\033[33m\U0001f4a1 Rekall Reminder: Checkpoint your work!\\033[0m'\necho 'Run: rekall checkpoint --type task_done --summary \"...\" --commit auto\\n'\n"
+        post_commit_script = "#!/bin/sh\necho '\\n\\033[33m\U0001f4a1 Rekall Reminder: Checkpoint your work!\\033[0m'\necho 'Run: rekall checkpoint --summary \"...\" --commit auto\\n'\n"
         post_commit_path.write_text(post_commit_script, encoding="utf-8")
         post_commit_path.chmod(post_commit_path.stat().st_mode | stat.S_IEXEC)
 
         # Install pre-push
-        pre_push_script = "#!/bin/sh\nrekall hooks pre-push"
+        pre_push_script = """#!/bin/sh
+repo_root=$(git rev-parse --show-toplevel)
+if [ -d "$repo_root/.rekall/project-state" ]; then
+    export REKALL_STATE_DIR="$repo_root/.rekall/project-state"
+elif [ -d "$repo_root/project-state" ]; then
+    export REKALL_STATE_DIR="$repo_root/project-state"
+else
+    echo "run rekall onboard"
+    exit 0
+fi
+
+rekall hooks pre-push"""
         if getattr(args, "enforce", False):
             pre_push_script += " --enforce\n"
         else:

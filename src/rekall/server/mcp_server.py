@@ -57,18 +57,26 @@ def project_bootstrap(args: dict) -> list:
 
     meta = _store.get_project_meta()
 
-    return [{
+    drift = _store.check_drift()
+
+    out = {
         "status": "success",
         "message": "Project bootstrapped successfully.",
         "vault_path": str(_base_dir),
         "metadata": meta,
         "recommendations": [
+            "Run `rekall hooks install` to set up active git integration.",
+            "After every git commit, immediately checkpoint Rekall before starting the next task.",
             "Use decision.propose to document architectural choices.",
             "Use attempt.append to log your progress.",
             "Run status / blockers regularly to stay in sync with the human owner."
         ]
-    }]
+    }
 
+    if drift:
+        out["drift_warning"] = drift
+
+    return [out]
 
 def project_meta_get(args: dict) -> list:
     store = get_store()

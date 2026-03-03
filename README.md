@@ -17,6 +17,23 @@ rekall serve         # Connect your agent via MCP
 4. **Approve**: If the agent hits a high-risk breakpoint, it pauses and requests human approval.
 5. **Resume**: You grant permission via `rekall decide <id>`, and the agent continues.
 
+## Recommended workflow
+
+```bash
+rekall init               # or rekall onboard to generate skill packs
+rekall hooks install      # optional: reminders after commits (and optional pre-push checks)
+
+# After each git commit, log a checkpoint:
+rekall checkpoint --summary "…" --commit auto
+
+# If you want editor/assistant rules checked into the repo:
+rekall assistants init
+```
+
+More: [docs/workflow.md](docs/workflow.md)
+
+> **Rule of thumb:** after each commit, run `rekall checkpoint --summary "…" --commit auto`.
+
 > [!IMPORTANT]
 > **Rekall does not modify your agent config files** (CLAUDE.md, Cursor rules, etc.). It exposes MCP tools and provides an optional `skill.md` pack you can manually reference in your agent's instructions.
 
