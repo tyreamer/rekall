@@ -1,0 +1,41 @@
+commit 92fbde181b3a3f1f3342cc11dda1cb5aa1cb7cbb
+Author: tyreamer <tyreamer@gmail.com>
+Date:   Mon Mar 2 20:40:56 2026 -0500
+
+    feat: Implement Rekall Active Adoption Layer
+    
+    - Add rekall_checkpoint MCP and CLI capabilities
+    
+    - Add session tracking & drift detection
+    
+    - Add rekall hooks install/uninstall
+    
+    - Add rekall commit / actuate_commit
+    
+    - Add assistants init for cursor, claude, copilot, windsurf
+    
+    - Complete unit test coverage for new features
+
+commit 3262743023105e71df89464da97e3b921dc38baf
+Author: tyreamer <tyreamer@gmail.com>
+Date:   Mon Mar 2 13:10:32 2026 -0500
+
+    style: remove whitespace from blank line found by ruff
+
+commit 7e9d619aeac322e818e07aaee8ad823b3aa69aa4
+Author: tyreamer <tyreamer@gmail.com>
+Date:   Mon Mar 2 13:08:09 2026 -0500
+
+    fix: resolve path in test_init.py fixture for Mac compatibility
+
+commit 5debd056c087cf5986ca033862a22051acc43931
+Author: tyreamer <tyreamer@gmail.com>
+Date:   Mon Mar 2 13:06:25 2026 -0500
+
+    fix: resolve vault nesting bug and fix test regressions
+
+commit 13925d33b2246a6841e0db9e8d8a05cdb66de4f8
+Author: tyreamer <tyreamer@gmail.com>
+Date:   Mon Mar 2 12:25:43 2026 -0500
+
+    fix: resolve vault path correctly in cmd_demo
