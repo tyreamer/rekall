@@ -1854,6 +1854,19 @@ TOOL_REGISTRY = {
     "actuate_file_write": actuate_file_write,
     "rekall_checkpoint": rekall_checkpoint,
     "actuate_commit": actuate_commit,
+    # --- Normalized dot-notation aliases ---
+    # These map cleaner names to the same handler functions above.
+    # The canonical names (and TOOLS_DEF entries) are unchanged so that
+    # existing clients are not broken.  New clients may call either name.
+    "checkpoint": rekall_checkpoint,           # alias for rekall_checkpoint
+    "git.commit": actuate_commit,              # alias for actuate_commit
+    "exec.cli": actuate_cli,                   # alias for actuate_cli
+    "exec.file_write": actuate_file_write,     # alias for actuate_file_write
+    "action.propose": propose_action,          # alias for propose_action
+    "action.approve": capture_approval,        # alias for capture_approval
+    "action.wait": wait_for_approval,          # alias for wait_for_approval
+    "action.outcome": capture_outcome,         # alias for capture_outcome
+    "digest.catchup": digest_while_you_were_gone,  # alias for digest.while_you_were_gone
 }
 
 

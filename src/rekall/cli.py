@@ -122,6 +122,28 @@ def die(
     sys.exit(code.value)
 
 
+def friendly_error(e: Exception) -> str:
+    """Translate internal exceptions to plain-English messages."""
+    name = type(e).__name__
+    msg = str(e)
+    if name == "SchemaVersionError":
+        return f"The vault was created with a different schema version. {msg}"
+    if name == "SecretDetectedError":
+        return f"Rekall blocked this operation because it found a potential secret. {msg} — redact it and try again."
+    if name == "StateConflictError":
+        if "expected_version" in msg:
+            return "Another process modified the vault while you were working. Re-read and try again."
+        if "already exists" in msg:
+            return f"Duplicate entry: {msg}. Use a different ID or update the existing record."
+        return f"Conflict: {msg}"
+    if name == "FileNotFoundError":
+        return f"Missing file: {msg}. Run `rekall init` to create the vault."
+    if "permission" in msg.lower() or name == "PermissionError":
+        return f"Permission denied: {msg}. Check file permissions on your project-state/ folder."
+    # Fall through — return original with class name stripped
+    return msg
+
+
 def setup_logging(json_mode: bool = False, quiet_mode: bool = False):
     if json_mode or quiet_mode:
         logging.basicConfig(level=logging.ERROR, format="%(message)s", force=True)
@@ -208,10 +230,46 @@ def ensure_state_initialized(store_dir: Path, is_json: bool = False, init_mode: 
             with open(manifest_path, "w", encoding="utf-8") as f:
                 json.dump(manifest, f, indent=2)
 
+        # Create a README explaining the vault structure
+        readme_path = store_dir / "README.md"
+        if not readme_path.exists():
+            readme_path.write_text(
+                "# Rekall Vault — project-state\n"
+                "\n"
+                "This directory is managed by Rekall. It stores all persistent\n"
+                "project state so that AI agents (and humans) can resume work\n"
+                "across sessions.\n"
+                "\n"
+                "## Files\n"
+                "\n"
+                "| Path | Purpose |\n"
+                "| ---- | ------- |\n"
+                "| `schema-version.txt` | Schema version used for forward migration. |\n"
+                "| `project.yaml` | Project metadata: goal, phase, status, confidence. |\n"
+                "| `manifest.json` | Cryptographic root and stream index. |\n"
+                "| `envs.yaml` | Environment definitions (e.g. local, staging). |\n"
+                "| `access.yaml` | Role definitions and permissions. |\n"
+                "\n"
+                "## Streams (`streams/`)\n"
+                "\n"
+                "Each stream is an append-only JSONL log stored under `streams/<name>/active.jsonl`.\n"
+                "\n"
+                "| Stream | Purpose |\n"
+                "| ------ | ------- |\n"
+                "| `work_items` | Tasks and work units. |\n"
+                "| `activity` | High-level milestones. |\n"
+                "| `attempts` | What was tried, including failures. Do not retry these. |\n"
+                "| `decisions` | Architectural choices and tradeoffs. |\n"
+                "| `timeline` | Immutable event log of all state changes. |\n"
+                "\n"
+                "Do not edit these files by hand unless you know what you are doing.\n",
+                encoding="utf-8",
+            )
+
     except Exception as e:
         die(
             ExitCode.INTERNAL_ERROR,
-            f"Failed to auto-initialize {store_dir}: {str(e)}",
+            f"Failed to auto-initialize {store_dir}: {friendly_error(e)}",
             is_json,
         )
 
@@ -446,7 +504,7 @@ def cmd_validate(args):
         except Exception as e:
             die(
                 ExitCode.INTERNAL_ERROR,
-                f"Validation failed during initialization: {str(e)}",
+                f"Validation failed during initialization: {friendly_error(e)}",
                 args.json,
             )
 
@@ -493,7 +551,7 @@ def cmd_validate(args):
     except Exception as e:
         die(
             ExitCode.INTERNAL_ERROR,
-            f"Validation failed with exception: {str(e)}",
+            f"Validation failed with exception: {friendly_error(e)}",
             args.json,
         )
 
@@ -526,7 +584,7 @@ def cmd_validate_mcp(args):
             sys.exit(ExitCode.VALIDATION_FAILED.value)
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"MCP validation failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"MCP validation failed: {friendly_error(e)}", args.json)
 
 
 def cmd_snapshot(args):
@@ -586,7 +644,7 @@ def cmd_snapshot(args):
             print(json.dumps(snapshot, indent=2))
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Snapshot failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Snapshot failed: {friendly_error(e)}", args.json)
 
 
 def cmd_export(args):
@@ -625,7 +683,7 @@ def cmd_export(args):
             logger.info(f"Exported project state to {out_dir}")
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Export failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Export failed: {friendly_error(e)}", args.json)
 
 
 def cmd_import(args):
@@ -669,7 +727,7 @@ def cmd_import(args):
             logger.info(f"Import from folder {source_dir} to {target_dir} successful.")
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Import failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Import failed: {friendly_error(e)}", args.json)
 
 
 def cmd_handoff(args):
@@ -742,7 +800,7 @@ def cmd_handoff(args):
         logger.info(f" - {snapshot_file}")
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Handoff failed: {str(e)}", False)
+        die(ExitCode.INTERNAL_ERROR, f"Handoff failed: {friendly_error(e)}", False)
 
 
 def cmd_features(args):
@@ -807,7 +865,7 @@ def execute_alias_query(args, qtype: ExecutiveQueryType):
             if qtype == ExecutiveQueryType.BLOCKERS and resp.blockers:
                 sys.exit(ExitCode.BLOCKERS_FOUND.value)
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Query failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Query failed: {friendly_error(e)}", args.json)
 
 
 def cmd_alias_status(args):
@@ -1085,7 +1143,7 @@ def cmd_guard(args):
     except SystemExit:
         raise
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Guard failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Guard failed: {friendly_error(e)}", args.json)
 
 
 def cmd_attempts_add(args):
@@ -1106,7 +1164,7 @@ def cmd_attempts_add(args):
         else:
             logger.info(f"Attempt added: {res['attempt_id']}")
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Failed to add attempt: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Failed to add attempt: {friendly_error(e)}", args.json)
 
 
 def cmd_decisions_propose(args):
@@ -1127,7 +1185,7 @@ def cmd_decisions_propose(args):
         else:
             logger.info(f"Decision proposed: {res['decision_id']}")
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Failed to propose decision: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Failed to propose decision: {friendly_error(e)}", args.json)
 
 
 def cmd_decide(args):
@@ -1152,7 +1210,7 @@ def cmd_decide(args):
         else:
             print(f"\u2705 Decision recorded: {updated['decision_id']}")
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Decision failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Decision failed: {friendly_error(e)}", args.json)
 
 
 def cmd_gc(args):
@@ -1168,7 +1226,7 @@ def cmd_gc(args):
         else:
             print(json.dumps({"status": "success", "message": "GC finished"}))
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"GC failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"GC failed: {friendly_error(e)}", args.json)
 
 
 def cmd_timeline_add(args):
@@ -1190,7 +1248,7 @@ def cmd_timeline_add(args):
     except Exception as e:
         die(
             ExitCode.INTERNAL_ERROR,
-            f"Failed to add timeline event: {str(e)}",
+            f"Failed to add timeline event: {friendly_error(e)}",
             args.json,
         )
 
@@ -1321,7 +1379,7 @@ def cmd_checkpoint(args):
             print("")
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Checkpoint failed: {str(e)}", getattr(args, "json", False))
+        die(ExitCode.INTERNAL_ERROR, f"Checkpoint failed: {friendly_error(e)}", getattr(args, "json", False))
 
 
 def cmd_checkout(args):
@@ -1364,7 +1422,7 @@ def cmd_checkout(args):
             print(f"\u2705 Checked out to {ts}")
             print(f"   Revert ID  : {res['revert_id']}")
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Checkout failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Checkout failed: {friendly_error(e)}", args.json)
 
 
 def cmd_lock(args):
@@ -1398,7 +1456,7 @@ def cmd_lock(args):
                 f"Lock acquired for {args.work_item_id} by {claim.get('claimed_by')} until {claim.get('lease_until')}"
             )
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Failed to acquire lock: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Failed to acquire lock: {friendly_error(e)}", args.json)
 
 def cmd_status(args):
     """Provides an executive summary of the current reality."""
@@ -1529,7 +1587,7 @@ def cmd_status(args):
         print("")
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Status failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Status failed: {friendly_error(e)}", args.json)
 
 
 def cmd_meta_get(args):
@@ -1547,7 +1605,7 @@ def cmd_meta_get(args):
                 print(f"  {k:<15}: {v}")
             print("")
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Meta get failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Meta get failed: {friendly_error(e)}", args.json)
 
 
 def cmd_meta_set(args):
@@ -1572,7 +1630,7 @@ def cmd_meta_set(args):
         else:
             print("\u2705 Project metadata updated.")
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Meta set failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Meta set failed: {friendly_error(e)}", args.json)
 
 
 def cmd_meta_patch(args):
@@ -1589,7 +1647,7 @@ def cmd_meta_patch(args):
         else:
             print("\u2705 Project metadata patched.")
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Meta patch failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Meta patch failed: {friendly_error(e)}", args.json)
 
 
 def cmd_onboard(args):
@@ -1653,7 +1711,7 @@ After completing a meaningful unit of work, checkpoint it:
             print(json.dumps({"status": "success", "skill_pack": str(skill_path)}))
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Onboarding failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Onboarding failed: {friendly_error(e)}", args.json)
 
 
 def cmd_brief(args):
@@ -1670,7 +1728,7 @@ def cmd_brief(args):
         else:
             print(format_brief_human(brief))
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Brief failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Brief failed: {friendly_error(e)}", args.json)
 
 
 def cmd_session(args):
@@ -1689,7 +1747,7 @@ def cmd_session(args):
             else:
                 print(format_brief_human(brief))
         except Exception as e:
-            die(ExitCode.INTERNAL_ERROR, f"Session start failed: {str(e)}", args.json)
+            die(ExitCode.INTERNAL_ERROR, f"Session start failed: {friendly_error(e)}", args.json)
 
     elif args.subcommand == "end":
         ensure_state_initialized(store_dir, args.json)
@@ -1729,7 +1787,7 @@ def cmd_session(args):
                     print("\u2705 Session ended.")
                     print("  Tip: use --summary to leave a note for the next session.")
         except Exception as e:
-            die(ExitCode.INTERNAL_ERROR, f"Session end failed: {str(e)}", args.json)
+            die(ExitCode.INTERNAL_ERROR, f"Session end failed: {friendly_error(e)}", args.json)
 
 
 def _detect_bypass(store: StateStore, store_dir) -> list:
@@ -1808,10 +1866,13 @@ def cmd_agents_md(args):
         else:
             print(f"\u2705 Generated {out_path}")
             print("  This file tells any coding assistant how to use Rekall in this repo.")
+
+        if getattr(args, "ide", False):
+            _generate_ide_instruction_files(force=getattr(args, "force", False))
     except SystemExit:
         raise
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"AGENTS.md generation failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"AGENTS.md generation failed: {friendly_error(e)}", args.json)
 
 
 def _build_agents_md(proj: dict, mode: str) -> str:
@@ -1933,7 +1994,7 @@ def cmd_mode(args):
             print(f"\u2705 Rekall mode set to: {new_mode}")
             print(f"   {descriptions.get(new_mode, new_mode)}")
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Mode change failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Mode change failed: {friendly_error(e)}", args.json)
 
 
 def cmd_serve(args):
@@ -1968,7 +2029,7 @@ def cmd_serve(args):
     except Exception as e:
         # Exit silently or with a log that won't break JSON-RPC if possible
         # but if we're here, the server hasn't really started.
-        die(ExitCode.INTERNAL_ERROR, f"MCP server failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"MCP server failed: {friendly_error(e)}", args.json)
 
 def cmd_verify(args):
     """Verify cryptographic integrity of all execution streams."""
@@ -2001,7 +2062,7 @@ def cmd_verify(args):
             sys.exit(ExitCode.INTERNAL_ERROR)
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Verification failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Verification failed: {friendly_error(e)}", args.json)
 
 def cmd_bundle(args):
     """Bundle the entire state directory into a portable tarball."""
@@ -2024,7 +2085,7 @@ def cmd_bundle(args):
             print(f"\u2705 Bundle created: {out_file}")
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Bundle failed: {str(e)}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Bundle failed: {friendly_error(e)}", args.json)
 
 def cmd_init(args):
     """Initializes a new Rekall state directory and generates an initialization cheat sheet."""
@@ -2204,7 +2265,7 @@ def cmd_init(args):
     except Exception as e:
         die(
             ExitCode.INTERNAL_ERROR,
-            f"Initialization failed: {str(e)}",
+            f"Initialization failed: {friendly_error(e)}",
             getattr(args, "json", False),
             debug=getattr(args, "debug", False),
         )
@@ -2334,62 +2395,68 @@ def cmd_commit(args):
     )
     cmd_checkpoint(checkpoint_args)
 
-def cmd_assistants(args):
-    """Manage AI assistant integrations for Rekall."""
-    import json
+def _generate_ide_instruction_files(force=False):
+    """Generate IDE-specific instruction files for AI assistants."""
+    import json as _json
     from pathlib import Path
 
+    instruction = (
+        "You are operating in a Rekall-managed workspace. "
+        "Start every session by calling `session.brief` (MCP) or `rekall brief` (CLI) "
+        "to get current focus, blockers, failed attempts, and next actions. "
+        "Log decisions with `decision.propose` and attempts with `attempt.append`. "
+        "Checkpoint completed work with `rekall_checkpoint --commit auto`. "
+        "End sessions with `rekall session end --summary '...'`."
+    )
+
+    # Copilot
+    copilot_dir = Path(".github")
+    copilot_dir.mkdir(exist_ok=True)
+    copilot_file = copilot_dir / "copilot-instructions.md"
+    if not copilot_file.exists() or force:
+        copilot_file.write_text(instruction + "\n", encoding="utf-8")
+        print("\u2705 Created .github/copilot-instructions.md")
+
+    # Cursor
+    cursor_dir = Path(".cursor/rules")
+    cursor_dir.mkdir(parents=True, exist_ok=True)
+    cursor_file = cursor_dir / "rekall.md"
+    if not cursor_file.exists() or force:
+        cursor_file.write_text(instruction + "\n", encoding="utf-8")
+        print("\u2705 Created .cursor/rules/rekall.md")
+
+    # Windsurf
+    windsurf_file = Path(".windsurfrules")
+    if not windsurf_file.exists() or force:
+        windsurf_file.write_text(instruction + "\n", encoding="utf-8")
+        print("\u2705 Created .windsurfrules")
+
+    # Claude
+    claude_dir = Path(".claude")
+    claude_dir.mkdir(exist_ok=True)
+    claude_file = claude_dir / "settings.json"
+    if not claude_file.exists() or force:
+        settings = {
+            "customInstructions": instruction
+        }
+        if claude_file.exists():
+            try:
+                with open(claude_file, "r") as f:
+                    settings = _json.load(f)
+                settings["customInstructions"] = instruction
+            except Exception:
+                pass
+        claude_file.write_text(_json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+        print("\u2705 Created/Updated .claude/settings.json")
+
+    print("\n\U0001f916 Assistant integration rules established.")
+
+
+def cmd_assistants(args):
+    """Manage AI assistant integrations for Rekall."""
     if args.subcommand == "init":
-        instruction = (
-            "You are operating in a Rekall-managed workspace. "
-            "Start every session by calling `session.brief` (MCP) or `rekall brief` (CLI) "
-            "to get current focus, blockers, failed attempts, and next actions. "
-            "Log decisions with `decision.propose` and attempts with `attempt.append`. "
-            "Checkpoint completed work with `rekall_checkpoint --commit auto`. "
-            "End sessions with `rekall session end --summary '...'`."
-        )
-
-        # Copilot
-        copilot_dir = Path(".github")
-        copilot_dir.mkdir(exist_ok=True)
-        copilot_file = copilot_dir / "copilot-instructions.md"
-        if not copilot_file.exists() or getattr(args, "force", False):
-            copilot_file.write_text(instruction + "\n", encoding="utf-8")
-            print("\u2705 Created .github/copilot-instructions.md")
-
-        # Cursor
-        cursor_dir = Path(".cursor/rules")
-        cursor_dir.mkdir(parents=True, exist_ok=True)
-        cursor_file = cursor_dir / "rekall.md"
-        if not cursor_file.exists() or getattr(args, "force", False):
-            cursor_file.write_text(instruction + "\n", encoding="utf-8")
-            print("\u2705 Created .cursor/rules/rekall.md")
-
-        # Windsurf
-        windsurf_file = Path(".windsurfrules")
-        if not windsurf_file.exists() or getattr(args, "force", False):
-            windsurf_file.write_text(instruction + "\n", encoding="utf-8")
-            print("\u2705 Created .windsurfrules")
-
-        # Claude
-        claude_dir = Path(".claude")
-        claude_dir.mkdir(exist_ok=True)
-        claude_file = claude_dir / "settings.json"
-        if not claude_file.exists() or getattr(args, "force", False):
-            settings = {
-                "customInstructions": instruction
-            }
-            if claude_file.exists():
-                try:
-                    with open(claude_file, "r") as f:
-                        settings = json.load(f)
-                    settings["customInstructions"] = instruction
-                except Exception:
-                    pass
-            claude_file.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-            print("\u2705 Created/Updated .claude/settings.json")
-
-        print("\n\U0001f916 Assistant integration rules established.")
+        print("Warning: 'rekall assistants init' is deprecated. Use 'rekall agents --ide' instead.")
+        _generate_ide_instruction_files(force=getattr(args, "force", False))
 
 def main():
     # Detect terminal capabilities and set icons accordingly
@@ -2412,28 +2479,34 @@ def main():
                 except Exception:
                     pass
 
-    desc = """Rekall: verifiable AI execution record + execution ledger (not audit trail)
+    desc = """Rekall: persistent execution memory for AI coding agents.
 
-EXAMPLES:
-  # Try it out
-  rekall demo
+START HERE:
+  rekall demo                              # See Rekall in action
+  rekall init                              # Create a vault in your project
+  rekall agents                            # Generate AGENTS.md operating contract
 
-  # Check status & what's blocking you
-  rekall status
-  rekall blockers
+SESSION WORKFLOW:
+  rekall brief                             # What to work on, what to avoid
+  rekall checkpoint --summary "..."        # Log a milestone
+  rekall session end --summary "..."       # Record handoff note
 
-  # Validate system state before AI integration
-  rekall validate --strict
-
-  # Dump standalone snapshots
-  rekall export -o ./backup-state/
-
-  # Generate AI context prompts
-  rekall handoff my_project -o ./handoff_test/
+Type 'rekall <command> --help' for details on any command.
 """
 
+    class _HelpFormatter(argparse.RawTextHelpFormatter):
+        """Hide subcommands whose help is SUPPRESS."""
+        def _format_action(self, action):
+            if isinstance(action, argparse._SubParsersAction):
+                parts = []
+                for choice_action in action._get_subactions():
+                    if choice_action.help != argparse.SUPPRESS:
+                        parts.append(self._format_action(choice_action))
+                return self._join_parts(parts)
+            return super()._format_action(action)
+
     parser = argparse.ArgumentParser(
-        description=desc, formatter_class=argparse.RawTextHelpFormatter
+        description=desc, formatter_class=_HelpFormatter
     )
 
     parser.add_argument(
@@ -2461,14 +2534,14 @@ EXAMPLES:
     # Try It
     parser_demo = subparsers.add_parser(
         "demo",
-        help="[Try] Run a 1-click demo to see Rekall in action.",
+        help="Run a demo to see Rekall in action.",
         parents=[shared_flags],
     )
     parser_demo.set_defaults(func=cmd_demo)
 
     parser_features = subparsers.add_parser(
         "features",
-        help="[Try] Print capability map and 'Not audit trail' explainer.",
+        help=argparse.SUPPRESS,
         parents=[shared_flags],
     )
     parser_features.set_defaults(func=cmd_features)
@@ -2476,7 +2549,7 @@ EXAMPLES:
     # Init
     parser_init = subparsers.add_parser(
         "init",
-        help="[Portability] Create the Rekall vault and generate an initialization cheat sheet.",
+        help="Create the Rekall vault in your project.",
         parents=[shared_flags],
     )
     parser_init.add_argument(
@@ -2502,7 +2575,7 @@ EXAMPLES:
     # Doctor
     parser_doctor = subparsers.add_parser(
         "doctor",
-        help="[Health] Run diagnostics on the system and configuration.",
+        help=argparse.SUPPRESS,  # Advanced: diagnostics
         parents=[shared_flags],
     )
     parser_doctor.add_argument(
@@ -2516,7 +2589,7 @@ EXAMPLES:
     # Validate
     parser_validate = subparsers.add_parser(
         "validate",
-        help="[Status] Validate the StateStore invariants (or MCP surface with --mcp).",
+        help="Check vault integrity. Add --mcp to test MCP surface.",
         parents=[shared_flags],
     )
     parser_validate.add_argument(
@@ -2549,7 +2622,7 @@ EXAMPLES:
     # Portability
     parser_export = subparsers.add_parser(
         "export",
-        help="[Portability] Export to a new directory.",
+        help=argparse.SUPPRESS,  # Advanced: export to directory
         parents=[shared_flags],
     )
     parser_export.add_argument(
@@ -2562,7 +2635,7 @@ EXAMPLES:
 
     parser_snapshot = subparsers.add_parser(
         "snapshot",
-        help="[Portability] Export to a single snapshot.json blob.",
+        help=argparse.SUPPRESS,  # Advanced: export snapshot
         parents=[shared_flags],
     )
     parser_snapshot.add_argument(
@@ -2574,7 +2647,7 @@ EXAMPLES:
     # GC
     parser_gc = subparsers.add_parser(
         "gc",
-        help="[Health] Prune old segments captured in snapshots.",
+        help=argparse.SUPPRESS,  # Advanced: garbage collection
         parents=[shared_flags],
     )
     parser_gc.add_argument(
@@ -2592,7 +2665,7 @@ EXAMPLES:
 
     parser_import = subparsers.add_parser(
         "import",
-        help="[Portability] Import events from a source folder.",
+        help=argparse.SUPPRESS,  # Advanced: import events
         parents=[shared_flags],
     )
     parser_import.add_argument("source", help="Path to source state store folder")
@@ -2604,7 +2677,7 @@ EXAMPLES:
     # Handoff
     parser_handoff = subparsers.add_parser(
         "handoff",
-        help="[Handoff] Create a boot_brief.md context pack.",
+        help=argparse.SUPPRESS,  # Advanced: generate handoff pack
         parents=[shared_flags],
     )
     parser_handoff.add_argument("project_id", help="The Project ID being handed off")
@@ -2617,7 +2690,7 @@ EXAMPLES:
     # Executive Query Aliases
 
     parser_blockers = subparsers.add_parser(
-        "blockers", help="[Status] Query items BLOCKERS.", parents=[shared_flags]
+        "blockers", help=argparse.SUPPRESS, parents=[shared_flags]  # Use 'brief' instead
     )
     parser_blockers.add_argument(
         "--store-dir", default=".", help="Directory of the current StateStore"
@@ -2625,7 +2698,7 @@ EXAMPLES:
     parser_blockers.set_defaults(func=cmd_alias_blockers)
 
     parser_resume = subparsers.add_parser(
-        "resume", help="[Executive] Summarize resolved decisions and in-progress work for agent re-entry.", parents=[shared_flags]
+        "resume", help=argparse.SUPPRESS, parents=[shared_flags]  # Use 'brief' instead
     )
     parser_resume.add_argument(
         "--store-dir", default=".", help="Directory of the current StateStore"
@@ -2635,7 +2708,7 @@ EXAMPLES:
     # Checkout
     parser_checkout = subparsers.add_parser(
         "checkout",
-        help="[Portability] Rewind active HEAD to a temporal point.",
+        help=argparse.SUPPRESS,  # Advanced: temporal rewind
         parents=[shared_flags],
     )
     parser_checkout.add_argument(
@@ -2652,7 +2725,7 @@ EXAMPLES:
     # Guard
     parser_guard = subparsers.add_parser(
         "guard",
-        help="[Preflight] Drift guard / invariant preflight check.",
+        help="Preflight check: constraints, risks, recent work.",
         parents=[shared_flags],
     )
     parser_guard.add_argument(
@@ -2675,7 +2748,7 @@ EXAMPLES:
 
     # Grievance Closeout Commands: Nested subparsers
     parser_attempts = subparsers.add_parser(
-        "attempts", help="[Log] Manage attempt logs.", parents=[shared_flags]
+        "attempts", help="Log what was tried (including failures).", parents=[shared_flags]
     )
     attempts_subparsers = parser_attempts.add_subparsers(
         dest="subcommand", required=True
@@ -2701,7 +2774,7 @@ EXAMPLES:
     parser_attempts_add.set_defaults(func=cmd_attempts_add)
 
     parser_decisions = subparsers.add_parser(
-        "decisions", help="[Log] Manage project decisions.", parents=[shared_flags]
+        "decisions", help="Log architectural decisions and tradeoffs.", parents=[shared_flags]
     )
     decisions_subparsers = parser_decisions.add_subparsers(
         dest="subcommand", required=True
@@ -2733,7 +2806,7 @@ EXAMPLES:
     # Decide
     parser_decide = subparsers.add_parser(
         "decide",
-        help="[Execution] Provide a human decision (e.g. 'use SQLite') for a pending breakpoint or request.",
+        help="Grant/deny permission for a pending approval.",
         parents=[shared_flags],
     )
     parser_decide.add_argument("decision_id", help="The Decision ID to decide upon")
@@ -2751,7 +2824,7 @@ EXAMPLES:
     # Verify
     parser_verify = subparsers.add_parser(
         "verify",
-        help="[Security] Verify cryptographic integrity of all execution streams.",
+        help="Verify cryptographic integrity of the ledger.",
         parents=[shared_flags],
     )
     parser_verify.add_argument(
@@ -2762,7 +2835,7 @@ EXAMPLES:
     # Bundle
     parser_bundle = subparsers.add_parser(
         "bundle",
-        help="[Portability] Bundle state into a portable archive for sharing.",
+        help=argparse.SUPPRESS,  # Advanced: bundle archive
         parents=[shared_flags],
     )
     parser_bundle.add_argument(
@@ -2774,7 +2847,7 @@ EXAMPLES:
     parser_bundle.set_defaults(func=cmd_bundle)
 
     parser_timeline = subparsers.add_parser(
-        "timeline", help="[Log] Manage timeline events.", parents=[shared_flags]
+        "timeline", help=argparse.SUPPRESS, parents=[shared_flags]  # Advanced: raw timeline
     )
     timeline_subparsers = parser_timeline.add_subparsers(
         dest="subcommand", required=True
@@ -2797,7 +2870,7 @@ EXAMPLES:
 
     parser_lock = subparsers.add_parser(
         "lock",
-        help="[Workflow] Acquire an exclusive lease/lock on a work item.",
+        help=argparse.SUPPRESS,  # Advanced: work item locking
         parents=[shared_flags],
     )
     parser_lock.add_argument("work_item_id", help="The Work Item ID")
@@ -2824,7 +2897,7 @@ EXAMPLES:
     # Checkpoint
     parser_checkpoint = subparsers.add_parser(
         "checkpoint",
-        help="[Resilience] Record a timeline checkpoint (task_done, decision, etc) and optionally export state.",
+        help="Record a milestone, task completion, or decision.",
         parents=[shared_flags],
     )
     parser_checkpoint.add_argument(
@@ -2877,7 +2950,7 @@ EXAMPLES:
     # Status
     parser_status = subparsers.add_parser(
         "status",
-        help="[Status] See what happened (attempts, decisions, outcomes) and what's currently blocking you.",
+        help="Executive summary of project state (see also: brief).",
         parents=[shared_flags],
     )
     parser_status.add_argument(
@@ -2890,7 +2963,7 @@ EXAMPLES:
     # Serve (MCP)
     parser_serve = subparsers.add_parser(
         "serve",
-        help="[MCP] Launch the Model Context Protocol server over stdio (for IDEs/Agents).",
+        help="Launch MCP server (used by IDE configs, not manually).",
         parents=[shared_flags],
     )
     parser_serve.add_argument(
@@ -2914,7 +2987,7 @@ EXAMPLES:
 
     # Meta
     parser_meta = subparsers.add_parser(
-        "meta", help="[Status] Manage agent-owned project metadata.", parents=[shared_flags]
+        "meta", help=argparse.SUPPRESS, parents=[shared_flags]  # Advanced: raw metadata
     )
     meta_subparsers = parser_meta.add_subparsers(dest="subcommand", required=True)
 
@@ -2937,7 +3010,7 @@ EXAMPLES:
     # Onboard
     parser_onboard = subparsers.add_parser(
         "onboard",
-        help="[Portability] Generate the Rekall skill pack for agents.",
+        help=argparse.SUPPRESS,  # Advanced: skill pack generation
         parents=[shared_flags],
     )
     parser_onboard.add_argument("--store-dir", help="StateStore directory")
@@ -2946,7 +3019,7 @@ EXAMPLES:
     # Hooks
     parser_hooks = subparsers.add_parser(
         "hooks",
-        help="[Adoption] Install or run Rekall Git hooks.",
+        help="Install git hooks for checkpoint reminders.",
         parents=[shared_flags],
     )
     hooks_subparsers = parser_hooks.add_subparsers(dest="subcommand", required=True)
@@ -2967,7 +3040,7 @@ EXAMPLES:
     # Commit
     parser_commit = subparsers.add_parser(
         "commit",
-        help="[Adoption] Execute git commit and auto-checkpoint.",
+        help="Git commit + auto-checkpoint in one step.",
         parents=[shared_flags],
     )
     parser_commit.add_argument("-m", "--message", help="Commit message")
@@ -2979,7 +3052,7 @@ EXAMPLES:
     # Brief
     parser_brief = subparsers.add_parser(
         "brief",
-        help="[Session] One-call session brief: focus, blockers, failed paths, pending decisions, next actions.",
+        help="One-call read: focus, blockers, failed paths, next actions.",
         parents=[shared_flags],
     )
     parser_brief.add_argument(
@@ -2990,7 +3063,7 @@ EXAMPLES:
     # Session
     parser_session = subparsers.add_parser(
         "session",
-        help="[Session] Manage session lifecycle (start/end).",
+        help="Start or end a work session.",
         parents=[shared_flags],
     )
     session_subparsers = parser_session.add_subparsers(dest="subcommand", required=True)
@@ -3012,7 +3085,7 @@ EXAMPLES:
     # Mode
     parser_mode = subparsers.add_parser(
         "mode",
-        help="[Session] Set usage mode: lite, coordination, or governed.",
+        help="Set governance level: lite, coordination, or governed.",
         parents=[shared_flags],
     )
     parser_mode.add_argument(
@@ -3026,18 +3099,19 @@ EXAMPLES:
     # Agents (AGENTS.md generation)
     parser_agents = subparsers.add_parser(
         "agents",
-        help="[Adoption] Generate AGENTS.md — the universal operating contract for AI assistants.",
+        help="Generate AGENTS.md operating contract for AI assistants.",
         parents=[shared_flags],
     )
     parser_agents.add_argument("--store-dir", default="project-state", help="StateStore directory")
     parser_agents.add_argument("--out", "-o", default="AGENTS.md", help="Output file path")
     parser_agents.add_argument("--force", action="store_true", help="Overwrite if exists")
+    parser_agents.add_argument("--ide", action="store_true", help="Also generate IDE-specific instruction files (Copilot, Cursor, Windsurf, Claude)")
     parser_agents.set_defaults(func=cmd_agents_md)
 
-    # Assistants
+    # Assistants (deprecated — use 'rekall agents --ide')
     parser_assistants = subparsers.add_parser(
         "assistants",
-        help="[Adoption] Manage AI assistant integrations.",
+        help=argparse.SUPPRESS,  # Deprecated: use 'rekall agents --ide'
         parents=[shared_flags],
     )
     assistants_subparsers = parser_assistants.add_subparsers(dest="subcommand", required=True)

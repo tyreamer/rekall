@@ -25,7 +25,7 @@ If you are an MCP-connected IDE agent (Cursor, Windsurf): use the equivalent MCP
 | :--- | :--- | :--- |
 | Get session brief | `rekall brief --json` | `session.brief` |
 | Bootstrap project | `rekall init` | `project.bootstrap` |
-| Log a checkpoint | `rekall checkpoint --summary "…"` | `rekall_checkpoint` |
+| Log a checkpoint | `rekall checkpoint --summary "…"` | `checkpoint` (or `rekall_checkpoint`) |
 | End a session | `rekall session end --summary "…"` | *(call via CLI)* |
 
 ## Session protocol
