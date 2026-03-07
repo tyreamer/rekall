@@ -57,24 +57,20 @@ def project_bootstrap(args: dict) -> list:
 
     meta = _store.get_project_meta()
 
-    drift = _store.check_drift()
+    # Include full session brief so agents get immediate working context
+    from rekall.core.brief import generate_session_brief
+    brief = generate_session_brief(_store)
 
     out = {
         "status": "success",
         "message": "Project bootstrapped successfully.",
         "vault_path": str(_base_dir),
         "metadata": meta,
-        "recommendations": [
-            "Run `rekall hooks install` to set up active git integration.",
-            "After every git commit, immediately checkpoint Rekall before starting the next task.",
-            "Use decision.propose to document architectural choices.",
-            "Use attempt.append to log your progress.",
-            "Run status / blockers regularly to stay in sync with the human owner."
-        ]
+        "session_brief": brief,
     }
 
-    if drift:
-        out["drift_warning"] = drift
+    if brief.get("drift_warning"):
+        out["drift_warning"] = brief["drift_warning"]
 
     return [out]
 
@@ -730,6 +726,17 @@ def digest_while_you_were_gone(args: dict) -> list:
         return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
 
 
+def session_brief(args: dict) -> list:
+    """One-call session brief: returns everything an agent needs to continue work."""
+    store = get_store()
+    try:
+        from rekall.core.brief import generate_session_brief
+        brief = generate_session_brief(store)
+        return [brief]
+    except Exception as e:
+        return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
+
+
 def graph_trace(args: dict) -> list:
     project_id = args.get("project_id")
     root = args.get("root")
@@ -1173,6 +1180,11 @@ def actuate_commit(args: dict) -> list:
 # --- MCP JSON-RPC Server Core ---
 
 TOOLS_DEF = [
+    {
+        "name": "session.brief",
+        "description": "One-call session brief. Returns current focus, blockers, failed attempts (do not retry), pending decisions, recommended next actions, and drift warnings. Call this at the start of every session to get full working context.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
     {
         "name": "project.bootstrap",
         "description": "Idempotent startup tool. Ensures vault exists, sets project metadata, and returns current state.",
@@ -1800,6 +1812,7 @@ TOOLS_DEF = [
 ]
 
 TOOL_REGISTRY = {
+    "session.brief": session_brief,
     "project.bootstrap": project_bootstrap,
     "project.meta.get": project_meta_get,
     "project.meta.patch": project_meta_patch,
@@ -1841,6 +1854,19 @@ TOOL_REGISTRY = {
     "actuate_file_write": actuate_file_write,
     "rekall_checkpoint": rekall_checkpoint,
     "actuate_commit": actuate_commit,
+    # --- Normalized dot-notation aliases ---
+    # These map cleaner names to the same handler functions above.
+    # The canonical names (and TOOLS_DEF entries) are unchanged so that
+    # existing clients are not broken.  New clients may call either name.
+    "checkpoint": rekall_checkpoint,           # alias for rekall_checkpoint
+    "git.commit": actuate_commit,              # alias for actuate_commit
+    "exec.cli": actuate_cli,                   # alias for actuate_cli
+    "exec.file_write": actuate_file_write,     # alias for actuate_file_write
+    "action.propose": propose_action,          # alias for propose_action
+    "action.approve": capture_approval,        # alias for capture_approval
+    "action.wait": wait_for_approval,          # alias for wait_for_approval
+    "action.outcome": capture_outcome,         # alias for capture_outcome
+    "digest.catchup": digest_while_you_were_gone,  # alias for digest.while_you_were_gone
 }
 
 

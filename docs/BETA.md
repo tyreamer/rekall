@@ -50,9 +50,9 @@ Please use our **[Beta Feedback](https://github.com/tyreamer/rekall/issues/new?t
 | Required artifact | How to get it |
 |---|---|
 | OS + Python version | `python --version` |
-| Rekall version | `v0.1.0-beta.1` (or commit hash) |
+| Rekall version | `v0.1.0-beta.2` (or commit hash) |
 | `rekall validate --json` output | `rekall validate ./project-state --strict --json` |
-| AI client used | Cursor / Codex / Claude Code / Antigravity / CLI only |
+| AI client used | Cursor / Codex / Claude Code / Gemini / Windsurf / CLI only |
 
 **Optional but very helpful:**
 - Zip and attach your `project-state/` folder (or at least `schema-version.txt` + all `.jsonl` files)
@@ -77,13 +77,17 @@ Attach the zip to your GitHub issue. The folder contains no secrets by design (R
 
 | Command | Purpose |
 |---|---|
+| `rekall brief --json` | One-call session brief (focus, blockers, failed attempts, decisions, next actions) |
+| `rekall session start` | Start a work session with brief |
+| `rekall session end --summary "..."` | End session with bypass detection |
+| `rekall mode lite\|coordination\|governed` | Set governance level |
+| `rekall agents` | Generate AGENTS.md (universal operating contract) |
 | `rekall demo` | One-click mocked lifecycle |
-| `rekall init ./project-state` | Bootstrap empty state folder |
-| `rekall validate ./project-state --strict` | Check invariants |
-| `rekall validate ./project-state --strict --json` | Machine-readable diagnostics |
-| `rekall handoff <id> --store-dir ./project-state -o ./pack` | Generate boot brief |
-| `rekall guard --store-dir ./project-state` | Preflight drift check |
-| `rekall checkpoint <id> -o ./checkpoints/save1 --store-dir ./project-state` | Save-game |
+| `rekall init` | Bootstrap empty state folder |
+| `rekall checkpoint --summary "..." --commit auto` | Log milestone with git commit |
+| `rekall validate --strict` | Check invariants |
+| `rekall guard` | Preflight drift check |
+| `rekall handoff <id> -o ./pack` | Generate boot brief |
 
 ---
 

@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0-beta.2] - 2026-03-02
 
 ### Added
+- **Session brief**: Added `rekall brief` CLI command and `session.brief` MCP tool — one call returns current focus, blockers, failed attempts (do not retry), pending decisions, recommended next actions, and drift warnings.
+- **Session lifecycle**: Added `rekall session start` (shows brief + starts tracking) and `rekall session end --summary "..."` (records handoff note + runs bypass detection).
+- **Usage modes**: Added `rekall mode lite|coordination|governed` to support different governance levels. Stored in `project.yaml` as `rekall_mode`.
+- **AGENTS.md generator**: Added `rekall agents` command to generate `AGENTS.md` at repo root — a universal operating contract that any AI assistant can discover (Claude Code, Cursor, Codex, Gemini, Windsurf, Aider).
+- **Enhanced project.bootstrap**: Now returns a full session brief instead of generic recommendations, giving agents immediate working context on startup.
+- **Bypass detection**: `rekall session end` warns about uncheckpointed git commits, in-progress work with no recorded attempts, and unresolved pending decisions.
 - **Git hooks support**: Added `rekall hooks install` to provide post-commit reminders and pre-push safety checks.
 - **One-call checkpoint**: The `rekall checkpoint` command and MCP tool now support a unified `--commit auto` flow to sync progress and Git history in a single step.
 - **Session staleness warnings**: Added session tracking to detect when an agent starts work without a fresh checkpoint or bootstrap.

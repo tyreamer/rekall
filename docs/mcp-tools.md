@@ -4,9 +4,43 @@ This page documents the core Model Context Protocol (MCP) tools exposed by the R
 
 ---
 
-## 1. `project.bootstrap`
+## 1. `session.brief`
 
-**Description**: The entry point for any agent session. It ensures the vault is healthy, sets initial metadata, and returns the project status.
+**Description**: One-call session brief. Returns everything an agent needs to continue work: current focus, blockers, failed attempts (do not retry), pending decisions, recommended next actions, and drift warnings. Call this at the start of every session.
+
+### Input Schema
+```json
+{}
+```
+No parameters required.
+
+### Output Shape
+```json
+{
+  "project": {
+    "project_id": "string",
+    "goal": "string",
+    "phase": "string",
+    "status": "string",
+    "confidence": "string",
+    "constraints": ["string"]
+  },
+  "mode": "lite | coordination | governed",
+  "focus": [{ "work_item_id": "string", "title": "string", "priority": "string" }],
+  "blockers": [{ "work_item_id": "string", "title": "string", "blocked_by": ["string"] }],
+  "failed_attempts": [{ "attempt_id": "string", "title": "string", "result": "string", "timestamp": "string" }],
+  "pending_decisions": [{ "decision_id": "string", "title": "string", "context": "string" }],
+  "next_actions": ["string"],
+  "recent_completions": [{ "work_item_id": "string", "title": "string" }],
+  "drift_warning": "string (optional)"
+}
+```
+
+---
+
+## 2. `project.bootstrap`
+
+**Description**: Idempotent entry point. Ensures the vault is healthy, sets initial metadata, and returns the project status along with a full session brief.
 
 ### Input Schema
 ```json
@@ -26,13 +60,13 @@ This page documents the core Model Context Protocol (MCP) tools exposed by the R
   "message": "Project bootstrapped successfully.",
   "vault_path": "/path/to/project-state",
   "metadata": { "goal": "...", "phase": "...", "status": "..." },
-  "recommendations": ["..."]
+  "session_brief": { "...same shape as session.brief output..." }
 }
 ```
 
 ---
 
-## 2. `project.meta.get` / `patch`
+## 3. `project.meta.get` / `patch`
 
 **Description**: Read or update the high-level project metadata (Goal, Phase, Status, etc.).
 
@@ -59,7 +93,7 @@ This page documents the core Model Context Protocol (MCP) tools exposed by the R
 
 ---
 
-## 3. `rekall_checkpoint`
+## 4. `rekall_checkpoint`
 
 **Description**: The primary tool for syncing progress and decisions to the immutable ledger. It automatically handles Git integration if requested.
 
@@ -88,7 +122,7 @@ This page documents the core Model Context Protocol (MCP) tools exposed by the R
 
 ---
 
-## 4. `exec.query`
+## 5. `exec.query`
 
 **Description**: Query the execution ledger using either canonical types or natural language questions.
 

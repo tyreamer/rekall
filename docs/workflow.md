@@ -2,7 +2,21 @@
 
 This guide covers the day-to-day habits and configurations for making Rekall the source of truth for your AI execution records.
 
-> **The Rule of Thumb:** After every git commit, run `rekall checkpoint --summary "..." --commit auto`.
+> **The Rule of Thumb:** Start with `rekall brief`, checkpoint after tasks, end with `rekall session end`.
+
+---
+
+## 0. Two Integration Paths
+
+Rekall works with any AI coding assistant through two paths:
+
+### CLI agents (Claude Code, Codex, Aider, terminal tools)
+These agents run shell commands directly. They call `rekall brief`, `rekall checkpoint`, etc. just like a human would. **No server needed.**
+
+### IDE agents (Cursor, Windsurf, Claude Desktop)
+These agents can't run shell commands — they communicate via MCP (Model Context Protocol). Your IDE auto-launches `rekall serve` from its config file. The agent calls MCP tools like `session.brief` and `rekall_checkpoint` instead of CLI commands. **You never run `rekall serve` manually.**
+
+The session lifecycle is the same either way — only the calling mechanism differs.
 
 ---
 
@@ -32,16 +46,41 @@ rekall hooks uninstall
 
 ---
 
-## 2. Session Tracking & Staleness
+## 2. Session Lifecycle
 
-Rekall tracks "sessions" via intent anchors. When an agent starts work, it should "resume" or "bootstrap" a session.
+Rekall provides a lightweight session protocol for agents and humans.
+
+### Starting a Session
+```bash
+rekall session start    # Shows brief + starts tracking
+# or just:
+rekall brief            # One-call: focus, blockers, failed paths, next actions
+```
+
+Via MCP, agents can call `session.brief` or `project.bootstrap` (which now includes the full brief).
+
+### Ending a Session
+```bash
+rekall session end --summary "Implemented JWT auth, tests passing, DB migration still blocked"
+```
+
+This records a handoff note in the timeline and runs **bypass detection**, warning about:
+- Uncheckpointed git commits
+- In-progress work with no recorded attempts
+- Unresolved pending decisions
 
 ### Staleness Warnings
-If you (or your agent) start work without a fresh checkpoint, Rekall may warn about "session staleness." This happens if:
+If you start work without a fresh checkpoint, Rekall warns about "session staleness." This happens if:
 - The last checkpoint was too long ago.
 - There are multiple git commits that haven't been recorded in the ledger.
 
-You will see these warnings in `rekall status` or when an agent calls `project.bootstrap`.
+You will see these warnings in `rekall brief` or when an agent calls `session.brief`.
+
+### Usage Modes
+Set with `rekall mode <mode>`:
+- **`lite`** — Checkpoint at session boundaries only. For small or low-risk repos.
+- **`coordination`** (default) — Log decisions and attempts. Checkpoint after each task.
+- **`governed`** — Full governance. Mandatory checkpoints. Human approvals required for high-risk actions.
 
 ---
 

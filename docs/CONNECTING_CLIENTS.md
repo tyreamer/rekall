@@ -1,21 +1,31 @@
 # Connecting Clients to Rekall
 
-Rekall implements the Model Context Protocol (MCP) to seamlessly provide project context, decisions, and constraints to AI coding assistants. This guide explains how to start the server, validate your setup, and configure popular agents to use Rekall.
+Rekall works with any AI coding assistant. The setup depends on how your assistant runs:
 
-## Running the Server
+- **CLI agents** (Claude Code, Codex, Aider): Run `rekall` commands directly in the terminal. **No MCP server needed.** Just install Rekall, run `rekall init`, and the agent reads `AGENTS.md` for the protocol.
+- **IDE agents** (Cursor, Windsurf, Claude Desktop): Connect via MCP (Model Context Protocol). You add a one-time config entry and the IDE auto-launches the server. **You never run `rekall serve` manually.**
 
-To expose the Rekall workspace to an agent, start the server. By default, MCP clients communicate via standard input/output (stdio).
+## CLI Agents (No Server)
 
-Run the following command in your project directory:
+If your agent can execute shell commands, it doesn't need MCP at all:
 
 ```bash
-rekall serve --store-dir ./project-state
+pip install rekall.tools
+cd your-project
+rekall init
+rekall agents    # Generates AGENTS.md — the agent reads this for the protocol
 ```
 
-*Note: depending on how Rekall was installed (e.g., via `pipx`), you may need to provide the absolute path to the `rekall` binary if your client's environment does not inherit your `$PATH`.*
+The agent calls `rekall brief`, `rekall checkpoint`, `rekall session end`, etc. directly.
 
-> **⚠️ Critical: stdout is reserved for JSON-RPC.**  
+## IDE Agents (MCP — One-Time Config)
+
+IDE-embedded agents communicate over MCP. You configure your IDE once to auto-launch `rekall serve`:
+
+> **⚠️ Critical: stdout is reserved for JSON-RPC.**
 > stdio MCP servers communicate over stdout. Any log or print output written to stdout will corrupt the JSON-RPC stream. If you run Rekall under a wrapper or modify it, ensure all diagnostic logs go to **stderr**.
+
+*Note: depending on how Rekall was installed (e.g., via `pipx`), you may need to provide the absolute path to the `rekall` binary if your client's environment does not inherit your `$PATH`.*
 
 ## Validating the MCP Surface
 
@@ -33,43 +43,43 @@ This command launches the server as a subprocess via stdio, calls `tools/list`, 
 
 ---
 
-## Client Configuration
+## Agent Entry Point
 
-Below are the configuration steps for popular AI coding clients. Because each client manages its MCP config differently, refer to the linked official documentation for the most current setup surface.
+Once connected, agents should immediately call one of these MCP tools:
+- **`session.brief`** — One-call brief: current focus, blockers, failed attempts, pending decisions, and recommended next actions.
+- **`project.bootstrap`** — Same as above, but also initializes vault metadata if needed.
 
-### Codex App
+Either tool returns everything an agent needs to resume work without reading chat history.
 
-> **Conceptual steps only.** Codex App's MCP configuration surface may vary by version. Refer to the [Codex MCP documentation](https://platform.openai.com/docs/guides/tools) for current config format.
+---
 
-**Conceptual Steps:**
-1. Open the Codex app settings.
-2. Navigate to the **MCP** or **Integrations** section.
-3. Add a new server using the `stdio` transport.
-4. Set the executable to `rekall` and arguments to `serve --store-dir ./project-state`.
+## Per-Client Configuration
 
-**Illustrative config shape** *(not necessarily the exact file format)*:
-```json
-{
-  "mcpServers": {
-    "rekall": {
-      "command": "rekall",
-      "args": ["serve", "--store-dir", "./project-state"],
-      "cwd": "/path/to/your/project"
-    }
-  }
-}
+### Claude Code (CLI — recommended: no MCP)
+
+Claude Code can run shell commands directly, so **MCP is optional**. The simplest setup:
+
+```bash
+pip install rekall.tools
+cd your-project
+rekall init
+rekall agents
 ```
 
-### Cursor
+Claude Code reads `AGENTS.md` and calls `rekall brief`, `rekall checkpoint`, etc. in the terminal.
 
-**Conceptual Steps:**
+**Optional MCP setup** (if you want MCP tools alongside CLI):
+```bash
+claude mcp add --transport stdio rekall -- rekall serve --store-dir ./project-state
+```
+
+### Cursor (MCP — one-time config)
+
 1. Open Cursor's Settings and search for **MCP**.
 2. Click **Add New MCP Server** and select the `stdio` type.
 3. Enter the command to run Rekall.
 
-Cursor also supports file-based config via `mcp.json` for stdio servers—see the [Cursor MCP docs](https://www.cursor.com/blog/mcp) for the current schema and file location. If the UI config is unreliable, using `mcp.json` directly is a more stable escape hatch.
-
-**Example entry for `mcp.json`:**
+Or add directly to `mcp.json`:
 ```json
 {
   "rekall": {
@@ -79,25 +89,46 @@ Cursor also supports file-based config via `mcp.json` for stdio servers—see th
 }
 ```
 
+See the [Cursor MCP docs](https://www.cursor.com/blog/mcp) for the current schema and file location.
+
 *(If Cursor cannot find the executable, provide the absolute path, e.g. `~/.local/bin/rekall` or `C:\\Users\\username\\.local\\bin\\rekall`.)*
 
-### Claude Code
+### Windsurf (MCP — one-time config)
 
-**Conceptual Steps:**
-1. Open your terminal where you plan to use Claude Code.
-2. Register the Rekall server using the Claude CLI (it connects via stdio on launch).
-
-**Example Command:**
-```bash
-claude mcp add --transport stdio rekall -- rekall serve --store-dir ./project-state
-```
-
+Add the Rekall server in Windsurf's MCP settings:
 ```json
 {
   "mcpServers": {
     "rekall": {
       "command": "rekall",
       "args": ["serve", "--store-dir", "./project-state"]
+    }
+  }
+}
+```
+
+### Codex (CLI — no MCP)
+
+Codex runs shell commands directly. Same setup as Claude Code:
+```bash
+pip install rekall.tools
+cd your-project
+rekall init
+rekall agents
+```
+
+The agent reads `AGENTS.md` and uses CLI commands.
+
+### Other MCP-compatible clients
+
+For any IDE that supports MCP stdio servers, add this config shape:
+```json
+{
+  "mcpServers": {
+    "rekall": {
+      "command": "rekall",
+      "args": ["serve", "--store-dir", "./project-state"],
+      "cwd": "/path/to/your/project"
     }
   }
 }
@@ -117,7 +148,7 @@ If you are using **pipx** on Windows:
 Once configured, you can verify Rekall is active in **Claude Code**:
 
 1. **Check Status**: Run `claude mcp list` or `claude mcp get rekall`. It should show a green checkmark or "Connected".
-2. **In-Session**: Type `/mcp` inside a Claude Code session to see the list of active tools (e.g., `project.list`, `rekall.exec.query`).
+2. **In-Session**: Type `/mcp` inside a Claude Code session to see the list of active tools (e.g., `session.brief`, `project.bootstrap`, `rekall_checkpoint`).
 
 ## Troubleshooting
 
