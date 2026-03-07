@@ -7,35 +7,79 @@ Rekall prevents repeat execution loops by giving agents a persistent, local exec
 ```bash
 pip install rekall.tools
 rekall init          # Initialize the vault
-rekall serve         # Connect your agent via MCP
+rekall agents        # Generate AGENTS.md (universal operating contract)
 ```
 
-## The Flow
-1. **Initialize**: `rekall init` creates the `project-state/` vault.
-2. **Connect**: Link your agent (Claude, Cursor, etc.) via the Rekall MCP server.
-3. **Automate**: The agent logs every attempt and architectural decision to the ledger.
-4. **Approve**: If the agent hits a high-risk breakpoint, it pauses and requests human approval.
-5. **Resume**: You grant permission via `rekall decide <id>`, and the agent continues.
+## How It Works
 
-## Recommended workflow
+Rekall has two integration paths depending on your AI coding assistant:
+
+### CLI-based agents (Claude Code, Codex, Aider, terminal tools)
+
+These agents run shell commands directly. No server needed — the agent calls `rekall` commands just like you would.
+
+### IDE-based agents (Cursor, Windsurf, Claude Desktop)
+
+These agents can't run shell commands. They connect to Rekall via MCP (Model Context Protocol), a JSON-RPC bridge that exposes the same operations as tools. Your IDE auto-launches the server from its config — **you never run `rekall serve` manually**.
+
+## Setup by Assistant Type
+
+### Claude Code (CLI — no server needed)
 
 ```bash
-rekall init               # or rekall onboard to generate skill packs
-rekall hooks install      # optional: reminders after commits (and optional pre-push checks)
-
-# After each git commit, log a checkpoint:
-rekall checkpoint --summary "…" --commit auto
-
-# If you want editor/assistant rules checked into the repo:
-rekall assistants init
+# One-time setup
+pip install rekall.tools
+cd your-project
+rekall init
+rekall agents
 ```
+
+That's it. Claude Code reads `AGENTS.md` and runs `rekall` commands directly in the terminal.
+
+### Cursor / Windsurf (MCP — one-time config)
+
+```bash
+# One-time setup
+pip install rekall.tools
+cd your-project
+rekall init
+rekall agents
+```
+
+Then add this to your MCP config (Cursor: `mcp.json`, Windsurf: settings):
+
+```json
+{
+  "rekall": {
+    "command": "rekall",
+    "args": ["serve", "--store-dir", "./project-state"]
+  }
+}
+```
+
+Your IDE auto-launches the server. See [Connecting Clients](docs/CONNECTING_CLIENTS.md) for full details.
+
+### Codex / Other Terminal Agents
+
+Same as Claude Code — install, `rekall init`, `rekall agents`. The agent reads `AGENTS.md` and runs CLI commands.
+
+## The Session Lifecycle
+
+Regardless of which agent you use, the workflow is the same:
+
+```
+rekall brief              → Agent reads: focus, blockers, failed paths, next actions
+# ... agent works ...
+rekall checkpoint ...     → Agent logs milestones and decisions
+rekall session end ...    → Agent records handoff note + bypass detection
+```
+
+> **Rule of thumb:** start with `rekall brief`, checkpoint after tasks, end with `rekall session end`.
 
 More: [docs/workflow.md](docs/workflow.md)
 
-> **Rule of thumb:** after each commit, run `rekall checkpoint --summary "…" --commit auto`.
-
 > [!IMPORTANT]
-> **Rekall does not modify your agent config files** (CLAUDE.md, Cursor rules, etc.). It exposes MCP tools and provides an optional `skill.md` pack you can manually reference in your agent's instructions.
+> **Rekall does not modify your agent config files** (CLAUDE.md, Cursor rules, etc.). Run `rekall agents` to generate an `AGENTS.md` file that any coding assistant can discover. Run `rekall assistants init` for IDE-specific instruction files.
 
 ---
 
@@ -86,19 +130,42 @@ Every record is tamper-evident and can be cryptographically verified using `reka
 
 ---
 
-## Core Commands
+## Command Reference
 
-| Command | Usage |
+### Session commands (agent workflow)
+
+| Command | Purpose |
 | :--- | :--- |
-| `init` | Create a fresh vault and skill pack. |
-| `serve` | Launch the MCP server for agent integration. |
-| `status` | Get an executive summary of the current state. |
-| `guard` | Preflight check for agents: goals, risks, and recent work. |
-| `decide` | Grant/deny permission for a pending approval. |
-| `resume` | Signal the agent to continue after an approval. |
-| `verify` | Check the cryptographic integrity of the ledger. |
-| `blockers` | List active blockers preventing progress. |
-| `demo` | Run a mocked project lifecycle to see Rekall in action. |
+| `rekall brief` | One-call read: focus, blockers, failed paths, pending decisions, next actions. Add `--json` for machine output. |
+| `rekall session start` | Same as `brief`, but also starts session tracking (drift detection). |
+| `rekall session end --summary "…"` | Record handoff note + run bypass detection (uncheckpointed commits, pending decisions). |
+
+### Logging commands (during work)
+
+| Command | Purpose |
+| :--- | :--- |
+| `rekall checkpoint --summary "…"` | Record a milestone, task completion, or decision. Add `--commit auto` to attach a git commit. |
+| `rekall guard` | Preflight check: goals, risks, constraints, recent work. |
+| `rekall decide <id> --option "…"` | Grant/deny permission for a pending human approval. |
+
+### Configuration commands (one-time or rare)
+
+| Command | Purpose |
+| :--- | :--- |
+| `rekall init` | Create a fresh `project-state/` vault in the current directory. |
+| `rekall agents` | Generate `AGENTS.md` — the universal operating contract for any AI assistant. |
+| `rekall mode <mode>` | Set usage mode: `lite`, `coordination`, or `governed`. |
+| `rekall hooks install` | Install git hooks for checkpoint reminders. Add `--enforce` to block pushes. |
+| `rekall serve` | Launch the MCP server. **Only used by IDE configs — never run manually.** |
+
+### Diagnostic commands
+
+| Command | Purpose |
+| :--- | :--- |
+| `rekall status` | Executive summary of current project state. |
+| `rekall validate --strict` | Check vault invariants. Add `--mcp` to test the MCP surface. |
+| `rekall verify` | Cryptographic integrity check of the ledger. |
+| `rekall demo` | Run a mocked project lifecycle to see Rekall in action. |
 
 ---
 
@@ -118,4 +185,4 @@ rekall demo
 ---
 
 ### Status
-`v0.1.0-beta.1` — Private beta (2026-03-02). See [CHANGELOG.md](CHANGELOG.md) for details.
+`v0.1.0-beta.2` — Private beta. See [CHANGELOG.md](CHANGELOG.md) for details.

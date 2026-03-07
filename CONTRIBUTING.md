@@ -82,10 +82,14 @@ Use the [Feature Request template](.github/ISSUE_TEMPLATE/feature_request.yml). 
 
 To ensure a high-quality release, all PRs touching CLI or MCP logic must satisfy this checklist:
 
-- [ ] `rekall --help` contains the `serve` subcommand.
+- [ ] `rekall --help` contains the `serve`, `brief`, `session`, `mode`, and `agents` subcommands.
+- [ ] `rekall brief --json` returns a valid brief with `focus`, `blockers`, `failed_attempts`, `pending_decisions`, `next_actions`, `mode`.
+- [ ] `rekall session start` shows the brief and starts a session cleanly.
+- [ ] `rekall session end --summary "test"` records the summary and reports bypass warnings.
+- [ ] `rekall mode lite` / `coordination` / `governed` sets and persists the mode.
+- [ ] `rekall agents` generates a valid `AGENTS.md` file.
 - [ ] `rekall serve --store-dir ./project-state` starts without printing to stdout (diagnostic logs go to stderr).
 - [ ] MCP handshake passes: `rekall validate --mcp --server-cmd "rekall serve --store-dir ./project-state"`.
-- [ ] Claude Code quickstart instructions verified on at least one OS (Windows/macOS/Linux).
 - [ ] Documentation links in `README.md` and `docs/` are correct and reachable.
 - [ ] No secrets or PII detected by `scripts/scan_secrets`.
 

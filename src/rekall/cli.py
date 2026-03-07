@@ -7,6 +7,7 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, NoReturn, Optional
 
+from rekall.core.brief import format_brief_human, generate_session_brief
 from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
 from rekall.core.handoff_generator import generate_boot_brief
 from rekall.core.state_store import StateStore, resolve_vault_dir
@@ -1608,28 +1609,32 @@ def cmd_onboard(args):
 This file defines the operating contract for any AI agent integrating with this Rekall vault.
 
 ## 1. Startup Routine
-Every time you start work, you MUST call `project.bootstrap`.
-- This ensures the vault is healthy.
-- It returns the current `goal`, `phase`, and `status`.
-- It provides important paths and next-step recommendations.
+Every time you start work, get your bearings first:
+- **MCP**: Call `session.brief` for a one-call brief, or `project.bootstrap` to initialize + brief.
+- **CLI**: Run `rekall brief --json` or `rekall session start`.
+
+This returns: current focus, blockers, failed attempts (do not retry), pending decisions, and next actions.
 
 ## 2. Decision & Attempt Logging
 Rekall is an append-only execution ledger. Do not rely on your internal memory for long-term state.
-- **Log Decisions**: Call `decisions.propose` for any architectural or significant logic change.
-- **Log Attempts**: Call `attempts.add` for every unit of work (e.g. "Implementing auth", "Fixing bug X"). Include evidence (test results, file paths).
+- **Log Decisions**: Call `decision.propose` (MCP) or `rekall decisions propose` (CLI) for any architectural or significant logic change.
+- **Log Attempts**: Call `attempt.append` (MCP) or `rekall attempts add` (CLI) for every unit of work. Include evidence.
 
 ## 3. Approval Breakpoints
-- If a decision high-risk or requires human sign-off, use the `decisions` API with a "PENDING" state (or follow the specific MCP tool guidance for breakpoints).
+- If a decision is high-risk or requires human sign-off, propose it with a "PENDING" status.
 - Stop and wait for human `rekall decide` if you reach an ambiguity you cannot resolve with 90% confidence.
 
-## 4. Idempotency & Secrets
+## 4. Session End
+When finishing work: `rekall session end --summary "Where I stopped and what comes next"`
+
+## 5. Idempotency & Secrets
 - Use `idempotency_key` (e.g. hash of inputs) to avoid duplicate logs on retries.
 - **NO SECRETS**: Never log API keys, tokens, or passwords. Redact them to `[REDACTED]` before calling Rekall tools.
 
-## 5. Active Checkpointing
-After every git commit, immediately checkpoint Rekall before starting the next task.
-- **CLI Example**: `rekall checkpoint --type task_done --title "Implemented auth" --summary "Added JWT login" --commit auto`
-- **MCP Example**: Call `rekall_checkpoint` with `{"type": "task_done", "title": "Implemented auth", "summary": "Added JWT login", "git.commit": "auto"}`
+## 6. Active Checkpointing
+After completing a meaningful unit of work, checkpoint it:
+- **CLI**: `rekall checkpoint --type task_done --title "..." --summary "..." --commit auto`
+- **MCP**: Call `rekall_checkpoint` with `{"type": "task_done", "title": "...", "summary": "...", "git_commit": "auto"}`
 """
 
         with open(skill_path, "w", encoding="utf-8") as f:
@@ -1649,6 +1654,286 @@ After every git commit, immediately checkpoint Rekall before starting the next t
 
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Onboarding failed: {str(e)}", args.json)
+
+
+def cmd_brief(args):
+    """One-call session brief: everything an agent needs to continue work."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
+    ensure_state_initialized(store_dir, args.json)
+
+    try:
+        store = StateStore(store_dir)
+        brief = generate_session_brief(store)
+
+        if args.json:
+            print(json.dumps(brief, indent=2, default=str))
+        else:
+            print(format_brief_human(brief))
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Brief failed: {str(e)}", args.json)
+
+
+def cmd_session(args):
+    """Manage session lifecycle: start, end."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
+
+    if args.subcommand == "start":
+        ensure_state_initialized(store_dir, args.json, init_mode=True)
+        try:
+            store = StateStore(store_dir)
+            store.start_session()
+            brief = generate_session_brief(store)
+
+            if args.json:
+                print(json.dumps({"status": "session_started", "brief": brief}, indent=2, default=str))
+            else:
+                print(format_brief_human(brief))
+        except Exception as e:
+            die(ExitCode.INTERNAL_ERROR, f"Session start failed: {str(e)}", args.json)
+
+    elif args.subcommand == "end":
+        ensure_state_initialized(store_dir, args.json)
+        try:
+            store = StateStore(store_dir)
+
+            # Bypass detection: check for unrecorded work
+            warnings = _detect_bypass(store, store_dir)
+
+            summary_text = getattr(args, "summary", "") or ""
+            actor = {"actor_id": getattr(args, "actor", "cli_user")}
+
+            # Record session-end timeline event if summary provided
+            if summary_text:
+                import uuid
+                store.append_timeline({
+                    "event_id": str(uuid.uuid4())[:16],
+                    "type": "session_end",
+                    "summary": summary_text,
+                }, actor=actor)
+
+            if args.json:
+                out: dict = {"status": "session_ended"}
+                if warnings:
+                    out["warnings"] = warnings
+                if summary_text:
+                    out["summary_recorded"] = True
+                print(json.dumps(out, indent=2))
+            else:
+                if warnings:
+                    for w in warnings:
+                        print(f"\u26a0\ufe0f  {w}")
+                    print("")
+                if summary_text:
+                    print("\u2705 Session ended. Summary recorded.")
+                else:
+                    print("\u2705 Session ended.")
+                    print("  Tip: use --summary to leave a note for the next session.")
+        except Exception as e:
+            die(ExitCode.INTERNAL_ERROR, f"Session end failed: {str(e)}", args.json)
+
+
+def _detect_bypass(store: StateStore, store_dir) -> list:
+    """Detect common bypass patterns and return warning strings."""
+    import subprocess
+    warnings = []
+
+    # 1. Check for uncheckpointed git commits
+    try:
+        timeline = store._load_stream_raw("timeline.jsonl", hot_only=False)
+        checkpointed_shas = {t.get("git_sha") for t in timeline if t.get("git_sha")}
+
+        res = subprocess.run(
+            ["git", "log", "-n", "20", "--format=%h"],
+            capture_output=True, text=True, timeout=5
+        )
+        if res.returncode == 0:
+            uncheckpointed = 0
+            for sha in res.stdout.strip().split("\n"):
+                if not sha:
+                    continue
+                if sha in checkpointed_shas:
+                    break
+                uncheckpointed += 1
+            if uncheckpointed > 1:
+                warnings.append(
+                    f"{uncheckpointed} git commits since last Rekall checkpoint. "
+                    f"Run `rekall checkpoint --summary '...' --commit auto`."
+                )
+    except Exception:
+        pass
+
+    # 2. Check for empty ledger despite having work items
+    work_items = list(store.work_items.values())
+    attempts = store._load_stream("attempts", hot_only=True)
+    if work_items and not attempts:
+        in_progress = [w for w in work_items if w.get("status") == "in_progress"]
+        if in_progress:
+            warnings.append(
+                f"{len(in_progress)} work item(s) in progress but no attempts recorded. "
+                f"Log work with `rekall attempts add <work_item_id> --title '...'`."
+            )
+
+    # 3. Check for pending decisions that are stale
+    decisions = store._load_stream("decisions", hot_only=True)
+    pending = [d for d in decisions if d.get("status") in ("proposed", "pending", "PENDING")]
+    if pending:
+        warnings.append(
+            f"{len(pending)} pending decision(s) still unresolved. "
+            f"Run `rekall decide <id> --option '...'` or flag for human review."
+        )
+
+    return warnings
+
+
+def cmd_agents_md(args):
+    """Generate AGENTS.md at repo root — the universal operating contract."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
+    ensure_state_initialized(store_dir, args.json, init_mode=True)
+
+    try:
+        store = StateStore(store_dir)
+        proj = store.project_config or {}
+        mode = proj.get("rekall_mode", "coordination")
+
+        content = _build_agents_md(proj, mode)
+        out_path = Path(getattr(args, "out", None) or "AGENTS.md")
+
+        if out_path.exists() and not getattr(args, "force", False):
+            die(ExitCode.CONFLICT, f"{out_path} already exists. Use --force to overwrite.", args.json)
+
+        out_path.write_text(content, encoding="utf-8")
+
+        if args.json:
+            print(json.dumps({"status": "success", "path": str(out_path)}))
+        else:
+            print(f"\u2705 Generated {out_path}")
+            print("  This file tells any coding assistant how to use Rekall in this repo.")
+    except SystemExit:
+        raise
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"AGENTS.md generation failed: {str(e)}", args.json)
+
+
+def _build_agents_md(proj: dict, mode: str) -> str:
+    """Build the contents of AGENTS.md."""
+    goal = proj.get("goal") or proj.get("current_goal") or ""
+
+    lines = []
+    lines.append("# AGENTS.md")
+    lines.append("")
+    lines.append("This file defines how AI coding assistants should operate in this repository.")
+    lines.append("It is assistant-agnostic: the same contract applies to Claude Code, Cursor,")
+    lines.append("Codex, Gemini, Windsurf, Aider, or any tool that reads repo instructions.")
+    lines.append("")
+
+    # Separation of concerns
+    lines.append("## Where things live")
+    lines.append("")
+    lines.append("| What | Where | Who maintains it |")
+    lines.append("| :--- | :--- | :--- |")
+    lines.append("| Stable behavior rules | CLAUDE.md / .cursor/rules / .github/copilot-instructions.md | Human |")
+    lines.append("| Durable project knowledge | README.md, docs/, or thin MEMORY.md | Human |")
+    lines.append("| **Live execution state** | **Rekall vault** (`project-state/`) | **Agent + Human** |")
+    lines.append("")
+    lines.append("Do NOT duplicate live execution state (in-progress work, blockers, failed attempts,")
+    lines.append("pending decisions) into MEMORY.md or other markdown files. Rekall is the single")
+    lines.append("source of truth for volatile project state.")
+    lines.append("")
+
+    # Session protocol
+    lines.append("## Session protocol")
+    lines.append("")
+    lines.append("### Starting a session")
+    lines.append("")
+    lines.append("Before doing any work, get your bearings:")
+    lines.append("")
+    lines.append("```bash")
+    lines.append("rekall brief --json    # One call: focus, blockers, failed paths, pending decisions, next actions")
+    lines.append("```")
+    lines.append("")
+    lines.append("Or via MCP: call `project.bootstrap` which returns the same context.")
+    lines.append("")
+    lines.append("This tells you:")
+    lines.append("- What's currently in progress")
+    lines.append("- What's blocked and why")
+    lines.append("- What approaches already failed (do not retry these)")
+    lines.append("- What decisions need human input")
+    lines.append("- What to work on next")
+    lines.append("")
+
+    # During work
+    lines.append("### During work")
+    lines.append("")
+    lines.append("Log meaningful state changes — not every keystroke, but turning points:")
+    lines.append("")
+    lines.append("- **Tried something that failed?** Log it so the next session doesn't repeat it:")
+    lines.append('  `rekall attempts add <work_item_id> --title "..." --evidence "..."`')
+    lines.append("- **Made an architectural choice?** Record the tradeoff:")
+    lines.append('  `rekall decisions propose --title "..." --rationale "..." --tradeoffs "..."`')
+    lines.append("- **Finished a task?** Checkpoint it:")
+    lines.append('  `rekall checkpoint --type task_done --title "..." --summary "..." --commit auto`')
+    lines.append("")
+
+    # Ending a session
+    lines.append("### Ending a session")
+    lines.append("")
+    lines.append("Before stopping or handing off:")
+    lines.append("")
+    lines.append("```bash")
+    lines.append('rekall session end --summary "Where I stopped and what comes next"')
+    lines.append("```")
+    lines.append("")
+    lines.append("This records a handoff note and warns about any unrecorded work.")
+    lines.append("")
+
+    # Mode
+    lines.append(f"## Current mode: `{mode}`")
+    lines.append("")
+    if mode == "lite":
+        lines.append("Lightweight tracking. Only checkpoint at session boundaries.")
+        lines.append("Skip attempt/decision logging for small, low-risk changes.")
+    elif mode == "governed":
+        lines.append("Full tracking with mandatory checkpoints and decision logging.")
+        lines.append("High-risk actions require human approval via `rekall decide`.")
+    else:
+        lines.append("Standard multi-session tracking. Log decisions and failed attempts.")
+        lines.append("Checkpoint after each meaningful unit of work.")
+    lines.append("")
+
+    # Goal context
+    if goal:
+        lines.append("## Current project goal")
+        lines.append("")
+        lines.append(goal)
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def cmd_mode(args):
+    """Set the Rekall usage mode (lite/coordination/governed)."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
+    ensure_state_initialized(store_dir, args.json)
+
+    try:
+        store = StateStore(store_dir)
+        new_mode = args.mode
+
+        actor = {"actor_id": getattr(args, "actor", "cli_user")}
+        store.patch_project_meta({"rekall_mode": new_mode}, actor=actor)
+
+        if args.json:
+            print(json.dumps({"status": "success", "mode": new_mode}))
+        else:
+            descriptions = {
+                "lite": "Lightweight — checkpoint at session boundaries only",
+                "coordination": "Standard — log decisions and attempts, checkpoint after tasks",
+                "governed": "Full governance — mandatory checkpoints, human approvals required",
+            }
+            print(f"\u2705 Rekall mode set to: {new_mode}")
+            print(f"   {descriptions.get(new_mode, new_mode)}")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Mode change failed: {str(e)}", args.json)
 
 
 def cmd_serve(args):
@@ -2057,10 +2342,11 @@ def cmd_assistants(args):
     if args.subcommand == "init":
         instruction = (
             "You are operating in a Rekall-managed workspace. "
-            "You must use the `rekall_checkpoint` MCP tool or the `rekall checkpoint` CLI "
-            "to record task completions, decisions, and artifacts. "
-            "When committing code, use `rekall commit` or `rekall_checkpoint --commit auto`. "
-            "Always attach a Git commit to your checkpoints when applicable."
+            "Start every session by calling `session.brief` (MCP) or `rekall brief` (CLI) "
+            "to get current focus, blockers, failed attempts, and next actions. "
+            "Log decisions with `decision.propose` and attempts with `attempt.append`. "
+            "Checkpoint completed work with `rekall_checkpoint --commit auto`. "
+            "End sessions with `rekall session end --summary '...'`."
         )
 
         # Copilot
@@ -2689,6 +2975,64 @@ EXAMPLES:
     parser_commit.add_argument("--store-dir", default=".", help="StateStore directory")
     parser_commit.add_argument("--actor", default="cli_user", help="Actor ID")
     parser_commit.set_defaults(func=cmd_commit)
+
+    # Brief
+    parser_brief = subparsers.add_parser(
+        "brief",
+        help="[Session] One-call session brief: focus, blockers, failed paths, pending decisions, next actions.",
+        parents=[shared_flags],
+    )
+    parser_brief.add_argument(
+        "--store-dir", default="project-state", help="Directory of the StateStore"
+    )
+    parser_brief.set_defaults(func=cmd_brief)
+
+    # Session
+    parser_session = subparsers.add_parser(
+        "session",
+        help="[Session] Manage session lifecycle (start/end).",
+        parents=[shared_flags],
+    )
+    session_subparsers = parser_session.add_subparsers(dest="subcommand", required=True)
+
+    parser_session_start = session_subparsers.add_parser(
+        "start", help="Start a session: initialize tracking and print a brief."
+    )
+    parser_session_start.add_argument("--store-dir", default="project-state", help="StateStore directory")
+    parser_session_start.set_defaults(func=cmd_session)
+
+    parser_session_end = session_subparsers.add_parser(
+        "end", help="End a session: record summary and check for bypass patterns."
+    )
+    parser_session_end.add_argument("--summary", "-s", default="", help="Handoff note for the next session")
+    parser_session_end.add_argument("--store-dir", default="project-state", help="StateStore directory")
+    parser_session_end.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_session_end.set_defaults(func=cmd_session)
+
+    # Mode
+    parser_mode = subparsers.add_parser(
+        "mode",
+        help="[Session] Set usage mode: lite, coordination, or governed.",
+        parents=[shared_flags],
+    )
+    parser_mode.add_argument(
+        "mode", choices=["lite", "coordination", "governed"],
+        help="Usage mode to set"
+    )
+    parser_mode.add_argument("--store-dir", default="project-state", help="StateStore directory")
+    parser_mode.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_mode.set_defaults(func=cmd_mode)
+
+    # Agents (AGENTS.md generation)
+    parser_agents = subparsers.add_parser(
+        "agents",
+        help="[Adoption] Generate AGENTS.md — the universal operating contract for AI assistants.",
+        parents=[shared_flags],
+    )
+    parser_agents.add_argument("--store-dir", default="project-state", help="StateStore directory")
+    parser_agents.add_argument("--out", "-o", default="AGENTS.md", help="Output file path")
+    parser_agents.add_argument("--force", action="store_true", help="Overwrite if exists")
+    parser_agents.set_defaults(func=cmd_agents_md)
 
     # Assistants
     parser_assistants = subparsers.add_parser(

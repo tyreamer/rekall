@@ -1,3 +1,3 @@
 {
-  "customInstructions": "You are operating in a Rekall-managed workspace. You must use the `rekall_checkpoint` MCP tool or the `rekall checkpoint` CLI to record task completions, decisions, and artifacts. When committing code, use `rekall commit` or `rekall_checkpoint --commit auto`. Always attach a Git commit to your checkpoints when applicable."
+  "customInstructions": "You are operating in a Rekall-managed workspace. Start every session by calling `session.brief` (MCP) or `rekall brief` (CLI) to get current focus, blockers, failed attempts, and next actions. Log decisions with `decision.propose` and attempts with `attempt.append`. Checkpoint completed work with `rekall_checkpoint --commit auto`. End sessions with `rekall session end --summary '...'`."
 }
