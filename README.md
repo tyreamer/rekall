@@ -158,6 +158,22 @@ Every record is tamper-evident and can be cryptographically verified using `reka
 | `rekall hooks install` | Install git hooks for checkpoint reminders. Add `--enforce` to block pushes. |
 | `rekall serve` | Launch the MCP server. **Only used by IDE configs — never run manually.** |
 
+### Remote sync (optional)
+
+| Command | Purpose |
+| :--- | :--- |
+| `rekall sync` | Push unsynced vault events to a remote Rekall Hub. |
+
+Sync is optional and additive. Configure via environment variables:
+
+```bash
+export REKALL_HUB_URL=https://your-hub.example.com
+export REKALL_HUB_TOKEN=your-bearer-token
+export REKALL_HUB_ORG_ID=your-org  # optional, defaults to 'default'
+```
+
+When configured, sync also runs automatically on `rekall session end` and `rekall checkpoint`.
+
 ### Diagnostic commands
 
 | Command | Purpose |

@@ -1378,6 +1378,9 @@ def cmd_checkpoint(args):
                 print(f"   Export path : {export_path}")
             print("")
 
+        # Best-effort Hub sync on checkpoint
+        _try_hub_sync(base_dir, store.manifest, quiet=getattr(args, "quiet", True))
+
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Checkpoint failed: {friendly_error(e)}", getattr(args, "json", False))
 
@@ -1731,6 +1734,61 @@ def cmd_brief(args):
         die(ExitCode.INTERNAL_ERROR, f"Brief failed: {friendly_error(e)}", args.json)
 
 
+def cmd_sync(args):
+    """Sync local vault events to Rekall Hub."""
+    from rekall.core.hub_sync import SyncError, is_hub_configured, sync_to_hub
+
+    if not is_hub_configured():
+        if args.json:
+            print(json.dumps({"status": "skipped", "reason": "Hub not configured. Set REKALL_HUB_URL and REKALL_HUB_TOKEN."}))
+        else:
+            print("Hub sync not configured.")
+            print("Set environment variables:")
+            print("  REKALL_HUB_URL=https://your-hub.example.com")
+            print("  REKALL_HUB_TOKEN=your-bearer-token")
+            print("  REKALL_HUB_ORG_ID=your-org  (optional, defaults to 'default')")
+        return
+
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
+    ensure_state_initialized(store_dir, args.json)
+
+    try:
+        store = StateStore(store_dir)
+        result = sync_to_hub(store_dir, store.manifest, quiet=args.quiet)
+
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            accepted = result.get("accepted", 0)
+            rejected = result.get("rejected", 0)
+            streams = result.get("streams_synced", [])
+            if accepted == 0 and rejected == 0:
+                print("Already up to date.")
+            else:
+                print(f"Synced {accepted} events ({', '.join(streams) if streams else 'none'}).")
+                if rejected:
+                    print(f"  {rejected} events rejected.")
+                for err in result.get("errors", []):
+                    print(f"  Error: {err}")
+    except SyncError as e:
+        die(ExitCode.INTERNAL_ERROR, f"Sync failed: {e}", args.json)
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, f"Sync failed: {friendly_error(e)}", args.json)
+
+
+def _try_hub_sync(store_dir, manifest, quiet=True):
+    """Best-effort Hub sync. Never raises — failures are logged and swallowed."""
+    try:
+        from rekall.core.hub_sync import is_hub_configured, sync_to_hub
+        if is_hub_configured():
+            result = sync_to_hub(store_dir, manifest, quiet=quiet)
+            accepted = result.get("accepted", 0)
+            if accepted > 0 and not quiet:
+                logger.info("Hub sync: %d events sent.", accepted)
+    except Exception as e:
+        logger.debug("Hub sync skipped: %s", e)
+
+
 def cmd_session(args):
     """Manage session lifecycle: start, end."""
     store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
@@ -1786,6 +1844,10 @@ def cmd_session(args):
                 else:
                     print("\u2705 Session ended.")
                     print("  Tip: use --summary to leave a note for the next session.")
+
+            # Best-effort Hub sync on session end
+            _try_hub_sync(store_dir, store.manifest, quiet=getattr(args, "quiet", True))
+
         except Exception as e:
             die(ExitCode.INTERNAL_ERROR, f"Session end failed: {friendly_error(e)}", args.json)
 
@@ -3107,6 +3169,17 @@ Type 'rekall <command> --help' for details on any command.
     parser_agents.add_argument("--force", action="store_true", help="Overwrite if exists")
     parser_agents.add_argument("--ide", action="store_true", help="Also generate IDE-specific instruction files (Copilot, Cursor, Windsurf, Claude)")
     parser_agents.set_defaults(func=cmd_agents_md)
+
+    # Sync (Hub)
+    parser_sync = subparsers.add_parser(
+        "sync",
+        help="Sync local vault events to Rekall Hub.",
+        parents=[shared_flags],
+    )
+    parser_sync.add_argument(
+        "--store-dir", default=".", help="Directory of the StateStore"
+    )
+    parser_sync.set_defaults(func=cmd_sync)
 
     # Assistants (deprecated — use 'rekall agents --ide')
     parser_assistants = subparsers.add_parser(
