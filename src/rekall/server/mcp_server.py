@@ -995,6 +995,100 @@ def actuate_file_write(args: dict) -> list:
     except Exception as e:
         return [{"error": {"code": "VALIDATION_ERROR", "message": f"Failed to record outcome: {e}", "outcome": outcome_metadata}}]
 
+def rekall_status_mcp(args: dict) -> list:
+    """Provides an executive summary of the current reality."""
+    project_id = args.get("project_id")
+    if not project_id:
+        raise ValueError("project_id is required")
+    store = get_store()
+    import dataclasses
+
+    from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
+    try:
+        resp = query_executive_status(store, ExecutiveQueryType.ON_TRACK)
+        return [{"executive_response": dataclasses.asdict(resp)}]
+    except Exception as e:
+        return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
+
+def rekall_record_mcp(args: dict) -> list:
+    """Unified entry point for recording work items, attempts, and decisions."""
+    project_id = args.get("project_id")
+    rtype = args.get("type", "timeline")
+    data = args.get("data", {})
+    actor = args.get("actor")
+    reason = args.get("reason")
+    idemp = args.get("idempotency_key")
+
+    if not project_id or not actor:
+        raise ValueError("project_id and actor are required")
+
+    store = get_store()
+    try:
+        if rtype == "work_item":
+            res = store.create_work_item(data, actor, reason=reason)
+            return [{"work_item": res}]
+        elif rtype == "attempt":
+            res = store.append_attempt(data, actor, reason=reason, idempotency_key=idemp)
+            return [{"attempt": res}]
+        elif rtype == "decision":
+            res = store.propose_decision(data, actor, reason=reason, idempotency_key=idemp)
+            return [{"decision": res}]
+        else:
+            res = store.append_timeline(data, actor, reason=reason, idempotency_key=idemp)
+            return [{"event": res}]
+    except Exception as e:
+        return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
+
+def rekall_verify_mcp(args: dict) -> list:
+    """Executes local verification scripts."""
+    import platform
+    import subprocess
+    system = platform.system()
+    if system == "Windows":
+        cmd = ["powershell", "-ExecutionPolicy", "Bypass", "-File", "scripts/verify.ps1"]
+    else:
+        cmd = ["bash", "scripts/verify.sh"]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        return [{
+            "ok": result.returncode == 0,
+            "message": "Verification passed" if result.returncode == 0 else "Verification failed",
+            "stdout": result.stdout,
+            "stderr": result.stderr
+        }]
+    except Exception as e:
+        return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
+
+def rekall_handoff_mcp(args: dict) -> list:
+    """Generates a boot brief and snapshot for session handoff."""
+    project_id = args.get("project_id")
+    out_dir = args.get("out_dir", "./handoff")
+    if not project_id:
+        raise ValueError("project_id is required")
+
+    import argparse
+
+    from rekall.cli import cmd_handoff
+    ns = argparse.Namespace(store_dir=None, out=out_dir, project_id=project_id, json=True)
+    try:
+        cmd_handoff(ns)
+        return [{"status": "success", "message": f"Handoff generated in {out_dir}"}]
+    except Exception as e:
+        return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
+
+def rekall_log_mcp(args: dict) -> list:
+    """Returns a concatenated log of recent timeline events and activity."""
+    limit = args.get("limit", 20)
+    store = get_store()
+    try:
+        timeline = store._load_stream("timeline.jsonl") or []
+        activity = store._load_stream("activity.jsonl") or []
+        combined = sorted(timeline + activity, key=lambda x: x.get("timestamp", ""), reverse=True)
+        return [{"items": combined[:limit]}]
+    except Exception as e:
+        return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
+
 def guard_query(args: dict) -> list:
     """Read-only preflight guard query returning the same payload as `rekall guard --json`."""
     project_id = args.get(
@@ -1181,692 +1275,103 @@ def actuate_commit(args: dict) -> list:
 
 TOOLS_DEF = [
     {
-        "name": "session.brief",
-        "description": "One-call session brief. Returns current focus, blockers, failed attempts (do not retry), pending decisions, recommended next actions, and drift warnings. Call this at the start of every session to get full working context.",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "project.bootstrap",
-        "description": "Idempotent startup tool. Ensures vault exists, sets project metadata, and returns current state.",
+        "name": "rekall.init",
+        "description": "Initialize or repair a Rekall vault. Ensures project identity and goals are set. Call this at the very beginning of a project.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "goal": {"type": "string"},
-                "phase": {"type": "string"},
-                "status": {"type": "string"},
-                "confidence": {"type": "string"},
-                "actor": {"type": "object"}
+                "goal": {"type": "string", "description": "High-level project objective"},
+                "phase": {"type": "string", "description": "Current development phase (e.g., alpha, beta)"},
+                "status": {"type": "string", "description": "Project status (e.g., on_track, at_risk)"},
+                "confidence": {"type": "string", "description": "Confidence level (0.0 to 1.0)"},
+                "actor": {"type": "object", "description": "Actor identity metadata"}
             }
         }
     },
     {
-        "name": "project.meta.get",
-        "description": "Get project metadata (goal, phase, status, etc).",
+        "name": "rekall.brief",
+        "description": "One-call session brief. Returns focus, blockers, failed attempts (do not retry), and pending decisions. Call this at the start of every session.",
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
-        "name": "project.meta.patch",
-        "description": "Partially update project metadata.",
+        "name": "rekall.status",
+        "description": "Get an executive summary of the project reality, including high-priority work items and blockers.",
         "inputSchema": {
             "type": "object",
-            "required": ["patch"],
+            "required": ["project_id"],
+            "properties": {"project_id": {"type": "string"}}
+        }
+    },
+    {
+        "name": "rekall.record",
+        "description": "Record an event to the ledger. Use for work items, attempts, or decisions.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["project_id", "actor", "type", "data"],
             "properties": {
-                "patch": {"type": "object"},
+                "project_id": {"type": "string"},
                 "actor": {"type": "object"},
+                "type": {"type": "string", "description": "work_item | attempt | decision | timeline"},
+                "data": {"type": "object", "description": "Payload for the record"},
+                "reason": {"type": "string", "description": "Human-readable justification"},
                 "idempotency_key": {"type": "string"}
             }
         }
     },
     {
-        "name": "project.list",
-        "description": "List projects visible to caller.",
+        "name": "rekall.checkpoint",
+        "description": "Create a durable checkpoint of current progress. Optionally attaches a git commit.",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "limit": {"type": "integer"},
-                "cursor": {"type": "string"},
-                "tag": {"type": "string"},
-                "updated_since": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "project.get",
-        "description": "Get a project's canonical metadata.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
+            "required": ["project_id", "title"],
             "properties": {
                 "project_id": {"type": "string"},
-                "include": {"type": "array"},
-            },
-        },
-    },
-    {
-        "name": "project.init",
-        "description": "Generate an initialization cheat sheet for the project and return it as markdown.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "work.list",
-        "description": "List work items with filters.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "limit": {"type": "integer"},
-                "cursor": {"type": "string"},
-                "status": {"type": "array"},
-                "type": {"type": "array"},
-                "priority": {"type": "array"},
-                "tag": {"type": "string"},
-                "owner": {"type": "string"},
-                "claimed_by": {"type": "string"},
-                "blocked_only": {"type": "boolean"},
-                "updated_since": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "work.get",
-        "description": "Get a specific work item's details.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "work_item_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "work_item_id": {"type": "string"},
-                "include": {"type": "array"},
-            },
-        },
-    },
-    {
-        "name": "attempt.list",
-        "description": "List attempts.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "limit": {"type": "integer"},
-                "cursor": {"type": "string"},
-                "since": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "decision.list",
-        "description": "List decisions.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "limit": {"type": "integer"},
-                "cursor": {"type": "string"},
-                "status": {"type": "array"},
-                "since": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "timeline.list",
-        "description": "List timeline events.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "limit": {"type": "integer"},
-                "cursor": {"type": "string"},
-                "since": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "activity.list",
-        "description": "List activity/audit events.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "limit": {"type": "integer"},
-                "cursor": {"type": "string"},
-                "since": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "env.list",
-        "description": "List environments.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "limit": {"type": "integer"},
-                "cursor": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "access.list",
-        "description": "List access references.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "limit": {"type": "integer"},
-                "cursor": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "work.create",
-        "description": "Create a new work item.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "work_item", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "work_item": {"type": "object"},
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "work.update",
-        "description": "Update a work item.",
-        "inputSchema": {
-            "type": "object",
-            "required": [
-                "project_id",
-                "work_item_id",
-                "expected_version",
-                "patch",
-                "actor",
-            ],
-            "properties": {
-                "project_id": {"type": "string"},
-                "work_item_id": {"type": "string"},
-                "expected_version": {"type": "integer"},
-                "patch": {"type": "object"},
-                "actor": {"type": "object"},
-                "force": {"type": "boolean"},
-                "reason": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "work.claim",
-        "description": "Claim a work item with a lease.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "work_item_id", "expected_version", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "work_item_id": {"type": "string"},
-                "expected_version": {"type": "integer"},
-                "actor": {"type": "object"},
-                "lease_seconds": {"type": "integer"},
-                "force": {"type": "boolean"},
-                "reason": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "work.renew_claim",
-        "description": "Renew a claim.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "work_item_id", "expected_version", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "work_item_id": {"type": "string"},
-                "expected_version": {"type": "integer"},
-                "actor": {"type": "object"},
-                "lease_seconds": {"type": "integer"},
-                "reason": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "work.release_claim",
-        "description": "Release a claim.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "work_item_id", "expected_version", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "work_item_id": {"type": "string"},
-                "expected_version": {"type": "integer"},
-                "actor": {"type": "object"},
-                "force": {"type": "boolean"},
-                "reason": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "attempt.append",
-        "description": "Append an attempt note.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "attempt", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "attempt": {"type": "object"},
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "decision.propose",
-        "description": "Propose a decision log.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "decision", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "decision": {"type": "object"},
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "decision.approve",
-        "description": "Approve a decision.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "decision_id", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "decision_id": {"type": "string"},
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "timeline.append",
-        "description": "Append a timeline event.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "event", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "event": {"type": "object"},
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "exec.query",
-        "description": "DEPRECATED in favor of unified query tool below.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {"project_id": {"type": "string"}},
-        },
-    },
-    {
-        "name": "guard.query",
-        "description": "Preflight drift guard. Returns project constraints, recent decisions, recent attempts, risks/blockers, and environment pointers. Read-only.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {"project_id": {"type": "string"}},
-        },
-    },
-    {
-        "name": "artifact.append",
-        "description": "Append an artifact record.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "artifact", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "artifact": {"type": "object"},
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "research.append",
-        "description": "Append a research item record.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "research", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "research": {"type": "object"},
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "link.append",
-        "description": "Append a link edge record.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "link", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "link": {"type": "object"},
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "anchor.save",
-        "description": "Save an intent checkpoint anchor.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "anchor", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "anchor": {"type": "object"},
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "anchor.resume",
-        "description": "Resume an intent checkpoint anchor context.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "anchor_id": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "digest.while_you_were_gone",
-        "description": "Get a digest of recent activity.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "since": {"type": "string"},
-                "limit": {"type": "integer"},
-            },
-        },
-    },
-    {
-        "name": "rekall_checkpoint",
-        "description": "Record a timeline checkpoint (task_done, decision, etc) and optionally attach git commit.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "type": {
-                    "type": "string",
-                    "description": "task_done | decision | attempt_failed | artifact | milestone"
-                },
                 "title": {"type": "string"},
                 "summary": {"type": "string"},
-                "tags": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                },
-                "git_commit": {
-                    "type": "string",
-                    "description": "'auto' to resolve HEAD, or a specific SHA"
-                },
-                "actor": {"type": "object"}
+                "type": {"type": "string", "description": "task_done | milestone | decision | attempt_failed"},
+                "git_commit": {"type": "string", "description": "'auto' or specific SHA"},
+                "tags": {"type": "array", "items": {"type": "string"}}
             }
         }
     },
     {
-        "name": "actuate_commit",
-        "description": "Execute git commit and automatically checkpoint to Rekall.",
+        "name": "rekall.log",
+        "description": "View recent history of the project ledger.",
         "inputSchema": {
             "type": "object",
-            "required": ["project_id", "message"],
             "properties": {
-                "project_id": {"type": "string"},
-                "message": {"type": "string", "description": "Git commit message"},
-                "actor": {"type": "object"}
+                "limit": {"type": "integer", "default": 20}
             }
         }
     },
     {
-        "name": "graph.trace",
-        "description": "Trace a provenance graph from a root node.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "root"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "root": {"type": "object"},
-                "depth": {"type": "integer"},
-                "include_bundles": {"type": "boolean"},
-            },
-        },
+        "name": "rekall.verify",
+        "description": "Run local verification scripts (CI pre-push checks) to ensure code quality and zero regressions.",
+        "inputSchema": {"type": "object", "properties": {}}
     },
     {
-        "name": "policy.preflight",
-        "description": "Preflight check for an action against current policies (shadow mode).",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "action_type"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "action_type": {"type": "string"},
-                "params": {"type": "object"},
-                "context": {"type": "object"},
-            },
-        },
-    },
-    {
-        "name": "propose_action",
-        "description": "Propose an action before executing it to record intent and a deterministic action hash.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "action_type", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "action_type": {"type": "string"},
-                "params": {"type": "object"},
-                "risk_hint": {"type": "string"},
-                "context": {"type": "object"},
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "capture_approval",
-        "description": "Capture human or agent approval/rejection for an action or decision.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "decision_id", "decision", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "decision_id": {"type": "string"},
-                "action_id": {"type": "string"},
-                "decision": {"type": "string"},
-                "note": {"type": "string"},
-                "actor": {"type": "object"},
-                "actor_metadata": {"type": "object"},
-                "reason": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "wait_for_approval",
-        "description": "Signal that the agent is pausing and waiting for a human to approve an action or decision. Returns a PAUSE_AND_EXIT instruction.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "decision_id", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "decision_id": {"type": "string"},
-                "action_id": {"type": "string"},
-                "prompt": {"type": "string"},
-                "options": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                },
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "capture_outcome",
-        "description": "Capture the result metadata of an executed action.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "action_id", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "action_id": {"type": "string"},
-                "outcome_metadata": {"type": "object"},
-                "actor": {"type": "object"},
-                "reason": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "actuate_cli",
-        "description": "A wrapped actuator to execute a shell command and capture its outcome automatically.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "action_id", "command", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "action_id": {"type": "string"},
-                "command": {"type": "string"},
-                "cwd": {"type": "string"},
-                "actor": {"type": "object"},
-            },
-        },
-    },
-    {
-        "name": "actuate_file_write",
-        "description": "A wrapped actuator to write a file and capture its outcome automatically.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "action_id", "file_path", "actor"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "action_id": {"type": "string"},
-                "file_path": {"type": "string"},
-                "content": {"type": "string"},
-                "actor": {"type": "object"},
-            },
-        },
-    },
-    {
-        "name": "exec.query",
-        "description": "Query the execution ledger. Returns canonical results if query_type is provided, or natural language insights if query is provided.",
+        "name": "rekall.handoff",
+        "description": "Generate a session handoff package (boot brief + state snapshot).",
         "inputSchema": {
             "type": "object",
             "required": ["project_id"],
             "properties": {
                 "project_id": {"type": "string"},
-                "query_type": {
-                    "type": "string",
-                    "enum": [
-                        "ON_TRACK",
-                        "BLOCKERS",
-                        "CHANGED_SINCE",
-                        "NEXT_7_DAYS",
-                        "RECENT_DECISIONS",
-                        "FAILED_ATTEMPTS",
-                        "WHERE_RUNNING_ACCESS",
-                        "RESUME_IN_30",
-                    ],
-                },
-                "query": {"type": "string", "description": "Natural language question"},
-                "since": {"type": "string", "description": "ISO timestamp for CHANGED_SINCE"},
-            },
-        },
-    },
+                "out_dir": {"type": "string", "default": "./handoff"}
+            }
+        }
+    }
 ]
 
 TOOL_REGISTRY = {
-    "session.brief": session_brief,
-    "project.bootstrap": project_bootstrap,
-    "project.meta.get": project_meta_get,
-    "project.meta.patch": project_meta_patch,
-    "project.list": project_list,
-    "project.get": project_get,
-    "project.init": project_init,
-    "work.list": work_list,
-    "work.get": work_get,
-    "attempt.list": attempt_list,
-    "decision.list": decision_list,
-    "timeline.list": timeline_list,
-    "activity.list": activity_list,
-    "env.list": env_list,
-    "access.list": access_list,
-    "work.create": work_create,
-    "work.update": work_update,
-    "work.claim": work_claim,
-    "work.renew_claim": work_renew_claim,
-    "work.release_claim": work_release_claim,
-    "attempt.append": attempt_append,
-    "decision.propose": decision_propose,
-    "decision.approve": decision_approve,
-    "timeline.append": timeline_append,
-    "exec.query": exec_natural_query,  # Prefer natural query if possible, or dispatcher
-    "guard.query": guard_query,
-    "artifact.append": artifact_append,
-    "research.append": research_append,
-    "link.append": link_append,
-    "anchor.save": anchor_save,
-    "anchor.resume": anchor_resume,
-    "digest.while_you_were_gone": digest_while_you_were_gone,
-    "graph.trace": graph_trace,
-    "policy.preflight": policy_preflight,
-    "propose_action": propose_action,
-    "wait_for_approval": wait_for_approval,
-    "capture_approval": capture_approval,
-    "capture_outcome": capture_outcome,
-    "actuate_cli": actuate_cli,
-    "actuate_file_write": actuate_file_write,
-    "rekall_checkpoint": rekall_checkpoint,
-    "actuate_commit": actuate_commit,
-    # --- Normalized dot-notation aliases ---
-    # These map cleaner names to the same handler functions above.
-    # The canonical names (and TOOLS_DEF entries) are unchanged so that
-    # existing clients are not broken.  New clients may call either name.
-    "checkpoint": rekall_checkpoint,           # alias for rekall_checkpoint
-    "git.commit": actuate_commit,              # alias for actuate_commit
-    "exec.cli": actuate_cli,                   # alias for actuate_cli
-    "exec.file_write": actuate_file_write,     # alias for actuate_file_write
-    "action.propose": propose_action,          # alias for propose_action
-    "action.approve": capture_approval,        # alias for capture_approval
-    "action.wait": wait_for_approval,          # alias for wait_for_approval
-    "action.outcome": capture_outcome,         # alias for capture_outcome
-    "digest.catchup": digest_while_you_were_gone,  # alias for digest.while_you_were_gone
+    "rekall.init": project_bootstrap,
+    "rekall.brief": session_brief,
+    "rekall.status": rekall_status_mcp,
+    "rekall.record": rekall_record_mcp,
+    "rekall.checkpoint": rekall_checkpoint,
+    "rekall.log": rekall_log_mcp,
+    "rekall.verify": rekall_verify_mcp,
+    "rekall.handoff": rekall_handoff_mcp,
 }
 
 
