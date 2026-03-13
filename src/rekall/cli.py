@@ -1896,7 +1896,15 @@ def cmd_agents_md(args):
         out_path = Path(getattr(args, "out", None) or "AGENTS.md")
 
         if out_path.exists() and not getattr(args, "force", False):
-            die(ExitCode.CONFLICT, f"{out_path} already exists. Use --force to overwrite.", args.json)
+            # If not force, we silently skip or overwrite if it's the default path
+            # We treat "AGENTS.md" in the current directory as the default path
+            is_default_path = (out_path.name == "AGENTS.md" and len(out_path.parts) == 1)
+            
+            if not is_default_path and getattr(args, "out", None):
+                die(ExitCode.CONFLICT, f"{out_path} already exists. Use --force to overwrite.", args.json)
+            else:
+                # Default path AGENTS.md or called from internal automation: allow refresh
+                pass
 
         out_path.write_text(content, encoding="utf-8")
 
@@ -2220,11 +2228,8 @@ def cmd_init(args):
         )
 
         if out_path.exists() and not getattr(args, "force", False):
-            die(
-                ExitCode.CONFLICT,
-                f"File {out_path} already exists. Use --force to overwrite.",
-                getattr(args, "json", False),
-            )
+            # For the cheatsheet, we just overwrite it to ensure it's fresh
+            pass
 
         out_path.write_text(content, encoding="utf-8")
 
@@ -2234,7 +2239,7 @@ def cmd_init(args):
             import argparse
             agents_args = argparse.Namespace(
                 store_dir=args.store_dir,
-                out="AGENTS.md",
+                out=None, # Allow cmd_agents_md to handle idempotency for default path
                 force=getattr(args, "force", False),
                 ide=True,
                 json=getattr(args, "json", False)
