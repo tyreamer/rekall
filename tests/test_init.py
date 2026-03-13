@@ -1,6 +1,4 @@
-import tempfile
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
 
@@ -8,9 +6,8 @@ from rekall.cli import ExitCode, cmd_init
 
 
 @pytest.fixture
-def temp_repo():
-    with tempfile.TemporaryDirectory() as d:
-        yield Path(d).resolve()
+def temp_repo(tmp_path):
+    yield tmp_path.resolve()
 
 
 def test_init_auto_init(temp_repo, capfd):

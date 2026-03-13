@@ -131,3 +131,15 @@ The core primitives are defined in `src/rekall/core/state_store.py` as underlyin
 3. **Before vs After Public MCP Surface:** 
    - *Before:* `init`, `brief`, `status`, `record`, `checkpoint`, `log`, `verify`, `handoff`.
    - *After:* `init`, `brief`, `checkpoint`, `log`, `verify`.
+
+---
+
+## 9. Architectural Invariants (North Star vs v0.2 Reality)
+
+Based on recent alignment, the following constraints govern Rekall's evolution:
+
+1. **Tiny Public Surface, Flexible Internal Storage**: The user-facing and agent-facing API must remain aggressively collapsed (`init`, `brief`, `checkpoint`, `log`, `verify`). Internal storage (`attempts`, `decisions`, `timeline`, `work_items`) remains distinct to simplify replay and invariants without bloating the cognitive load.
+2. **Coordination Primary**: The concept of "work items" is strictly an implementation-internal mechanism for tracking coordination state between human and agent, never a Jira-style task manager. Rekall is an execution substrate, not a generic project manager.
+3. **Staged Governance**: v0.2 acts as a "local-first wedge" where policy is observable and warning-based to drive frictionless adoption. Strict blocking policy enforcement is deferred until federated enterprise/hub-backed contexts are native.
+4. **Deterministic Briefs**: The `brief` must remain a deterministic, structured assembly of facts and state materializations. Rekall's core value implies evidence-first outputs, strictly avoiding generative LLM-hallucinated narrative state summaries.
+5. **Future Link Layer**: A structured reference schema (e.g., `ResourceLink`) is required before large enterprise rollouts to cleanly tether local execution state to external centralized truth (S3, GitHub, Jira).
