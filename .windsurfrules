@@ -1,3 +1,1 @@
-# CLAUDE.md
-
 COMPULSORY FIRST STEP: Before doing any work, get your bearings: call `session.brief` (MCP) or `rekall brief` (CLI). This returns current focus, blockers, failed attempts, and next actions. Log decisions with `decision.propose` and attempts with `attempt.append`. Checkpoint completed work with `rekall_checkpoint --commit auto`. End sessions with `rekall session end --summary '...'`. YOLO mode applies to execution speed, NOT the Rekall protocol.

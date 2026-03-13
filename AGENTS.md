@@ -16,18 +16,6 @@ Do NOT duplicate live execution state (in-progress work, blockers, failed attemp
 pending decisions) into MEMORY.md or other markdown files. Rekall is the single
 source of truth for volatile project state.
 
-## How to call Rekall
-
-If you can run shell commands (Claude Code, Codex, Aider, terminal): use `rekall` CLI commands directly.
-If you are an MCP-connected IDE agent (Cursor, Windsurf): use the equivalent MCP tools.
-
-| Action | CLI command | MCP tool |
-| :--- | :--- | :--- |
-| Get session brief | `rekall brief --json` | `session.brief` |
-| Bootstrap project | `rekall init` | `project.bootstrap` |
-| Log a checkpoint | `rekall checkpoint --summary "…"` | `checkpoint` (or `rekall_checkpoint`) |
-| End a session | `rekall session end --summary "…"` | *(call via CLI)* |
-
 ## Session protocol
 
 ### Starting a session
@@ -39,6 +27,9 @@ rekall brief --json    # One call: focus, blockers, failed paths, pending decisi
 ```
 
 Or via MCP: call `session.brief` (or `project.bootstrap` which includes the brief).
+
+> [!IMPORTANT]
+> **COMPULSORY FIRST STEP**: Before starting any work, you MUST run `rekall brief --json` or call the `session.brief` MCP tool. This is the only way to avoid repeating failed paths and to understand the current live context.
 
 This tells you:
 - What's currently in progress
@@ -66,17 +57,12 @@ Before stopping or handing off:
 rekall session end --summary "Where I stopped and what comes next"
 ```
 
-This records a handoff note and warns about any unrecorded work.
+This records a session note and warns about any unrecorded work.
 
-## Usage modes
+## Current mode: `coordination`
 
-Set with `rekall mode <mode>`:
+Standard multi-session tracking. Log decisions and failed attempts.
+Checkpoint after each meaningful unit of work.
 
-- **lite** — Lightweight tracking. Only checkpoint at session boundaries. For small/simple repos.
-- **coordination** (default) — Standard multi-session tracking. Log decisions and failed attempts.
-- **governed** — Full governance with mandatory checkpoints and human approvals for high-risk actions.
-
-## Current project context
-
-Rekall is a local-first, git-portable project state layer for AI agents.
-The north star is that agents coordinate by default through Rekall, and humans govern explicitly.
+> [!TIP]
+> **YOLO vs. Protocol**: If the workspace uses "YOLO" or "Fast Execution" rules, these apply to *how* you write and run code. They do NOT exempt you from the Rekall session protocol. `rekall brief` must still be your first action.

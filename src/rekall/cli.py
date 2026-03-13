@@ -1951,7 +1951,10 @@ def _build_agents_md(proj: dict, mode: str) -> str:
     lines.append("rekall brief --json    # One call: focus, blockers, failed paths, pending decisions, next actions")
     lines.append("```")
     lines.append("")
-    lines.append("Or via MCP: call `project.bootstrap` which returns the same context.")
+    lines.append("Or via MCP: call `session.brief` (or `project.bootstrap` which includes the brief).")
+    lines.append("")
+    lines.append("> [!IMPORTANT]")
+    lines.append("> **COMPULSORY FIRST STEP**: Before starting any work, you MUST run `rekall brief --json` or call the `session.brief` MCP tool. This is the only way to avoid repeating failed paths and to understand the current live context.")
     lines.append("")
     lines.append("This tells you:")
     lines.append("- What's currently in progress")
@@ -1998,6 +2001,9 @@ def _build_agents_md(proj: dict, mode: str) -> str:
     else:
         lines.append("Standard multi-session tracking. Log decisions and failed attempts.")
         lines.append("Checkpoint after each meaningful unit of work.")
+    lines.append("")
+    lines.append("> [!TIP]")
+    lines.append("> **YOLO vs. Protocol**: If the workspace uses \"YOLO\" or \"Fast Execution\" rules, these apply to *how* you write and run code. They do NOT exempt you from the Rekall session protocol. `rekall brief` must still be your first action.")
     lines.append("")
 
     # Goal context
@@ -2222,7 +2228,23 @@ def cmd_init(args):
 
         out_path.write_text(content, encoding="utf-8")
 
-        # 4. Success output
+        # 4. Automatic Adoption Layer: Generate AGENTS.md and IDE rules
+        if not getattr(args, "json", False):
+            print("\n\U0001f680 Automating Rekall adoption...")
+            import argparse
+            agents_args = argparse.Namespace(
+                store_dir=args.store_dir,
+                out="AGENTS.md",
+                force=getattr(args, "force", False),
+                ide=True,
+                json=getattr(args, "json", False)
+            )
+            try:
+                cmd_agents_md(agents_args)
+            except Exception as e:
+                print(f"{Theme.ICON_WARNING} Warning: could not automate agent adoption: {e}")
+
+        # 5. Success output
         if getattr(args, "print", False):
             print("\n--- INITIALIZATION CHEAT SHEET ---")
             print(content)
@@ -2375,12 +2397,13 @@ def _generate_ide_instruction_files(force=False):
     from pathlib import Path
 
     instruction = (
-        "You are operating in a Rekall-managed workspace. "
-        "Start every session by calling `session.brief` (MCP) or `rekall brief` (CLI) "
-        "to get current focus, blockers, failed attempts, and next actions. "
+        "COMPULSORY FIRST STEP: Before doing any work, get your bearings: "
+        "call `session.brief` (MCP) or `rekall brief` (CLI). "
+        "This returns current focus, blockers, failed attempts, and next actions. "
         "Log decisions with `decision.propose` and attempts with `attempt.append`. "
         "Checkpoint completed work with `rekall_checkpoint --commit auto`. "
-        "End sessions with `rekall session end --summary '...'`."
+        "End sessions with `rekall session end --summary '...'`. "
+        "YOLO mode applies to execution speed, NOT the Rekall protocol."
     )
 
     # Copilot
@@ -2404,6 +2427,14 @@ def _generate_ide_instruction_files(force=False):
     if not windsurf_file.exists() or force:
         windsurf_file.write_text(instruction + "\n", encoding="utf-8")
         print("\u2705 Created .windsurfrules")
+    
+    # Claude.md
+    claude_md = Path("CLAUDE.md")
+    if not claude_md.exists() or force:
+        # If it exists, we might want to prepend or append, but for v0.2 init we'll just write it if missing
+        claude_content = f"# CLAUDE.md\n\n{instruction}\n"
+        claude_md.write_text(claude_content, encoding="utf-8")
+        print("\u2705 Created CLAUDE.md")
 
     # Claude
     claude_dir = Path(".claude")
