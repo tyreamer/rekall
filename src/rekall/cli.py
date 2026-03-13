@@ -1899,7 +1899,7 @@ def cmd_agents_md(args):
             # If not force, we silently skip or overwrite if it's the default path
             # We treat "AGENTS.md" in the current directory as the default path
             is_default_path = (out_path.name == "AGENTS.md" and len(out_path.parts) == 1)
-            
+
             if not is_default_path and getattr(args, "out", None):
                 die(ExitCode.CONFLICT, f"{out_path} already exists. Use --force to overwrite.", args.json)
             else:
@@ -2432,7 +2432,7 @@ def _generate_ide_instruction_files(force=False):
     if not windsurf_file.exists() or force:
         windsurf_file.write_text(instruction + "\n", encoding="utf-8")
         print("\u2705 Created .windsurfrules")
-    
+
     # Claude.md
     claude_md = Path("CLAUDE.md")
     if not claude_md.exists() or force:
