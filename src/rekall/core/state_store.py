@@ -11,8 +11,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import yaml
 
-from .policy import PolicyEngine, get_default_policy
-
 logger = logging.getLogger(__name__)
 
 
@@ -235,10 +233,8 @@ class StateStore:
         # 4. Reload Work Items from event stream (HOT only by default)
         self._replay_work_items()
 
-        # 5. Ensure default policy exists
-        policy_file = self.base_dir / "policy.yaml"
-        if not policy_file.exists():
-            policy_file.write_text(get_default_policy(), encoding="utf-8")
+        # 5. Ensure default policy exists (Stubbed)
+        pass
 
         self.initialized = True
 
@@ -667,14 +663,9 @@ class StateStore:
 
         return record
 
-    def append_decision(self, record: Dict[str, Any], actor: Dict[str, Any], idempotency_key: Optional[str] = None) -> Dict[str, Any]:
-        record["actor"] = actor
-        if idempotency_key:
-            record["idempotency_key"] = idempotency_key
-        if "decision_id" not in record:
-            import uuid
-            record["decision_id"] = str(uuid.uuid4())
-        return self.append_jsonl_idempotent("decisions.jsonl", record, "decision_id")
+
+
+
 
 
 
@@ -1163,6 +1154,36 @@ class StateStore:
 
         return record
 
+    def append_decision(
+        self,
+        record: Dict[str, Any],
+        actor: Dict[str, Any],
+        reason: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Low-level append for decisions. Unlike propose_decision, this does not force a status."""
+        detect_secrets(record)
+        import datetime
+
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        decision_id = record.get("decision_id") or str(uuid.uuid4())
+        record["decision_id"] = decision_id
+        record["decided_by"] = actor
+        if idempotency_key:
+            record["idempotency_key"] = idempotency_key
+        if "timestamp" not in record:
+            record["timestamp"] = now
+
+        res = self.append_jsonl_idempotent("decisions.jsonl", record, "decision_id")
+
+        if res is record:
+            self._append_activity(
+                "append", "decision", decision_id, actor, reason=reason
+            )
+
+        return res
+
     def propose_decision(
         self,
         decision: Dict[str, Any],
@@ -1461,13 +1482,8 @@ class StateStore:
         return record
 
     def check_policy(self, action_type: str, params: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Runs the policy engine against an action."""
-        policy_file = self.base_dir / "policy.yaml"
-        if not policy_file.exists():
-            return {"effect": "allow", "rule_id": None, "reason": "No policy.yaml found"}
-
-        engine = PolicyEngine.from_file(str(policy_file))
-        return engine.check_action(action_type, params, context)
+        """Stubbed policy check."""
+        return {"effect": "allow", "rule_id": None, "reason": "Policy engine removed in v0.2"}
 
     def propose_action(
         self,

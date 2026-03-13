@@ -49,3 +49,6 @@ access.yaml
 # Local development
 scratch/
 logs/
+
+# Hub sync cursor (local-only tracking file)
+.hub_cursor.json

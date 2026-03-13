@@ -7,12 +7,9 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, NoReturn, Optional
 
-from rekall.core.brief import format_brief_human, generate_session_brief
 from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
-from rekall.core.handoff_generator import generate_boot_brief
 from rekall.core.state_store import StateStore, resolve_vault_dir
 from rekall.server import mcp_server
-from rekall.server.dashboard import start_dashboard
 
 logger = logging.getLogger(__name__)
 
@@ -434,43 +431,20 @@ def cmd_demo(args):
         # Re-use validate
         args.strict = False
         cmd_validate(args)
-
         if not args.json:
-            logger.info("Validation passed. Running handoff...")
-
-        # Re-use handoff
-        out_dir = temp_path / "handoff"
-        args.out = str(out_dir)
-        args.project_id = store.project_config.get("project_id")
-        cmd_handoff(args)
+            logger.info("Validation passed. Your temporary vault is ready!")
 
         if args.json:
             print(json.dumps({"status": "success", "demo_dir": temp_dir}))
         else:
-            import platform
-
-            system = platform.system()
-            brief_file = (out_dir / "boot_brief.md").resolve()
-            state_dir = temp_path.resolve()
-
-            if system == "Windows":
-                view_cmd = f'notepad "{brief_file}"\n  (or) Get-Content "{brief_file}"'
-            elif system == "Darwin":
-                view_cmd = f'open "{brief_file}"'
-            else:
-                view_cmd = f'xdg-open "{brief_file}"'
-
             print("\n" + "=" * 50)
-            print(f"{Theme.ICON_SUCCESS} DEMO COMPLETE \u2014 OPEN THIS NOW:")
+            print(f"{Theme.ICON_SUCCESS} DEMO COMPLETE \u2014 EXPLORE REKALL:")
             print("=" * 50)
-            print(f"\nYour boot brief is ready: {brief_file}")
-            print(f"Your state artifact is dumped at: {state_dir}")
-            print("\nView it now:")
-            print(f"  {view_cmd}\n")
-            print("-" * 50)
-            print(f"{Theme.ICON_IDEA} Next Steps:")
-            print("  - run 'rekall status' to see project health")
-            print("  - run 'rekall guard' for preflight checks")
+            print(f"\nYour temporary vault is located at: {temp_path}")
+            print("\nTry out the v0.2 core habit loop:")
+            print(f"  cd {temp_dir}")
+            print("  rekall brief")
+            print("  rekall log")
             print("-" * 50 + "\n")
 
 
@@ -730,77 +704,58 @@ def cmd_import(args):
         die(ExitCode.INTERNAL_ERROR, f"Import failed: {friendly_error(e)}", args.json)
 
 
-def cmd_handoff(args):
-    """Synthesizes project state to create boot_brief.md and exports snapshot.json."""
-    base_dir = resolve_vault_dir(args.store_dir)
-    out_dir = Path(args.out)
-    project_id = args.project_id
 
+def cmd_verify(args):
+    """Verify ledger integrity and cryptographic hash chain (tamper evidence)."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
     try:
-        store = StateStore(base_dir)
+        from rekall.core.state_store import StateStore
+        store = StateStore(store_dir)
 
-        # Verify project_id matches
-        config_pid = store.project_config.get("project_id")
-        if config_pid and config_pid != project_id:
-            logger.warning(
-                f"Warning: Requested project_id '{project_id}' does not match StateStore project_id '{config_pid}'. Proceeding anyway."
-            )
+        if not getattr(args, "json", False):
+            print(f"\n{Theme.ICON_SEARCH} Verifying ledger cryptographic integrity...")
 
-        out_dir.mkdir(parents=True, exist_ok=True)
+        streams = ["timeline.jsonl", "actions.jsonl", "decisions.jsonl", "attempts.jsonl"]
+        all_ok = True
+        hash_results = {}
 
-        # Compile snapshot with deterministic ordering
-        events = sorted(
-            store._load_stream("work_items", hot_only=False),
-            key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")),
-        )
-        activity = sorted(
-            store._load_stream("activity", hot_only=False),
-            key=lambda x: (x.get("timestamp", ""), x.get("activity_id", "")),
-        )
-        attempts = sorted(
-            store._load_stream("attempts", hot_only=False),
-            key=lambda x: (x.get("timestamp", ""), x.get("attempt_id", "")),
-        )
-        decisions = sorted(
-            store._load_stream("decisions", hot_only=False),
-            key=lambda x: (x.get("timestamp", ""), x.get("decision_id", "")),
-        )
-        timeline = sorted(
-            store._load_stream("timeline", hot_only=False),
-            key=lambda x: (x.get("timestamp", ""), x.get("event_id", "")),
-        )
+        for stream in streams:
+            res = store.verify_stream_integrity(stream)
+            hash_results[stream] = res
+            if not res["valid"]:
+                all_ok = False
+                if not getattr(args, "json", False):
+                    print(f"{Theme.ICON_ERROR} {stream} hash chain broken!")
+                    for err in res["errors"]:
+                        print(f"  - {err}")
+            elif not getattr(args, "json", False):
+                print(f"{Theme.ICON_SUCCESS} {stream} verified ({res['events_checked']} events)")
 
-        work_items_sorted = {
-            k: store.work_items[k] for k in sorted(store.work_items.keys())
-        }
+        if not getattr(args, "json", False):
+            print(f"\n{Theme.ICON_SEARCH} Validating schema and JSONL constraints...")
 
-        snapshot = {
-            "project": store.project_config,
-            "envs": store.envs_config,
-            "access": store.access_config,
-            "work_items": work_items_sorted,
-            "events": events,
-            "activity": activity,
-            "attempts": attempts,
-            "decisions": decisions,
-            "timeline": timeline,
-            "schema_version": "0.1",
-        }
+        val_res = store.validate_all(strict=getattr(args, "strict", False))
+        if val_res["summary"]["status"] == "❌":
+            all_ok = False
+            if not getattr(args, "json", False):
+                print(f"{Theme.ICON_ERROR} Schema validation failed!")
+                for key, section in val_res.items():
+                    if isinstance(section, dict) and section.get("status") == "❌":
+                        print(f"  - {key}: {section.get('errors')}")
 
-        snapshot_file = out_dir / "snapshot.json"
-        snapshot_file.write_text(json.dumps(snapshot, indent=2))
-
-        # Generate boot_brief.md
-        brief_content = generate_boot_brief(store)
-        brief_file = out_dir / "boot_brief.md"
-        brief_file.write_text(brief_content, encoding="utf-8")
-
-        logger.info(f"Handoff pack generated at {out_dir}")
-        logger.info(f" - {brief_file}")
-        logger.info(f" - {snapshot_file}")
+        if all_ok:
+            if getattr(args, "json", False):
+                print(json.dumps({"ok": True, "message": "Ledger verified", "hash_results": hash_results, "schema": val_res}))
+            else:
+                print(f"\n{Theme.ICON_SUCCESS} Rekall vault is cryptographically sound and valid.")
+        else:
+            if getattr(args, "json", False):
+                print(json.dumps({"ok": False, "message": "Verification failed", "hash_results": hash_results, "schema": val_res}))
+            else:
+                die(ExitCode.VALIDATION_FAILED, "Vault verification failed.", False)
 
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Handoff failed: {friendly_error(e)}", False)
+        die(ExitCode.INTERNAL_ERROR, f"Failed to execute verification: {e}", getattr(args, "json", False))
 
 
 def cmd_features(args):
@@ -1378,6 +1333,9 @@ def cmd_checkpoint(args):
                 print(f"   Export path : {export_path}")
             print("")
 
+        # Best-effort Hub sync on checkpoint
+        _try_hub_sync(base_dir, store.manifest, quiet=getattr(args, "quiet", True))
+
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Checkpoint failed: {friendly_error(e)}", getattr(args, "json", False))
 
@@ -1457,6 +1415,42 @@ def cmd_lock(args):
             )
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Failed to acquire lock: {friendly_error(e)}", args.json)
+
+def cmd_log(args):
+    """View the event timeline (like git log)."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
+    ensure_state_initialized(store_dir, getattr(args, "json", False))
+    try:
+        from rekall.core.state_store import StateStore
+        store = StateStore(store_dir)
+        events = sorted(
+            store._load_stream_raw("timeline.jsonl", hot_only=False),
+            key=lambda e: e.get("timestamp", ""),
+            reverse=True,
+        )
+        limit = getattr(args, "limit", 50)
+        if limit:
+            events = events[:limit]
+
+        if getattr(args, "json", False):
+            import json
+            print(json.dumps(events, indent=2, default=str))
+        else:
+            if not events:
+                print("No events found in timeline.")
+                return
+            for e in events:
+                ts = e.get("timestamp", "")[:19].replace("T", " ")
+                etype = str(e.get("type", "note")).upper()
+                summary = e.get("summary", "")
+                git_sha = e.get("git_sha", "")
+
+                line = f"{Theme.ICON_INFO} {ts} [{etype}] {summary}"
+                if git_sha:
+                    line += f" (git: {git_sha[:7]})"
+                print(line)
+    except Exception as exc:
+        die(ExitCode.INTERNAL_ERROR, f"Log failed: {friendly_error(exc)}", getattr(args, "json", False))
 
 def cmd_status(args):
     """Provides an executive summary of the current reality."""
@@ -1608,6 +1602,19 @@ def cmd_meta_get(args):
         die(ExitCode.INTERNAL_ERROR, f"Meta get failed: {friendly_error(e)}", args.json)
 
 
+def cmd_serve(args):
+    """Launch the MCP server over stdio."""
+    store_dir = args.store_dir_flag
+    if getattr(args, "store_dir", None):
+        store_dir = args.store_dir
+
+    if args.host == "stdio":
+        mcp_server._base_dir = Path(store_dir)
+        mcp_server.main()
+    else:
+        die(ExitCode.USER_ERROR, f"Unsupported transport: {args.host}", getattr(args, "json", False))
+
+
 def cmd_meta_set(args):
     """Set project metadata (replaces/adds fields)."""
     store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
@@ -1720,15 +1727,42 @@ def cmd_brief(args):
     ensure_state_initialized(store_dir, args.json)
 
     try:
+        from rekall.core.brief import (
+            generate_brief_model,
+            render_brief_default,
+            render_brief_full,
+        )
+
         store = StateStore(store_dir)
-        brief = generate_session_brief(store)
+        model = generate_brief_model(store)
 
         if args.json:
-            print(json.dumps(brief, indent=2, default=str))
+            from rekall.core.brief import generate_session_brief
+            print(json.dumps(generate_session_brief(store), indent=2))
+        elif getattr(args, "full", False):
+            print(render_brief_full(model))
         else:
-            print(format_brief_human(brief))
+            print(render_brief_default(model))
+
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Brief failed: {friendly_error(e)}", args.json)
+
+
+def cmd_sync(args):
+    """(Deprecated) Sync local vault events to Rekall Hub."""
+    if getattr(args, "json", False):
+        print(json.dumps({"error": "Hub sync is disabled in v0.2"}))
+    else:
+        print("Hub sync is disabled in v0.2.")
+
+
+def _try_hub_sync(store_dir, manifest, quiet=True):
+    """Best-effort Hub sync. Never raises — failures are logged and swallowed."""
+    try:
+        # Hub sync is deprecated and removed in v0.2
+        pass
+    except Exception as e:
+        logger.debug("Hub sync skipped: %s", e)
 
 
 def cmd_session(args):
@@ -1740,11 +1774,12 @@ def cmd_session(args):
         try:
             store = StateStore(store_dir)
             store.start_session()
+            from rekall.core.brief import generate_session_brief
             brief = generate_session_brief(store)
-
             if args.json:
                 print(json.dumps({"status": "session_started", "brief": brief}, indent=2, default=str))
             else:
+                from rekall.core.brief import format_brief_human
                 print(format_brief_human(brief))
         except Exception as e:
             die(ExitCode.INTERNAL_ERROR, f"Session start failed: {friendly_error(e)}", args.json)
@@ -1786,6 +1821,10 @@ def cmd_session(args):
                 else:
                     print("\u2705 Session ended.")
                     print("  Tip: use --summary to leave a note for the next session.")
+
+            # Best-effort Hub sync on session end
+            _try_hub_sync(store_dir, store.manifest, quiet=getattr(args, "quiet", True))
+
         except Exception as e:
             die(ExitCode.INTERNAL_ERROR, f"Session end failed: {friendly_error(e)}", args.json)
 
@@ -1944,7 +1983,7 @@ def _build_agents_md(proj: dict, mode: str) -> str:
     lines.append('rekall session end --summary "Where I stopped and what comes next"')
     lines.append("```")
     lines.append("")
-    lines.append("This records a handoff note and warns about any unrecorded work.")
+    lines.append("This records a session note and warns about any unrecorded work.")
     lines.append("")
 
     # Mode
@@ -1997,72 +2036,9 @@ def cmd_mode(args):
         die(ExitCode.INTERNAL_ERROR, f"Mode change failed: {friendly_error(e)}", args.json)
 
 
-def cmd_serve(args):
-    """Launch the MCP server over stdio."""
-    # Force quiet mode for MCP to avoid polluting stdout
-    setup_logging(json_mode=True, quiet_mode=True)
 
-    # Resolve store_dir
-    if args.store_dir is not None:
-        resolved_store = args.store_dir
-    else:
-        resolved_store = getattr(args, "store_dir_flag", ".")
-    args.store_dir = resolved_store
 
-    base_dir = resolve_vault_dir(args.store_dir)
 
-    try:
-        # Success Criterion: Launch Rekall Dashboard if interactive
-        if sys.stdin.isatty():
-            # If store does not exist, we just skip dashboard or start it later. For now, try initializing if it exists.
-            if base_dir.exists() and (base_dir / "manifest.json").exists():
-                store = StateStore(base_dir)
-                dashboard_server, port = start_dashboard(store)
-                print(f"{Theme.ICON_ROCKET} Rekall Dashboard active at http://127.0.0.1:{port}", file=sys.stderr)
-            print(f"{Theme.ICON_INFO} MCP Server (stdio) active and waiting for agent commands...", file=sys.stderr)
-
-        # Inject base_dir into mcp_server global so it can lazy init
-        mcp_server._base_dir = base_dir
-
-        # Launch server loop
-        mcp_server.main()
-    except Exception as e:
-        # Exit silently or with a log that won't break JSON-RPC if possible
-        # but if we're here, the server hasn't really started.
-        die(ExitCode.INTERNAL_ERROR, f"MCP server failed: {friendly_error(e)}", args.json)
-
-def cmd_verify(args):
-    """Verify cryptographic integrity of all execution streams."""
-    base_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
-    ensure_state_initialized(base_dir, args.json)
-    try:
-        store = StateStore(base_dir)
-        results = []
-        overall_status = "\u2705"
-
-        streams = store.manifest.get("streams", {})
-        for stream_name in streams:
-            res = store.verify_stream_integrity(stream_name)
-            results.append(res)
-            if res["status"] == "\u274c":
-                overall_status = "\u274c"
-
-        if args.json:
-            print(json.dumps({"status": overall_status, "streams": results}))
-            return
-
-        print(f"\n[ rekall verify ] - Integrity: {overall_status}")
-        for res in results:
-            print(f"  {res['status']} {res['stream']:<20} ({res['count']} events)")
-            if res["errors"]:
-                for err in res["errors"]:
-                    print(f"    \u274c {err}")
-
-        if overall_status == "\u274c":
-            sys.exit(ExitCode.INTERNAL_ERROR)
-
-    except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Verification failed: {friendly_error(e)}", args.json)
 
 def cmd_bundle(args):
     """Bundle the entire state directory into a portable tarball."""
@@ -2137,7 +2113,8 @@ def cmd_init(args):
 
         # 2. Build Markdown
         lines = []
-        lines.append(f"# Initialization Cheat Sheet: {repo_name}")
+        project_id = store.project_config.get("project_id", repo_name)
+        lines.append(f"# Initialization Cheat Sheet: {project_id}")
         lines.append(f"**Generated**: {timestamp}")
         lines.append(f"**execution ledger Last Updated**: {last_updated}")
         lines.append("")
@@ -2209,12 +2186,9 @@ def cmd_init(args):
 
         lines.append("## Next Recommended Commands")
         lines.append("```bash")
-        lines.append("rekall status")
-        lines.append("rekall guard")
-        lines.append("rekall blockers")
-        lines.append(
-            f"rekall handoff {store.project_config.get('project_id', repo_name)} -o ./handoff/"
-        )
+        lines.append("rekall brief")
+        lines.append("rekall log")
+        lines.append("rekall checkpoint")
         lines.append("```")
         lines.append("")
 
@@ -2259,7 +2233,7 @@ def cmd_init(args):
         else:
             print(f"Created: {out_path}")
             print(
-                f"Next: rekall status | rekall blockers | rekall handoff {store.project_config.get('project_id', repo_name)}"
+                "Next: rekall brief | rekall log | rekall checkpoint"
             )
 
     except Exception as e:
@@ -2482,14 +2456,12 @@ def main():
     desc = """Rekall: persistent execution memory for AI coding agents.
 
 START HERE:
-  rekall demo                              # See Rekall in action
   rekall init                              # Create a vault in your project
   rekall agents                            # Generate AGENTS.md operating contract
 
 SESSION WORKFLOW:
   rekall brief                             # What to work on, what to avoid
   rekall checkpoint --summary "..."        # Log a milestone
-  rekall session end --summary "..."       # Record handoff note
 
 Type 'rekall <command> --help' for details on any command.
 """
@@ -2534,7 +2506,7 @@ Type 'rekall <command> --help' for details on any command.
     # Try It
     parser_demo = subparsers.add_parser(
         "demo",
-        help="Run a demo to see Rekall in action.",
+        help=argparse.SUPPRESS,
         parents=[shared_flags],
     )
     parser_demo.set_defaults(func=cmd_demo)
@@ -2589,7 +2561,7 @@ Type 'rekall <command> --help' for details on any command.
     # Validate
     parser_validate = subparsers.add_parser(
         "validate",
-        help="Check vault integrity. Add --mcp to test MCP surface.",
+        help=argparse.SUPPRESS,
         parents=[shared_flags],
     )
     parser_validate.add_argument(
@@ -2674,19 +2646,6 @@ Type 'rekall <command> --help' for details on any command.
     )
     parser_import.set_defaults(func=cmd_import)
 
-    # Handoff
-    parser_handoff = subparsers.add_parser(
-        "handoff",
-        help=argparse.SUPPRESS,  # Advanced: generate handoff pack
-        parents=[shared_flags],
-    )
-    parser_handoff.add_argument("project_id", help="The Project ID being handed off")
-    parser_handoff.add_argument(
-        "--store-dir", default=".", help="Directory of the current StateStore"
-    )
-    parser_handoff.add_argument("--out", "-o", required=True, help="Output directory")
-    parser_handoff.set_defaults(func=cmd_handoff)
-
     # Executive Query Aliases
 
     parser_blockers = subparsers.add_parser(
@@ -2725,7 +2684,7 @@ Type 'rekall <command> --help' for details on any command.
     # Guard
     parser_guard = subparsers.add_parser(
         "guard",
-        help="Preflight check: constraints, risks, recent work.",
+        help=argparse.SUPPRESS,
         parents=[shared_flags],
     )
     parser_guard.add_argument(
@@ -2748,7 +2707,7 @@ Type 'rekall <command> --help' for details on any command.
 
     # Grievance Closeout Commands: Nested subparsers
     parser_attempts = subparsers.add_parser(
-        "attempts", help="Log what was tried (including failures).", parents=[shared_flags]
+        "attempts", help=argparse.SUPPRESS, parents=[shared_flags]
     )
     attempts_subparsers = parser_attempts.add_subparsers(
         dest="subcommand", required=True
@@ -2774,7 +2733,7 @@ Type 'rekall <command> --help' for details on any command.
     parser_attempts_add.set_defaults(func=cmd_attempts_add)
 
     parser_decisions = subparsers.add_parser(
-        "decisions", help="Log architectural decisions and tradeoffs.", parents=[shared_flags]
+        "decisions", help=argparse.SUPPRESS, parents=[shared_flags]
     )
     decisions_subparsers = parser_decisions.add_subparsers(
         dest="subcommand", required=True
@@ -2806,7 +2765,7 @@ Type 'rekall <command> --help' for details on any command.
     # Decide
     parser_decide = subparsers.add_parser(
         "decide",
-        help="Grant/deny permission for a pending approval.",
+        help=argparse.SUPPRESS,
         parents=[shared_flags],
     )
     parser_decide.add_argument("decision_id", help="The Decision ID to decide upon")
@@ -2947,10 +2906,20 @@ Type 'rekall <command> --help' for details on any command.
 
 
 
+    # Log
+    parser_log = subparsers.add_parser(
+        "log",
+        help="View the event timeline (like git log).",
+        parents=[shared_flags],
+    )
+    parser_log.add_argument("--limit", type=int, default=50, help="Number of events to show")
+    parser_log.add_argument("--store-dir", default="project-state", help="StateStore directory")
+    parser_log.set_defaults(func=cmd_log)
+
     # Status
     parser_status = subparsers.add_parser(
         "status",
-        help="Executive summary of project state (see also: brief).",
+        help=argparse.SUPPRESS,
         parents=[shared_flags],
     )
     parser_status.add_argument(
@@ -2963,7 +2932,7 @@ Type 'rekall <command> --help' for details on any command.
     # Serve (MCP)
     parser_serve = subparsers.add_parser(
         "serve",
-        help="Launch MCP server (used by IDE configs, not manually).",
+        help=argparse.SUPPRESS,  # Used by IDE configs, not manually
         parents=[shared_flags],
     )
     parser_serve.add_argument(
@@ -3016,10 +2985,11 @@ Type 'rekall <command> --help' for details on any command.
     parser_onboard.add_argument("--store-dir", help="StateStore directory")
     parser_onboard.set_defaults(func=cmd_onboard)
 
+
     # Hooks
     parser_hooks = subparsers.add_parser(
         "hooks",
-        help="Install git hooks for checkpoint reminders.",
+        help=argparse.SUPPRESS,
         parents=[shared_flags],
     )
     hooks_subparsers = parser_hooks.add_subparsers(dest="subcommand", required=True)
@@ -3040,7 +3010,7 @@ Type 'rekall <command> --help' for details on any command.
     # Commit
     parser_commit = subparsers.add_parser(
         "commit",
-        help="Git commit + auto-checkpoint in one step.",
+        help=argparse.SUPPRESS,
         parents=[shared_flags],
     )
     parser_commit.add_argument("-m", "--message", help="Commit message")
@@ -3058,12 +3028,15 @@ Type 'rekall <command> --help' for details on any command.
     parser_brief.add_argument(
         "--store-dir", default="project-state", help="Directory of the StateStore"
     )
+    parser_brief.add_argument(
+        "--full", action="store_true", help="Expanded operator view with full metadata"
+    )
     parser_brief.set_defaults(func=cmd_brief)
 
     # Session
     parser_session = subparsers.add_parser(
         "session",
-        help="Start or end a work session.",
+        help=argparse.SUPPRESS,
         parents=[shared_flags],
     )
     session_subparsers = parser_session.add_subparsers(dest="subcommand", required=True)
@@ -3085,7 +3058,7 @@ Type 'rekall <command> --help' for details on any command.
     # Mode
     parser_mode = subparsers.add_parser(
         "mode",
-        help="Set governance level: lite, coordination, or governed.",
+        help=argparse.SUPPRESS,
         parents=[shared_flags],
     )
     parser_mode.add_argument(
@@ -3099,7 +3072,7 @@ Type 'rekall <command> --help' for details on any command.
     # Agents (AGENTS.md generation)
     parser_agents = subparsers.add_parser(
         "agents",
-        help="Generate AGENTS.md operating contract for AI assistants.",
+        help=argparse.SUPPRESS,
         parents=[shared_flags],
     )
     parser_agents.add_argument("--store-dir", default="project-state", help="StateStore directory")
@@ -3107,6 +3080,17 @@ Type 'rekall <command> --help' for details on any command.
     parser_agents.add_argument("--force", action="store_true", help="Overwrite if exists")
     parser_agents.add_argument("--ide", action="store_true", help="Also generate IDE-specific instruction files (Copilot, Cursor, Windsurf, Claude)")
     parser_agents.set_defaults(func=cmd_agents_md)
+
+    # Sync (Hub)
+    parser_sync = subparsers.add_parser(
+        "sync",
+        help=argparse.SUPPRESS,
+        parents=[shared_flags],
+    )
+    parser_sync.add_argument(
+        "--store-dir", default=".", help="Directory of the StateStore"
+    )
+    parser_sync.set_defaults(func=cmd_sync)
 
     # Assistants (deprecated — use 'rekall agents --ide')
     parser_assistants = subparsers.add_parser(

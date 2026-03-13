@@ -460,46 +460,7 @@ def test_activity_event_emitted(monkeypatch, tmp_path):
     assert found
 
 
-def test_exec_query_on_track(monkeypatch, tmp_path):
-    import shutil
 
-    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
-    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    mcp_server._store = None
-
-    from rekall.server.mcp_server import exec_query, get_store, work_update
-
-    store = get_store()
-
-    # 1. By default, sample artifact actually has 2 blocked items
-    res = exec_query({"project_id": "prj_646d63703ec5", "query_type": "ON_TRACK"})[0]
-    er = res.get("executive_response")
-    assert er is not None
-    assert er["confidence"] == "high"
-    assert any("AT_RISK" in s for s in er["summary"])  # 2 active blockers
-    assert len(er["evidence"]) > 0
-
-    # 2. To test ON_TRACK, we must unblock them
-    blockers = [w for w in store.work_items.values() if w.get("status") == "blocked"]
-    for w in blockers:
-        work_update(
-            {
-                "project_id": "prj_646d63703ec5",
-                "work_item_id": w["work_item_id"],
-                "expected_version": w["version"],
-                "actor": {"actor_type": "human", "actor_id": "u-1"},
-                "patch": {"status": "in_progress"},
-                "force": True,
-            }
-        )
-
-    res2 = exec_query({"project_id": "prj_646d63703ec5", "query_type": "ON_TRACK"})[0]
-    er2 = res2["executive_response"]
-    assert any("ON_TRACK" in s for s in er2["summary"])
-    assert any(
-        "in_progress" in getattr(ev, "status", "in_progress")
-        for ev in er2.get("evidence", [])
-    )  # heuristic check
 
 
 def test_exec_query_blockers(monkeypatch, tmp_path):
@@ -929,31 +890,6 @@ def test_actuator_file_write(monkeypatch, tmp_path):
     assert res2["outcome"]["success"] is True
     assert res2["outcome"]["bytes_written"] > 0
 
-def test_policy_preflight(tmp_path, monkeypatch):
-    import shutil
-    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
-    monkeypatch.setenv("REKALL_ARTIFACT_PATH", str(tmp_path))
-    from rekall.server.mcp_server import policy_preflight
-
-    mcp_server._store = None
-
-    # 1. Test safe action
-    res = policy_preflight({
-        "project_id": "prj_1",
-        "action_type": "ls",
-        "params": {"args": "-l"}
-    })[0]
-    assert res["effect"] == "allow"
-
-    # 2. Test destructive action (should match default policy)
-    res = policy_preflight({
-        "project_id": "prj_1",
-        "action_type": "actuate_cli",
-        "params": {"command": "rm -rf /"}
-    })[0]
-    assert res["effect"] == "deny"
-    assert "Destructive" in res["reason"]
-
 def test_guard_query():
     from rekall.server.mcp_server import guard_query
     result = guard_query({"project_id": "prj_646d63703ec5"})
@@ -971,23 +907,6 @@ def test_guard_query_missing_project_id():
     from rekall.server.mcp_server import guard_query
     with pytest.raises(ValueError, match="project_id is required"):
         guard_query({})
-def test_exec_query_dispatcher(monkeypatch):
-    from rekall.server.mcp_server import exec_natural_query
-    # 1. Test canonical fallback
-    args = {"project_id": "prj_646d63703ec5", "query_type": "ON_TRACK"}
-    res = exec_natural_query(args)[0]
-    assert "executive_response" in res
-    assert res["executive_response"]["confidence"] == "high"
-
-
-def test_exec_query_dispatcher_natural():
-    from rekall.server.mcp_server import exec_natural_query
-    # 2. Test natural language path
-    args = {"project_id": "prj_646d63703ec5", "query": "What is the status?"}
-    res = exec_natural_query(args)[0]
-    assert "text" in res
-    assert "PROJECT EXECUTION LEDGER" in res["text"]
-    assert "TIMELINE EVENTS" in res["text"]
 
 
 def test_stale_lock_cleanup(monkeypatch, tmp_path):

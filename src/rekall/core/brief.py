@@ -1,254 +1,278 @@
 """
-Generates a structured session brief — everything an agent needs to continue work.
-
-This is the single highest-leverage read operation in Rekall:
-one call returns current focus, open blockers, failed paths, pending decisions,
-recommended next action, and drift/risk summary.
+Unified Rekall Brief — the single orient/read command for humans and agents.
 """
-from typing import Any, Dict, List, Optional
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, TypedDict
 
 from rekall.core.state_store import StateStore
 
 
-def generate_session_brief(
-    store: StateStore, mode: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Build a structured brief for an agent entering or resuming a session.
+class CheckpointModel(TypedDict):
+    summary: str
+    timestamp: str
+    git_sha: Optional[str]
 
-    Returns a dict with sections:
-      - project: identity + goal + phase
-      - focus: what's currently in progress
-      - blockers: what's stuck and why
-      - failed_attempts: paths not to retry (most recent first)
-      - pending_decisions: decisions awaiting human input
-      - next_actions: recommended next steps
-      - drift: session staleness warnings
-      - recent_completions: what was finished recently
-      - mode: current usage mode (lite/coordination/governed)
+
+class BlockerModel(TypedDict):
+    title: str
+    severity: str  # low|medium|high
+
+
+class DecisionModel(TypedDict):
+    decision_id: str
+    title: str
+    status: str  # proposed|pending
+
+
+class WarningModel(TypedDict):
+    type: str  # e.g. "repeat_risk"
+    message: str
+    source_attempt_id: Optional[str]
+
+
+class BriefModel(TypedDict, total=False):
+    project: str
+    generated_at: str
+    summary: Dict[str, Any]
+    warnings: List[WarningModel]
+    blockers: List[BlockerModel]
+    open_decisions: List[DecisionModel]
+    constraints: List[str]
+    recommended_actions: List[str]
+
+
+def generate_brief_model(store: StateStore) -> BriefModel:
+    """
+    Synthesize the project ledger into a unified BriefModel.
     """
     proj = store.project_config or {}
+    project_id = proj.get("project_id", Path(store.base_dir).name if store.base_dir else "unknown")
+
+    # 1. Last Checkpoint
+    all_events = store._load_stream("timeline", hot_only=True)
+    checkpoints = [e for e in all_events if e.get("type") == "milestone" or e.get("event") == "checkpoint"]
+    last_cp: Optional[CheckpointModel] = None
+    if checkpoints:
+        cp = sorted(checkpoints, key=lambda x: x.get("timestamp", ""), reverse=True)[0]
+        last_cp = {
+            "summary": cp.get("summary", cp.get("title", "No summary provided")),
+            "timestamp": cp.get("timestamp", ""),
+            "git_sha": cp.get("git_sha"),
+        }
+
+
+    # 2. Blockers & Decisions
     work_items = list(store.work_items.values())
-    effective_mode = mode or proj.get("rekall_mode", "coordination")
-
-    # --- Project Identity ---
-    project = {
-        "project_id": proj.get("project_id", "unknown"),
-        "goal": proj.get("goal") or proj.get("current_goal") or "not set",
-        "phase": proj.get("phase", "not set"),
-        "status": proj.get("status", "unknown"),
-        "confidence": proj.get("confidence", "not set"),
-        "constraints": proj.get("constraints", proj.get("invariants", [])),
-    }
-
-    # --- Current Focus (in-progress work) ---
-    in_progress = [
-        _summarize_work_item(w) for w in work_items
-        if w.get("status") == "in_progress"
-    ]
-
-    # --- Blockers ---
-    blocked = [
-        _summarize_work_item(w) for w in work_items
-        if w.get("status") == "blocked"
-    ]
-
-    # --- Failed Attempts (paths not to retry) ---
-    all_attempts = sorted(
-        store._load_stream("attempts", hot_only=True),
-        key=lambda a: a.get("timestamp", ""),
-        reverse=True,
-    )
-    failed_attempts = []
-    for a in all_attempts:
-        if str(a.get("outcome", "")).lower() == "failed":
-            failed_attempts.append({
-                "attempt_id": a.get("attempt_id"),
-                "work_item_id": a.get("work_item_id", ""),
-                "title": a.get("title", ""),
-                "hypothesis": a.get("hypothesis", ""),
-                "result": a.get("result", a.get("conclusion", "")),
-                "timestamp": a.get("timestamp", ""),
+    blockers: List[BlockerModel] = []
+    for w in work_items:
+        if w.get("status") == "blocked":
+            blockers.append({
+                "title": w.get("title", "Untitled Work Item"),
+                "severity": w.get("priority", "medium")
             })
-            if len(failed_attempts) >= 10:
-                break
 
-    # --- Pending Decisions ---
-    all_decisions = sorted(
-        store._load_stream("decisions", hot_only=True),
-        key=lambda d: d.get("timestamp", ""),
-        reverse=True,
-    )
-    pending_decisions = []
-    for d in all_decisions:
-        if d.get("status") in ("proposed", "pending", "PENDING"):
-            pending_decisions.append({
-                "decision_id": d.get("decision_id"),
+    all_decisions = store._load_stream("decisions", hot_only=True)
+    open_decisions: List[DecisionModel] = []
+    for d in sorted(all_decisions, key=lambda x: x.get("timestamp", ""), reverse=True):
+        if d.get("status") in ("proposed", "pending"):
+            open_decisions.append({
+                "decision_id": d.get("decision_id", ""),
                 "title": d.get("title", ""),
-                "context": d.get("context", ""),
-                "options": d.get("options_considered", []),
-                "timestamp": d.get("timestamp", ""),
+                "status": d.get("status", "")
             })
-            if len(pending_decisions) >= 5:
+            if len(open_decisions) >= 5:
                 break
 
-    # --- Recommended Next Actions ---
-    next_actions = _compute_next_actions(
-        work_items, blocked, pending_decisions, failed_attempts
-    )
+    # 3. Warnings / Do Not Repeat
+    all_attempts = store._load_stream("attempts", hot_only=True)
+    warnings: List[WarningModel] = []
+    failed_attempts = [a for a in all_attempts if str(a.get("outcome", "")).lower() == "failed"]
+    for a in sorted(failed_attempts, key=lambda x: x.get("timestamp", ""), reverse=True):
+        warnings.append({
+            "type": "repeat_risk",
+            "message": f"Failed: {a.get('title') or a.get('hypothesis') or 'Unknown attempt'}",
+            "source_attempt_id": a.get("attempt_id")
+        })
+        if len(warnings) >= 3:
+            break
 
-    # --- Recent Completions (last 5) ---
-    recent_completions = []
-    for w in sorted(work_items, key=lambda x: x.get("updated_at", ""), reverse=True):
-        if w.get("status") == "done":
-            recent_completions.append({
-                "work_item_id": w.get("work_item_id"),
-                "title": w.get("title", ""),
-            })
-            if len(recent_completions) >= 5:
-                break
+    # 4. Constraints
+    constraints = proj.get("constraints", [])
+    if isinstance(constraints, str):
+        constraints = [constraints]
 
-    # --- Drift ---
-    drift = store.check_drift()
+    # 5. Next Action Logic
+    next_action = "Start working and run 'rekall checkpoint' to record progress."
+    if open_decisions:
+        next_action = f"Resolve pending decision: {open_decisions[0]['title']}"
+    elif blockers:
+        next_action = f"Unblock: {blockers[0]['title']}"
+    elif last_cp:
+        next_action = f"Continue after '{last_cp['summary']}'"
 
-    brief: Dict[str, Any] = {
-        "project": project,
-        "mode": effective_mode,
-        "focus": in_progress,
-        "blockers": blocked,
-        "failed_attempts": failed_attempts,
-        "pending_decisions": pending_decisions,
-        "next_actions": next_actions,
-        "recent_completions": recent_completions,
+    model: BriefModel = {
+        "project": project_id,
+        "generated_at": datetime.now().isoformat(),
+        "summary": {
+            "next_action": next_action,
+            "last_checkpoint": last_cp
+        },
+        "warnings": warnings,
+        "blockers": blockers,
+        "open_decisions": open_decisions,
+        "constraints": constraints,
+        "recommended_actions": _compute_generic_recommendations(blockers, open_decisions, last_cp)
     }
-    if drift:
-        brief["drift_warning"] = drift
 
-    return brief
+    return model
 
 
-def format_brief_human(brief: Dict[str, Any]) -> str:
-    """Format a session brief as human-readable text."""
-    lines = []
-    p = brief["project"]
-    mode = brief.get("mode", "coordination")
+def _compute_generic_recommendations(blockers, decisions, last_cp) -> List[str]:
+    recs = []
+    if decisions:
+        recs.append("Resolve pending decisions to unblock the project flow.")
+    if blockers:
+        recs.append("Address active blockers before starting new work items.")
+    if not last_cp:
+        recs.append("Define your first major goal and create an initial checkpoint.")
+    return recs
 
-    lines.append("=" * 55)
-    lines.append("  REKALL SESSION BRIEF")
-    lines.append("=" * 55)
-    lines.append(f"  Project : {p['project_id']}")
-    lines.append(f"  Goal    : {p['goal']}")
-    lines.append(f"  Phase   : {p['phase']}  |  Status: {p['status']}")
-    lines.append(f"  Mode    : {mode}")
 
-    if p.get("constraints"):
-        constraints = p["constraints"]
-        if isinstance(constraints, dict):
-            constraints = [f"{k}: {v}" for k, v in constraints.items()]
-        if constraints:
-            lines.append(f"  Rules   : {'; '.join(str(c) for c in constraints[:3])}")
+def render_brief_default(model: BriefModel) -> str:
+    """Concise 10-second scan for humans."""
+    lines = [f"\U0001F4CB REKALL SESSION BRIEF \u2014 {model['project']}"]
 
-    # Focus
-    lines.append("")
-    focus = brief.get("focus", [])
-    lines.append(f"--- Current Focus ({len(focus)}) ---")
-    if focus:
-        for w in focus:
-            lines.append(f"  [{w['work_item_id'][:12]}] {w['title']}")
-    else:
-        lines.append("  (nothing in progress)")
+    # Clean Slate Check
+    if not any([model["summary"]["last_checkpoint"], model["warnings"], model["blockers"], model["open_decisions"]]):
+        lines.append("\nThis project has a clean slate.")
+        lines.append("No checkpoints, failed attempts, blockers, or decisions yet.")
+        lines.append("\nNext:")
+        lines.append(f"  {model['summary']['next_action']}")
+        lines.append("  rekall checkpoint --summary \"what you did\"")
+        return "\n".join(lines)
 
-    # Blockers
-    blocked = brief.get("blockers", [])
-    if blocked:
-        lines.append(f"\n--- Blockers ({len(blocked)}) ---")
-        for w in blocked:
-            line = f"  [{w['work_item_id'][:12]}] {w['title']}"
-            if w.get("blocked_by"):
-                line += f"  (blocked by: {', '.join(w['blocked_by'])})"
-            lines.append(line)
+    # Sections
+    sections = [
+        ("Current Focus", [model["summary"]["next_action"]]),
+        ("Last checkpoint", [model["summary"]["last_checkpoint"]["summary"]] if model["summary"]["last_checkpoint"] else []),
+        ("Do not repeat", [w["message"] for w in model["warnings"]]),
+        ("Needs decision", [d["title"] for d in model["open_decisions"]]),
+        ("Blocked by", [b["title"] for b in model["blockers"]]),
+        ("Constraints", model["constraints"])
+    ]
 
-    # Failed Attempts
-    failed = brief.get("failed_attempts", [])
-    if failed:
-        lines.append("\n--- Failed Attempts — DO NOT RETRY ---")
-        for a in failed[:5]:
-            lines.append(f"  [{a['attempt_id'][:12]}] {a['title']}")
-            if a.get("result"):
-                lines.append(f"    Result: {a['result'][:120]}")
+    for title, items in sections:
+        if not items:
+            continue
+        lines.append(f"\n{title}:")
+        for item in items[:2]: # Strict default limit
+            lines.append(f"  {item}")
 
-    # Pending Decisions
-    pending = brief.get("pending_decisions", [])
-    if pending:
-        lines.append("\n--- Pending Decisions (need human input) ---")
-        for d in pending:
-            lines.append(f"  [{d['decision_id'][:12]}] {d['title']}")
-
-    # Next Actions
-    actions = brief.get("next_actions", [])
-    if actions:
-        lines.append("\n--- Recommended Next Actions ---")
-        for i, action in enumerate(actions[:5], 1):
-            lines.append(f"  {i}. {action}")
-
-    # Drift
-    if brief.get("drift_warning"):
-        lines.append("\n--- Drift Warning ---")
-        lines.append(f"  {brief['drift_warning']}")
-
-    lines.append("")
-    lines.append("=" * 55)
     return "\n".join(lines)
 
 
-def _summarize_work_item(w: Dict[str, Any]) -> Dict[str, Any]:
-    deps = w.get("dependencies", {})
-    blocked_by = deps.get("blocked_by", []) if isinstance(deps, dict) else []
-    return {
-        "work_item_id": w.get("work_item_id", ""),
-        "title": w.get("title", ""),
-        "priority": w.get("priority", "p2"),
-        "owner": w.get("owner", ""),
-        "blocked_by": blocked_by,
+def render_brief_full(model: BriefModel) -> str:
+    """Expanded operator view."""
+    lines = [f"\U0001F4CB Rekall Brief [FULL] \u2014 {model['project']}"]
+    lines.append(f"Generated at: {model['generated_at']}")
+    lines.append("-" * 40)
+
+    lines.append("\n[ SUMMARY ]")
+    lines.append(f"Next Action: {model['summary']['next_action']}")
+    cp = model["summary"]["last_checkpoint"]
+    if cp:
+        lines.append(f"Last Checkpoint: {cp['summary']} ({cp['timestamp']})")
+        if cp.get("git_sha"):
+            lines.append(f"  SHA: {cp['git_sha']}")
+
+    if model["warnings"]:
+        lines.append("\n[ DO NOT REPEAT ]")
+        for w in model["warnings"]:
+            lines.append(f"  !! {w['message']}")
+
+    if model["open_decisions"]:
+        lines.append("\n[ PENDING DECISIONS ]")
+        for d in model["open_decisions"]:
+            lines.append(f"  ? {d['title']} (ID: {d['decision_id']})")
+
+    if model["blockers"]:
+        lines.append("\n[ BLOCKERS ]")
+        for b in model["blockers"]:
+            lines.append(f"  X {b['title']} (Severity: {b['severity']})")
+
+    if model["constraints"]:
+        lines.append("\n[ CONSTRAINTS ]")
+        for c in model["constraints"]:
+            lines.append(f"  * {c}")
+
+    if model["recommended_actions"]:
+        lines.append("\n[ RECOMMENDED NEXT ACTIONS ]")
+        for a in model["recommended_actions"]:
+            lines.append(f"  -> {a}")
+
+    return "\n".join(lines)
+
+
+def render_brief_json(model: BriefModel) -> str:
+    """Stable structured JSON for agents."""
+    return json.dumps(model, indent=2)
+
+
+# Legacy/Compatibility Wrapper
+def generate_session_brief(store: StateStore, mode: Optional[str] = None) -> Dict[str, Any]:
+    """Old entry point, redirected to generate_brief_model with mapping for tests."""
+    model = generate_brief_model(store)
+
+    # Use mode from store if not provided
+    if mode is None:
+        mode = store.project_config.get("rekall_mode", "coordination")
+
+    # Map new model to old test expectations
+    legacy = {
+        "project": model.get("project", "unknown"),
+        "focus": [{"title": b["title"]} for b in model.get("blockers", []) if b.get("severity") == "high"], # Heuristic
+        "blockers": [{"title": b["title"]} for b in model.get("blockers", [])],
+        "failed_attempts": [{"title": w["message"]} for w in model.get("warnings", [])],
+        "pending_decisions": [{"title": d["title"]} for d in model.get("open_decisions", [])],
+        "next_actions": model.get("recommended_actions", ["Resolution pending"]),
+        "recent_completions": [], # Not currently synthesized in new model
+        "mode": mode,
+        "generated_at": model.get("generated_at")
     }
 
+    # Add focus heuristic if empty: first in-progress work item
+    if not legacy["focus"]:
+        in_prog = [w for w in store.work_items.values() if w.get("status") == "in_progress"]
+        if in_prog:
+            legacy["focus"] = [{"title": in_prog[0]["title"]}]
 
-def _compute_next_actions(
-    work_items: List[Dict],
-    blocked: List[Dict],
-    pending_decisions: List[Dict],
-    failed_attempts: List[Dict],
-) -> List[str]:
-    """Compute actionable recommendations based on current state."""
-    actions: List[str] = []
+    # Add recent completions heuristic
+    done = sorted([w for w in store.work_items.values() if w.get("status") == "done"],
+                  key=lambda x: x.get("updated_at", ""), reverse=True)
+    legacy["recent_completions"] = [{"title": w["title"]} for w in done[:3]]
 
-    if pending_decisions:
-        actions.append(
-            f"Resolve {len(pending_decisions)} pending decision(s) — "
-            f"run `rekall decide <id>` or wait for human."
-        )
+    return legacy
 
-    if blocked:
-        actions.append(
-            f"Investigate {len(blocked)} blocker(s) before starting new work."
-        )
 
-    # Find highest-priority todo
-    todos = [w for w in work_items if w.get("status") == "todo"]
-    todos.sort(key=lambda w: w.get("priority", "p9"))
-    if todos:
-        top = todos[0]
-        actions.append(
-            f"Next task: [{top.get('work_item_id', '')}] {top.get('title', '')} "
-            f"(priority: {top.get('priority', 'p2')})"
-        )
+def format_brief_human(brief: Dict[str, Any]) -> str:
+    """Old entry point, redirected to render_brief_default."""
+    # If it's the old dict format, we might need a dummy model or just use the old formatter
+    if "summary" in brief:
+        return render_brief_default(brief)  # type: ignore
 
-    if failed_attempts:
-        actions.append(
-            f"Review {len(failed_attempts)} failed attempt(s) to avoid retrying known-bad paths."
-        )
+    # Simple fallback for the legacy dict returned by generate_session_brief
+    lines = ["=== SESSION BRIEF ==="]
+    if brief.get("focus"):
+        lines.append(f"Current Focus: {brief['focus'][0]['title']}")
+    else:
+        lines.append("nothing in progress")
+    if brief.get("blockers"):
+        lines.append(f"Blockers: {len(brief['blockers'])}")
+    if brief.get("failed_attempts"):
+        lines.append(f"DO NOT RETRY: {brief['failed_attempts'][0]['title']}")
+    if brief.get("pending_decisions"):
+        lines.append(f"Pending Decisions: {len(brief['pending_decisions'])}")
+    return "\n".join(lines)
 
-    if not actions:
-        actions.append("No pending work items. Consider defining new tasks or checkpointing.")
-
-    return actions

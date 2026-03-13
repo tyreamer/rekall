@@ -1,0 +1,30 @@
+a649896 feat: Adhere to strict Adoption Layer hook payload definitions and finalize skill generator checkpoints
+92fbde1 feat: Implement Rekall Active Adoption Layer
+3262743 style: remove whitespace from blank line found by ruff
+7e9d619 fix: resolve path in test_init.py fixture for Mac compatibility
+5debd05 fix: resolve vault nesting bug and fix test regressions
+13925d3 fix: resolve vault path correctly in cmd_demo
+e5263df feat: implement agent project metadata, vault discovery, and universal skill pack
+8a9593f fix: resolve subprocess deadlock on Windows by removing stderr=PIPE in mcp_validator
+5bcd1b6 fix: resolve all ruff linting errors and standardize imports
+26d1243 feat(core): fix atomic append bug, add stale lock cleanup, and rename dashboard
+68b40fd chore: rename Reality Dashboard to Rekall Dashboard
+f150e97 feat(mcp): standardize tools, add reality dashboard, and fix cli entry point
+b6489fd feat: integrate Tally Hub waitlist and update PyPI references
+ce80c3f chore: fix linting errors and mandate local verification
+cf69fd0 docs: standardize on 'init', enhance 'resume', and polish value proposition
+031b508 fix: update tests/test_init.py to import cmd_init instead of cmd_onboard
+26fbde7 feat: implement rekall serve and refine MCP documentation
+fe2261b fix: annotate die() as NoReturn to resolve mypy arg-type error
+ec9a18c fix: auto-fix all ruff linting errors (import order, whitespace)
+9c6d752 fix: commit project-state envs.yaml and access.yaml to unblock CI
+54157a6 chore: add quality controls, fix docs, lint/type fixes
+76da759 fix: resolve mypy type-checking errors (implicit Optional and missing annotations)
+1e072e8 fix: final linting cleanup in state_store and tests
+cd515fe fix: address reported linting errors and cleanup unused imports
+f86a30c fix: resolve conflicting status subparser in argparse
+43ca2f4 fix: resolve CI failures in test suite due to signature and lead summary changes
+d3eb27d fix: include missing policy module in codebase
+616b2ae docs: finalized Positioning Lock and Hero Example
+ca101a3 feat: Rekall Control Point Evolution (Phases 2-7)
+e6b8526 feat: Implement Optional Wrapped Actuators
