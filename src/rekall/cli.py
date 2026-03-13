@@ -715,7 +715,8 @@ def cmd_verify(args):
         if not getattr(args, "json", False):
             print(f"\n{Theme.ICON_SEARCH} Verifying ledger cryptographic integrity...")
 
-        streams = ["timeline.jsonl", "actions.jsonl", "decisions.jsonl", "attempts.jsonl"]
+        streams = ["timeline.jsonl", "actions.jsonl", "decisions.jsonl",
+                   "attempts.jsonl", "head_moves", "activity"]
         all_ok = True
         hash_results = {}
 
@@ -756,6 +757,91 @@ def cmd_verify(args):
 
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Failed to execute verification: {e}", getattr(args, "json", False))
+
+
+def cmd_rewind(args):
+    """Rewind HEAD to a prior point. Append-only — never deletes history."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
+    store = StateStore(store_dir)
+
+    to_event_id = getattr(args, "to_event", None)
+    to_timestamp = getattr(args, "to_timestamp", None)
+    reason = getattr(args, "reason", "Manual rewind")
+
+    if not to_event_id and not to_timestamp:
+        die(ExitCode.USER_ERROR, "Specify --to-event <id> or --to-timestamp <ts>", getattr(args, "json", False))
+
+    actor = {"actor_id": getattr(args, "actor", "cli_user")}
+
+    try:
+        hm = store.rewind(
+            actor=actor,
+            reason=reason,
+            to_event_id=to_event_id,
+            to_timestamp=to_timestamp,
+        )
+        if getattr(args, "json", False):
+            print(json.dumps(hm, indent=2))
+        else:
+            target = to_event_id or to_timestamp
+            print(f"{Theme.ICON_SUCCESS} HEAD rewound to {target}")
+            print(f"   HeadMove ID: {hm.get('head_move_id')}")
+            print(f"   Reason: {reason}")
+            print("\n   History is preserved. Use 'rekall resume' to view computed state.")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, str(e), getattr(args, "json", False))
+
+
+def cmd_resume(args):
+    """Resume from computed state at current HEAD."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
+    store = StateStore(store_dir)
+
+    try:
+        state = store.compute_state()
+        from rekall.core.brief import generate_brief_model
+        brief = generate_brief_model(store)
+
+        if getattr(args, "json", False):
+            print(json.dumps({
+                "head_event_id": state.head_event_id,
+                "head_timestamp": state.head_timestamp,
+                "work_items": len(state.work_items),
+                "open_decisions": len(state.open_decisions),
+                "failed_attempts": len(state.failed_attempts),
+                "last_checkpoint": state.last_checkpoint,
+                "brief": brief,
+            }, indent=2, default=str))
+        else:
+            print(f"\n{Theme.ICON_TARGET} Rekall Resume — Computed State at HEAD")
+            print(f"   HEAD: {state.head_event_id or '(latest)'}")
+            print(f"   Timestamp: {state.head_timestamp or '(empty)'}")
+            print(f"   Work Items: {len(state.work_items)}")
+            if state.last_checkpoint:
+                print(f"   Last Checkpoint: {state.last_checkpoint.get('summary', 'N/A')}")
+            if state.open_decisions:
+                print(f"   Pending Decisions: {len(state.open_decisions)}")
+            if state.failed_attempts:
+                print(f"   Failed Attempts (DO NOT RETRY): {len(state.failed_attempts)}")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, str(e), getattr(args, "json", False))
+
+
+def cmd_checkpoint_snapshot(args):
+    """Save a global snapshot of the computed state."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
+    store = StateStore(store_dir)
+
+    try:
+        snap = store.save_snapshot()
+        if getattr(args, "json", False):
+            print(json.dumps({"status": "ok", "snapshot_hash": snap["snapshot_hash"]}))
+        else:
+            print(f"{Theme.ICON_SUCCESS} Snapshot saved")
+            print(f"   HEAD: {snap.get('head_event_id', 'N/A')}")
+            print(f"   Hash: {snap['snapshot_hash'][:16]}...")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, str(e), getattr(args, "json", False))
 
 
 def cmd_features(args):
@@ -1896,7 +1982,15 @@ def cmd_agents_md(args):
         out_path = Path(getattr(args, "out", None) or "AGENTS.md")
 
         if out_path.exists() and not getattr(args, "force", False):
-            die(ExitCode.CONFLICT, f"{out_path} already exists. Use --force to overwrite.", args.json)
+            # If not force, we silently skip or overwrite if it's the default path
+            # We treat "AGENTS.md" in the current directory as the default path
+            is_default_path = (out_path.name == "AGENTS.md" and len(out_path.parts) == 1)
+
+            if not is_default_path and getattr(args, "out", None):
+                die(ExitCode.CONFLICT, f"{out_path} already exists. Use --force to overwrite.", args.json)
+            else:
+                # Default path AGENTS.md or called from internal automation: allow refresh
+                pass
 
         out_path.write_text(content, encoding="utf-8")
 
@@ -1951,7 +2045,10 @@ def _build_agents_md(proj: dict, mode: str) -> str:
     lines.append("rekall brief --json    # One call: focus, blockers, failed paths, pending decisions, next actions")
     lines.append("```")
     lines.append("")
-    lines.append("Or via MCP: call `project.bootstrap` which returns the same context.")
+    lines.append("Or via MCP: call `session.brief` (or `project.bootstrap` which includes the brief).")
+    lines.append("")
+    lines.append("> [!IMPORTANT]")
+    lines.append("> **COMPULSORY FIRST STEP**: Before starting any work, you MUST run `rekall brief --json` or call the `session.brief` MCP tool. This is the only way to avoid repeating failed paths and to understand the current live context.")
     lines.append("")
     lines.append("This tells you:")
     lines.append("- What's currently in progress")
@@ -1998,6 +2095,9 @@ def _build_agents_md(proj: dict, mode: str) -> str:
     else:
         lines.append("Standard multi-session tracking. Log decisions and failed attempts.")
         lines.append("Checkpoint after each meaningful unit of work.")
+    lines.append("")
+    lines.append("> [!TIP]")
+    lines.append("> **YOLO vs. Protocol**: If the workspace uses \"YOLO\" or \"Fast Execution\" rules, these apply to *how* you write and run code. They do NOT exempt you from the Rekall session protocol. `rekall brief` must still be your first action.")
     lines.append("")
 
     # Goal context
@@ -2214,15 +2314,28 @@ def cmd_init(args):
         )
 
         if out_path.exists() and not getattr(args, "force", False):
-            die(
-                ExitCode.CONFLICT,
-                f"File {out_path} already exists. Use --force to overwrite.",
-                getattr(args, "json", False),
-            )
+            # For the cheatsheet, we just overwrite it to ensure it's fresh
+            pass
 
         out_path.write_text(content, encoding="utf-8")
 
-        # 4. Success output
+        # 4. Automatic Adoption Layer: Generate AGENTS.md and IDE rules
+        if not getattr(args, "json", False):
+            print("\n\U0001f680 Automating Rekall adoption...")
+            import argparse
+            agents_args = argparse.Namespace(
+                store_dir=args.store_dir,
+                out=None, # Allow cmd_agents_md to handle idempotency for default path
+                force=getattr(args, "force", False),
+                ide=True,
+                json=getattr(args, "json", False)
+            )
+            try:
+                cmd_agents_md(agents_args)
+            except Exception as e:
+                print(f"{Theme.ICON_WARNING} Warning: could not automate agent adoption: {e}")
+
+        # 5. Success output
         if getattr(args, "print", False):
             print("\n--- INITIALIZATION CHEAT SHEET ---")
             print(content)
@@ -2375,12 +2488,13 @@ def _generate_ide_instruction_files(force=False):
     from pathlib import Path
 
     instruction = (
-        "You are operating in a Rekall-managed workspace. "
-        "Start every session by calling `session.brief` (MCP) or `rekall brief` (CLI) "
-        "to get current focus, blockers, failed attempts, and next actions. "
+        "COMPULSORY FIRST STEP: Before doing any work, get your bearings: "
+        "call `session.brief` (MCP) or `rekall brief` (CLI). "
+        "This returns current focus, blockers, failed attempts, and next actions. "
         "Log decisions with `decision.propose` and attempts with `attempt.append`. "
         "Checkpoint completed work with `rekall_checkpoint --commit auto`. "
-        "End sessions with `rekall session end --summary '...'`."
+        "End sessions with `rekall session end --summary '...'`. "
+        "YOLO mode applies to execution speed, NOT the Rekall protocol."
     )
 
     # Copilot
@@ -2404,6 +2518,14 @@ def _generate_ide_instruction_files(force=False):
     if not windsurf_file.exists() or force:
         windsurf_file.write_text(instruction + "\n", encoding="utf-8")
         print("\u2705 Created .windsurfrules")
+
+    # Claude.md
+    claude_md = Path("CLAUDE.md")
+    if not claude_md.exists() or force:
+        # If it exists, we might want to prepend or append, but for v0.2 init we'll just write it if missing
+        claude_content = f"# CLAUDE.md\n\n{instruction}\n"
+        claude_md.write_text(claude_content, encoding="utf-8")
+        print("\u2705 Created CLAUDE.md")
 
     # Claude
     claude_dir = Path(".claude")
@@ -2657,12 +2779,12 @@ Type 'rekall <command> --help' for details on any command.
     parser_blockers.set_defaults(func=cmd_alias_blockers)
 
     parser_resume = subparsers.add_parser(
-        "resume", help=argparse.SUPPRESS, parents=[shared_flags]  # Use 'brief' instead
+        "resume", help=argparse.SUPPRESS, parents=[shared_flags]
     )
     parser_resume.add_argument(
         "--store-dir", default=".", help="Directory of the current StateStore"
     )
-    parser_resume.set_defaults(func=cmd_alias_resume)
+    parser_resume.set_defaults(func=cmd_resume)
 
     # Checkout
     parser_checkout = subparsers.add_parser(
@@ -2790,6 +2912,19 @@ Type 'rekall <command> --help' for details on any command.
         "--store-dir", default=".", help="Directory of the StateStore"
     )
     parser_verify.set_defaults(func=cmd_verify)
+
+    # Rewind (hidden/advanced)
+    parser_rewind = subparsers.add_parser(
+        "rewind",
+        help=argparse.SUPPRESS,
+        parents=[shared_flags],
+    )
+    parser_rewind.add_argument("--to-event", default=None, help="Target event ID")
+    parser_rewind.add_argument("--to-timestamp", default=None, help="Target ISO timestamp")
+    parser_rewind.add_argument("--reason", default="Manual rewind", help="Reason for rewind")
+    parser_rewind.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_rewind.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_rewind.set_defaults(func=cmd_rewind)
 
     # Bundle
     parser_bundle = subparsers.add_parser(
@@ -3107,6 +3242,42 @@ Type 'rekall <command> --help' for details on any command.
     args = parser.parse_args()
 
     setup_logging(args.json, getattr(args, "quiet", False))
+
+    # --- Session gate: nudge CLI agents that skip 'rekall brief' ---
+    _SESSION_GATE_EXEMPT = {"brief", "init", "session", "demo", "features",
+                            "agents", "assistants", "serve", "doctor", "hooks",
+                            "mode", "validate", "verify", "rewind", "resume",
+                            "snapshot"}
+    if args.command not in _SESSION_GATE_EXEMPT:
+        try:
+            vault = resolve_vault_dir()
+            if (vault / "manifest.json").exists():
+                store = StateStore(vault)
+                from rekall.core.brief import generate_brief_model
+                brief_model = generate_brief_model(store)
+                # Check if there's meaningful context to surface
+                has_warnings = bool(brief_model.get("warnings"))
+                has_blockers = bool(brief_model.get("blockers"))
+                has_decisions = bool(brief_model.get("open_decisions"))
+                summary = brief_model.get("summary", {})
+                next_action = summary.get("next_action", "")
+                if has_warnings or has_blockers or has_decisions or next_action:
+                    nudge_parts = ["\n--- REKALL SESSION CONTEXT (auto-injected) ---"]
+                    if next_action:
+                        nudge_parts.append(f"  Focus: {next_action}")
+                    if has_blockers:
+                        nudge_parts.append(f"  Blockers: {len(brief_model['blockers'])}")
+                    if has_warnings:
+                        for w in brief_model["warnings"][:3]:
+                            title = w.get("title", w.get("message", ""))
+                            nudge_parts.append(f"  DO NOT RETRY: {title}")
+                    if has_decisions:
+                        for d in brief_model["open_decisions"][:3]:
+                            nudge_parts.append(f"  Pending decision: {d.get('title', '')}")
+                    nudge_parts.append("--- END SESSION CONTEXT ---\n")
+                    print("\n".join(nudge_parts), file=sys.stderr)
+        except Exception:
+            pass  # Never break the actual command
 
     try:
         args.func(args)

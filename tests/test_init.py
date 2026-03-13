@@ -64,7 +64,7 @@ def test_init_existing_repo(temp_repo, capfd):
 
 
 def test_init_force_overwrite(temp_repo):
-    # --force overwrites existing file.
+    # Init is idempotent: re-running without --force refreshes the cheat sheet.
     store_dir = temp_repo / "project-state"
     store_dir.mkdir()
     (store_dir / "schema-version.txt").write_text("0.1")
@@ -75,7 +75,7 @@ def test_init_force_overwrite(temp_repo):
     cheat_sheet = artifacts_dir / "init_cheatsheet.md"
     cheat_sheet.write_text("old content")
 
-    # Without force should fail
+    # Without force should still succeed (idempotent refresh)
     args = Namespace(
         store_dir=str(store_dir),
         state_dir=None,
@@ -86,11 +86,12 @@ def test_init_force_overwrite(temp_repo):
         force=False,
         debug=False,
     )
-    with pytest.raises(SystemExit) as excinfo:
-        cmd_init(args)
-    assert excinfo.value.code == ExitCode.CONFLICT.value
+    cmd_init(args)
+    assert "old content" not in cheat_sheet.read_text()
+    assert "# Initialization Cheat Sheet" in cheat_sheet.read_text()
 
-    # With force should succeed
+    # With force should also succeed
+    cheat_sheet.write_text("old content again")
     args.force = True
     cmd_init(args)
     assert "old content" not in cheat_sheet.read_text()

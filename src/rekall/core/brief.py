@@ -46,11 +46,84 @@ class BriefModel(TypedDict, total=False):
 def generate_brief_model(store: StateStore) -> BriefModel:
     """
     Synthesize the project ledger into a unified BriefModel.
+
+    Uses the deterministic reducer to compute state when available,
+    falling back to direct stream reads for backward compatibility.
     """
     proj = store.project_config or {}
     project_id = proj.get("project_id", Path(store.base_dir).name if store.base_dir else "unknown")
 
-    # 1. Last Checkpoint
+    # Use the deterministic reducer to compute state
+    try:
+        computed = store.compute_state()
+        return _brief_from_computed_state(computed, proj, project_id)
+    except Exception:
+        pass
+
+    # Fallback: direct stream reads (backward compat)
+    return _brief_from_streams(store, proj, project_id)
+
+
+def _brief_from_computed_state(computed, proj: dict, project_id: str) -> BriefModel:
+    """Build a BriefModel from a ComputedState (deterministic path)."""
+    last_cp: Optional[CheckpointModel] = None
+    if computed.last_checkpoint:
+        last_cp = {
+            "summary": computed.last_checkpoint.get("summary", "No summary"),
+            "timestamp": computed.last_checkpoint.get("timestamp", ""),
+            "git_sha": computed.last_checkpoint.get("git_sha"),
+        }
+
+    blockers: List[BlockerModel] = []
+    for w in computed.work_items.values():
+        if w.get("status") == "blocked":
+            blockers.append({
+                "title": w.get("title", "Untitled Work Item"),
+                "severity": w.get("priority", "medium"),
+            })
+
+    open_decisions: List[DecisionModel] = []
+    for d in computed.open_decisions[:5]:
+        open_decisions.append({
+            "decision_id": d.get("decision_id", ""),
+            "title": d.get("title", ""),
+            "status": d.get("status", ""),
+        })
+
+    warnings: List[WarningModel] = []
+    for a in computed.failed_attempts[:3]:
+        warnings.append({
+            "type": "repeat_risk",
+            "message": f"Failed: {a.get('title') or 'Unknown attempt'}",
+            "source_attempt_id": a.get("attempt_id"),
+        })
+
+    constraints = proj.get("constraints", [])
+    if isinstance(constraints, str):
+        constraints = [constraints]
+
+    next_action = "Start working and run 'rekall checkpoint' to record progress."
+    if open_decisions:
+        next_action = f"Resolve pending decision: {open_decisions[0]['title']}"
+    elif blockers:
+        next_action = f"Unblock: {blockers[0]['title']}"
+    elif last_cp:
+        next_action = f"Continue after '{last_cp['summary']}'"
+
+    return {
+        "project": project_id,
+        "generated_at": datetime.now().isoformat(),
+        "summary": {"next_action": next_action, "last_checkpoint": last_cp},
+        "warnings": warnings,
+        "blockers": blockers,
+        "open_decisions": open_decisions,
+        "constraints": constraints,
+        "recommended_actions": _compute_generic_recommendations(blockers, open_decisions, last_cp),
+    }
+
+
+def _brief_from_streams(store: StateStore, proj: dict, project_id: str) -> BriefModel:
+    """Build a BriefModel from direct stream reads (legacy fallback)."""
     all_events = store._load_stream("timeline", hot_only=True)
     checkpoints = [e for e in all_events if e.get("type") == "milestone" or e.get("event") == "checkpoint"]
     last_cp: Optional[CheckpointModel] = None
@@ -62,15 +135,13 @@ def generate_brief_model(store: StateStore) -> BriefModel:
             "git_sha": cp.get("git_sha"),
         }
 
-
-    # 2. Blockers & Decisions
     work_items = list(store.work_items.values())
     blockers: List[BlockerModel] = []
     for w in work_items:
         if w.get("status") == "blocked":
             blockers.append({
                 "title": w.get("title", "Untitled Work Item"),
-                "severity": w.get("priority", "medium")
+                "severity": w.get("priority", "medium"),
             })
 
     all_decisions = store._load_stream("decisions", hot_only=True)
@@ -80,12 +151,11 @@ def generate_brief_model(store: StateStore) -> BriefModel:
             open_decisions.append({
                 "decision_id": d.get("decision_id", ""),
                 "title": d.get("title", ""),
-                "status": d.get("status", "")
+                "status": d.get("status", ""),
             })
             if len(open_decisions) >= 5:
                 break
 
-    # 3. Warnings / Do Not Repeat
     all_attempts = store._load_stream("attempts", hot_only=True)
     warnings: List[WarningModel] = []
     failed_attempts = [a for a in all_attempts if str(a.get("outcome", "")).lower() == "failed"]
@@ -93,17 +163,15 @@ def generate_brief_model(store: StateStore) -> BriefModel:
         warnings.append({
             "type": "repeat_risk",
             "message": f"Failed: {a.get('title') or a.get('hypothesis') or 'Unknown attempt'}",
-            "source_attempt_id": a.get("attempt_id")
+            "source_attempt_id": a.get("attempt_id"),
         })
         if len(warnings) >= 3:
             break
 
-    # 4. Constraints
     constraints = proj.get("constraints", [])
     if isinstance(constraints, str):
         constraints = [constraints]
 
-    # 5. Next Action Logic
     next_action = "Start working and run 'rekall checkpoint' to record progress."
     if open_decisions:
         next_action = f"Resolve pending decision: {open_decisions[0]['title']}"
@@ -112,21 +180,16 @@ def generate_brief_model(store: StateStore) -> BriefModel:
     elif last_cp:
         next_action = f"Continue after '{last_cp['summary']}'"
 
-    model: BriefModel = {
+    return {
         "project": project_id,
         "generated_at": datetime.now().isoformat(),
-        "summary": {
-            "next_action": next_action,
-            "last_checkpoint": last_cp
-        },
+        "summary": {"next_action": next_action, "last_checkpoint": last_cp},
         "warnings": warnings,
         "blockers": blockers,
         "open_decisions": open_decisions,
         "constraints": constraints,
-        "recommended_actions": _compute_generic_recommendations(blockers, open_decisions, last_cp)
+        "recommended_actions": _compute_generic_recommendations(blockers, open_decisions, last_cp),
     }
-
-    return model
 
 
 def _compute_generic_recommendations(blockers, decisions, last_cp) -> List[str]:

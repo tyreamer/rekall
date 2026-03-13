@@ -1462,8 +1462,7 @@ class StateStore:
         reason: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Appends a StateRevert event to the reverts stream."""
-        import datetime
+        """Appends a StateRevert event to the reverts stream (legacy)."""
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         revert_id = f"rev-{uuid.uuid4().hex[:8]}"
@@ -1481,9 +1480,350 @@ class StateStore:
         record = self.append_jsonl_idempotent("reverts.jsonl", revert, "revert_id")
         return record
 
-    def check_policy(self, action_type: str, params: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Stubbed policy check."""
-        return {"effect": "allow", "rule_id": None, "reason": "Policy engine removed in v0.2"}
+    # ── HEAD semantics & Computed State ──
+
+    def append_head_move(
+        self,
+        actor: Dict[str, Any],
+        reason: str,
+        to_event_id: Optional[str] = None,
+        to_timestamp: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Append a HeadMove event. Moves HEAD without deleting history."""
+        if not to_event_id and not to_timestamp:
+            raise ValueError("HeadMove requires to_event_id or to_timestamp")
+
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        hm = {
+            "head_move_id": f"hm-{uuid.uuid4().hex[:8]}",
+            "type": "HeadMove",
+            "to_event_id": to_event_id,
+            "to_timestamp": to_timestamp,
+            "reason": reason,
+            "created_by": actor,
+            "created_at": now,
+            "timestamp": now,
+        }
+        if idempotency_key:
+            hm["idempotency_key"] = idempotency_key
+
+        return self.append_jsonl_idempotent("head_moves", hm, "head_move_id")
+
+    def compute_state(self):
+        """Compute the deterministic state using the reducer."""
+        from rekall.core.reducer import reduce as reduce_state
+
+        raw_streams = {}
+        for stream_name in ["work_items", "timeline", "decisions", "attempts", "activity"]:
+            raw_streams[stream_name] = self._load_stream_raw(stream_name, hot_only=False)
+
+        head_moves = self._load_stream_raw("head_moves", hot_only=False)
+        legacy_reverts = self._load_stream_raw("reverts", hot_only=False)
+        snapshot = self._load_global_snapshot()
+
+        return reduce_state(snapshot, raw_streams, head_moves, legacy_reverts)
+
+    def _load_global_snapshot(self) -> Optional[Dict[str, Any]]:
+        snapshot_path = self.base_dir / "snapshot.json"
+        if not snapshot_path.exists():
+            return None
+        try:
+            with open(snapshot_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Failed to load snapshot.json, ignoring")
+            return None
+
+    def save_snapshot(self, state=None):
+        """Save a global snapshot of the computed state."""
+        from rekall.core.reducer import state_to_snapshot
+
+        if state is None:
+            state = self.compute_state()
+
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        snap = state_to_snapshot(state, now)
+
+        path = self.base_dir / "snapshot.json"
+        tmp = path.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(snap, f, indent=2)
+        shutil.move(str(tmp), str(path))
+        return snap
+
+    def rewind(
+        self,
+        actor: Dict[str, Any],
+        reason: str,
+        to_event_id: Optional[str] = None,
+        to_timestamp: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Rewind HEAD to a prior point. Append-only — never deletes history."""
+        hm = self.append_head_move(
+            actor=actor,
+            reason=reason,
+            to_event_id=to_event_id,
+            to_timestamp=to_timestamp,
+        )
+        # Invalidate snapshot if it's ahead of the new HEAD
+        snapshot_path = self.base_dir / "snapshot.json"
+        if snapshot_path.exists():
+            snapshot_path.unlink()
+        return hm
+
+    # ── Policy Engine ──
+
+    def _load_policy(self) -> Dict[str, Any]:
+        """Load policy.yaml, defaulting to Tier 0 (allow + log) if absent."""
+        policy_path = self.base_dir / "policy.yaml"
+        if not policy_path.exists():
+            # Check parent directory too
+            parent_policy = self.base_dir.parent / "policy.yaml"
+            if parent_policy.exists():
+                policy_path = parent_policy
+            else:
+                return {"version": "1.0", "rules": [], "default_effect": "allow"}
+        try:
+            with open(policy_path, "r", encoding="utf-8") as f:
+                policy = yaml.safe_load(f) or {}
+            return policy
+        except Exception:
+            return {"version": "1.0", "rules": [], "default_effect": "allow"}
+
+    def check_policy(
+        self,
+        action_type: str,
+        params: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Evaluate policy rules against an action.
+
+        Returns dict with:
+          effect: allow | warn | block | require_approval
+          rule_id: matched rule ID or None
+          reason: human-readable explanation
+          matched_rule: the full rule dict if matched
+        """
+        context = context or {}
+        policy = self._load_policy()
+        rules = policy.get("rules", [])
+        default_effect = policy.get("default_effect", "allow")
+
+        for rule in rules:
+            if self._rule_matches(rule, action_type, params, context):
+                effect = rule.get("effect", "warn")
+                return {
+                    "effect": effect,
+                    "rule_id": rule.get("id"),
+                    "reason": rule.get("description", "Policy rule matched"),
+                    "matched_rule": rule,
+                }
+
+        return {
+            "effect": default_effect,
+            "rule_id": None,
+            "reason": "No policy rule matched; default effect applied",
+            "matched_rule": None,
+        }
+
+    def _rule_matches(
+        self,
+        rule: Dict[str, Any],
+        action_type: str,
+        params: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> bool:
+        """Check if a policy rule matches the given action."""
+        match = rule.get("match", {})
+
+        # Action type match
+        rule_action = match.get("action_type")
+        if rule_action and not re.match(rule_action, action_type):
+            return False
+
+        # Scope matching (org, project, environment, agent)
+        scope = match.get("scope", {})
+        for scope_key in ("org", "project", "environment", "agent"):
+            scope_val = scope.get(scope_key)
+            if scope_val:
+                ctx_val = context.get(scope_key, "")
+                if scope_val != "*" and scope_val != ctx_val:
+                    return False
+
+        # Parameter pattern matching
+        rule_params = match.get("params", {})
+        for key, pattern in rule_params.items():
+            val = str(params.get(key, ""))
+            try:
+                if not re.search(pattern, val):
+                    return False
+            except re.error:
+                return False
+
+        return True
+
+    def evaluate_policy(
+        self,
+        action_type: str,
+        params: Dict[str, Any],
+        actor: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Evaluate policy and record the decision as an auditable event.
+
+        Returns the policy result with effect and audit event_id.
+        """
+        context = context or {}
+        result = self.check_policy(action_type, params, context)
+
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        eval_event = {
+            "eval_id": f"peval-{uuid.uuid4().hex[:8]}",
+            "type": "PolicyEvaluation",
+            "action_type": action_type,
+            "params_hash": hashlib.sha256(
+                json.dumps(params, sort_keys=True).encode("utf-8")
+            ).hexdigest(),
+            "effect": result["effect"],
+            "rule_id": result.get("rule_id"),
+            "reason": result.get("reason", ""),
+            "actor": actor,
+            "context_scope": {
+                k: context.get(k) for k in ("org", "project", "environment", "agent")
+                if context.get(k)
+            },
+            "timestamp": now,
+        }
+        self.append_jsonl_idempotent("activity", eval_event, "eval_id")
+
+        result["eval_id"] = eval_event["eval_id"]
+        return result
+
+    # ── Capability Controls ──
+
+    def _load_capabilities(self) -> Dict[str, List[str]]:
+        """Load capability definitions from access.yaml."""
+        access = self.access_config or {}
+        return access.get("capabilities", {})
+
+    def check_capability(
+        self,
+        actor_id: str,
+        capability: str,
+    ) -> bool:
+        """Check if an actor has a specific capability."""
+        caps = self._load_capabilities()
+        if not caps:
+            return True  # No capability config = all allowed (open by default)
+
+        actor_caps = caps.get(actor_id, [])
+        wildcard_caps = caps.get("*", [])
+        return capability in actor_caps or "*" in actor_caps or capability in wildcard_caps
+
+    def require_capability(
+        self,
+        actor: Dict[str, Any],
+        capability: str,
+        action_description: str,
+    ) -> Dict[str, Any]:
+        """
+        Gate an action on capability + policy. Returns result dict.
+
+        If capability is missing, records a CapabilityDenied event.
+        If policy requires approval, records an ApprovalRequired event.
+        """
+        actor_id = actor.get("actor_id", "unknown")
+        has_cap = self.check_capability(actor_id, capability)
+
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        if not has_cap:
+            denied_event = {
+                "event_id": f"cap-denied-{uuid.uuid4().hex[:8]}",
+                "type": "CapabilityDenied",
+                "actor": actor,
+                "capability": capability,
+                "action": action_description,
+                "timestamp": now,
+            }
+            self.append_jsonl_idempotent("activity", denied_event, "event_id")
+            return {
+                "allowed": False,
+                "reason": f"Actor '{actor_id}' lacks capability '{capability}'",
+                "event_id": denied_event["event_id"],
+            }
+
+        # Capability present — check policy
+        policy_result = self.evaluate_policy(
+            action_type=capability,
+            params={"action": action_description},
+            actor=actor,
+        )
+
+        if policy_result["effect"] == "block":
+            return {
+                "allowed": False,
+                "reason": policy_result.get("reason", "Blocked by policy"),
+                "event_id": policy_result.get("eval_id"),
+            }
+
+        if policy_result["effect"] == "require_approval":
+            approval_event = {
+                "event_id": f"approval-req-{uuid.uuid4().hex[:8]}",
+                "type": "ApprovalRequired",
+                "actor": actor,
+                "capability": capability,
+                "action": action_description,
+                "policy_eval_id": policy_result.get("eval_id"),
+                "status": "pending",
+                "timestamp": now,
+            }
+            self.append_jsonl_idempotent("activity", approval_event, "event_id")
+            return {
+                "allowed": False,
+                "requires_approval": True,
+                "approval_id": approval_event["event_id"],
+                "reason": policy_result.get("reason", "Requires approval"),
+            }
+
+        return {
+            "allowed": True,
+            "reason": policy_result.get("reason", "Allowed"),
+            "event_id": policy_result.get("eval_id"),
+        }
+
+    def grant_approval(
+        self,
+        approval_id: str,
+        approver: Dict[str, Any],
+        note: str = "",
+    ) -> Dict[str, Any]:
+        """Grant a pending approval. Records an auditable ApprovalGranted event."""
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        event = {
+            "event_id": f"approval-grant-{uuid.uuid4().hex[:8]}",
+            "type": "ApprovalGranted",
+            "approval_id": approval_id,
+            "approver": approver,
+            "note": note,
+            "timestamp": now,
+        }
+
+        # Sign the approval
+        sig_payload = json.dumps(
+            {"approval_id": approval_id, "approver": approver, "timestamp": now},
+            sort_keys=True,
+        )
+        event["signature"] = self._sign_event(
+            hashlib.sha256(sig_payload.encode("utf-8")).hexdigest()
+        )
+
+        record = self.append_jsonl_idempotent("activity", event, "event_id")
+        return record
 
     def propose_action(
         self,
