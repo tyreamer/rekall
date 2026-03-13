@@ -2779,12 +2779,12 @@ Type 'rekall <command> --help' for details on any command.
     parser_blockers.set_defaults(func=cmd_alias_blockers)
 
     parser_resume = subparsers.add_parser(
-        "resume", help=argparse.SUPPRESS, parents=[shared_flags]  # Use 'brief' instead
+        "resume", help=argparse.SUPPRESS, parents=[shared_flags]
     )
     parser_resume.add_argument(
         "--store-dir", default=".", help="Directory of the current StateStore"
     )
-    parser_resume.set_defaults(func=cmd_alias_resume)
+    parser_resume.set_defaults(func=cmd_resume)
 
     # Checkout
     parser_checkout = subparsers.add_parser(
@@ -2925,15 +2925,6 @@ Type 'rekall <command> --help' for details on any command.
     parser_rewind.add_argument("--actor", default="cli_user", help="Actor ID")
     parser_rewind.add_argument("--store-dir", default=".", help="Directory of the StateStore")
     parser_rewind.set_defaults(func=cmd_rewind)
-
-    # Resume (hidden/advanced)
-    parser_resume = subparsers.add_parser(
-        "resume",
-        help=argparse.SUPPRESS,
-        parents=[shared_flags],
-    )
-    parser_resume.add_argument("--store-dir", default=".", help="Directory of the StateStore")
-    parser_resume.set_defaults(func=cmd_resume)
 
     # Bundle
     parser_bundle = subparsers.add_parser(
