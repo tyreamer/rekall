@@ -4,20 +4,17 @@
     "work_items": {
       "active_file": "streams/work_items/active.jsonl",
       "segments": [],
-      "id_field": "event_id",
-      "latest_hash": "2648b9defca5ac9130bb5265f29ea48a520d189de0a1fdfcfa3c5130e20fddaf"
+      "id_field": "event_id"
     },
     "activity": {
       "active_file": "streams/activity/active.jsonl",
       "segments": [],
-      "id_field": "activity_id",
-      "latest_hash": "327bf12be01f229d076753bc33cfe99665904bf027530f9f47a3708eaf9d3072"
+      "id_field": "activity_id"
     },
     "attempts": {
       "active_file": "streams/attempts/active.jsonl",
       "segments": [],
-      "id_field": "attempt_id",
-      "latest_hash": "ddde29c81ba954393eed2395293d69f3d2c831de4c67cbc4388a6f1c0a33d6ae"
+      "id_field": "attempt_id"
     },
     "decisions": {
       "active_file": "streams/decisions/active.jsonl",
@@ -27,8 +24,7 @@
     "timeline": {
       "active_file": "streams/timeline/active.jsonl",
       "segments": [],
-      "id_field": "event_id",
-      "latest_hash": "ecd7212bce362dae33b694cd47fc9b40d81857a7bb19133102580c4b59b2a8a2"
+      "id_field": "event_id"
     }
   }
 }
