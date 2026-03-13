@@ -1,1 +1,0 @@
-{"action_id": "act-789", "created_by": {"actor_id": "test-agent"}, "decision_id": "dec-456", "event_hash": "e0cdf9849770951ec810b04c076eb01100c141b7bb4aea2129a3b4525d2399b4", "options": ["yes", "no"], "prev_hash": null, "prompt": "Please approve this", "reason": null, "timestamp": "2026-02-26T20:14:49.542800+00:00", "type": "WaitingOnHuman"}
