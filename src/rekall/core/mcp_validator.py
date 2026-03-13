@@ -15,45 +15,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Required tools per specs/05_mcp_tool_contract_v0.1.md \xa75
 REQUIRED_TOOLS = [
-    "project.list",
-    "project.get",
-    "work.list",
-    "work.get",
-    "attempt.list",
-    "decision.list",
-    "timeline.list",
-    "activity.list",
-    "env.list",
-    "access.list",
-    "work.create",
-    "work.update",
-    "work.claim",
-    "work.renew_claim",
-    "work.release_claim",
-    "attempt.append",
-    "decision.propose",
-    "decision.approve",
-    "timeline.append",
-    "exec.query",
-    "guard.query",
+    "rekall.init",
+    "rekall.brief",
+    "rekall.checkpoint",
+    "rekall.log",
+    "rekall.verify",
 ]
 
 # Safe read-only probe calls for end-to-end wiring tests
 PROBE_CALLS = [
     {
-        "name": "project.list",
+        "name": "rekall.brief",
         "arguments": {},
-        "description": "List projects (read-only)",
-    },
-    {
-        "name": "work.list",
-        "arguments": {"project_id": "__probe__"},
-        "description": "List work items (read-only)",
-    },
-    {
-        "name": "exec.query",
-        "arguments": {"project_id": "__probe__", "query_type": "ON_TRACK"},
-        "description": "Executive query ON_TRACK (read-only)",
+        "description": "Brief (read-only)",
     },
 ]
 
