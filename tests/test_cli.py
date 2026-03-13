@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from rekall.cli import ExitCode, cmd_export, cmd_handoff, cmd_import, cmd_validate
+from rekall.cli import ExitCode, cmd_export, cmd_import, cmd_validate
 
 
 @pytest.fixture
@@ -96,14 +96,7 @@ def test_cmd_import(temp_store):
         assert (imported_dir / "streams/work_items/active.jsonl").exists()
 
 
-@pytest.mark.skip(reason="handoff is deprecated in v0.2")
-def test_cmd_handoff(temp_store):
-    out_dir = temp_store / "handoff_out"
-    args = Namespace(
-        store_dir=str(temp_store), project_id="test_proj", out=str(out_dir)
-    )
 
-    cmd_handoff(args)
 
 
 def test_validate_regression_missing_files(temp_store, capfd):
@@ -215,10 +208,9 @@ def test_cmd_demo_os_output_windows(capfd, monkeypatch):
     cmd_demo(args)
     captured = capfd.readouterr()
 
-    assert "✅ DEMO COMPLETE — OPEN THIS NOW:" in captured.out
-    assert "notepad" in captured.out
-    assert "Get-Content" in captured.out
-    assert "rekall status" in captured.out
+    assert "DEMO COMPLETE — EXPLORE REKALL:" in captured.out
+    assert "rekall brief" in captured.out
+    assert "rekall log" in captured.out
 
 
 def test_cmd_demo_os_output_mac(capfd, monkeypatch):
@@ -232,9 +224,9 @@ def test_cmd_demo_os_output_mac(capfd, monkeypatch):
     cmd_demo(args)
     captured = capfd.readouterr()
 
-    assert "✅ DEMO COMPLETE — OPEN THIS NOW:" in captured.out
-    assert "open " in captured.out
-    assert "rekall status" in captured.out
+    assert "DEMO COMPLETE — EXPLORE REKALL:" in captured.out
+    assert "rekall brief" in captured.out
+    assert "rekall log" in captured.out
 
 
 def test_cmd_demo_os_output_linux(capfd, monkeypatch):
@@ -248,8 +240,9 @@ def test_cmd_demo_os_output_linux(capfd, monkeypatch):
     cmd_demo(args)
     captured = capfd.readouterr()
 
-    assert "✅ DEMO COMPLETE — OPEN THIS NOW:" in captured.out
-    assert "xdg-open" in captured.out
+    assert "DEMO COMPLETE — EXPLORE REKALL:" in captured.out
+    assert "rekall brief" in captured.out
+    assert "rekall log" in captured.out
 
 
 def test_cmd_attempts_add(temp_store):

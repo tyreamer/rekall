@@ -431,43 +431,20 @@ def cmd_demo(args):
         # Re-use validate
         args.strict = False
         cmd_validate(args)
-
         if not args.json:
-            logger.info("Validation passed. Running handoff...")
-
-        # Re-use handoff
-        out_dir = temp_path / "handoff"
-        args.out = str(out_dir)
-        args.project_id = store.project_config.get("project_id")
-        cmd_handoff(args)
+            logger.info("Validation passed. Your temporary vault is ready!")
 
         if args.json:
             print(json.dumps({"status": "success", "demo_dir": temp_dir}))
         else:
-            import platform
-
-            system = platform.system()
-            brief_file = (out_dir / "boot_brief.md").resolve()
-            state_dir = temp_path.resolve()
-
-            if system == "Windows":
-                view_cmd = f'notepad "{brief_file}"\n  (or) Get-Content "{brief_file}"'
-            elif system == "Darwin":
-                view_cmd = f'open "{brief_file}"'
-            else:
-                view_cmd = f'xdg-open "{brief_file}"'
-
             print("\n" + "=" * 50)
-            print(f"{Theme.ICON_SUCCESS} DEMO COMPLETE \u2014 OPEN THIS NOW:")
+            print(f"{Theme.ICON_SUCCESS} DEMO COMPLETE \u2014 EXPLORE REKALL:")
             print("=" * 50)
-            print(f"\nYour boot brief is ready: {brief_file}")
-            print(f"Your state artifact is dumped at: {state_dir}")
-            print("\nView it now:")
-            print(f"  {view_cmd}\n")
-            print("-" * 50)
-            print(f"{Theme.ICON_IDEA} Next Steps:")
-            print("  - run 'rekall status' to see project health")
-            print("  - run 'rekall guard' for preflight checks")
+            print(f"\nYour temporary vault is located at: {temp_path}")
+            print("\nTry out the v0.2 core habit loop:")
+            print(f"  cd {temp_dir}")
+            print("  rekall brief")
+            print("  rekall log")
             print("-" * 50 + "\n")
 
 
@@ -727,52 +704,58 @@ def cmd_import(args):
         die(ExitCode.INTERNAL_ERROR, f"Import failed: {friendly_error(e)}", args.json)
 
 
-def cmd_handoff(args):
-    """(Deprecated) Synthesizes project state to create boot_brief.md."""
-    if getattr(args, "json", False):
-        import json
-        print(json.dumps({"error": "Handoff is deprecated in v0.2. Use rekall brief."}))
-    else:
-        print("Handoff is deprecated in v0.2. Use `rekall brief` instead.")
-
 
 def cmd_verify(args):
-    """Executes local verification scripts (verify.ps1 on Windows, verify.sh on Unix)."""
-    import platform
-    import subprocess
-    system = platform.system()
-
-    if system == "Windows":
-        cmd = ["powershell", "-ExecutionPolicy", "Bypass", "-File", "scripts/verify.ps1"]
-    else:
-        cmd = ["bash", "scripts/verify.sh"]
-
-    if not args.json:
-        print(f"\n{Theme.ICON_SEARCH} Running verification: {' '.join(cmd)}")
-
+    """Verify ledger integrity and cryptographic hash chain (tamper evidence)."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode == 0:
-            if args.json:
-                print(json.dumps({"ok": True, "message": "Verification passed", "stdout": result.stdout}))
+        from rekall.core.state_store import StateStore
+        store = StateStore(store_dir)
+
+        if not getattr(args, "json", False):
+            print(f"\n{Theme.ICON_SEARCH} Verifying ledger cryptographic integrity...")
+
+        streams = ["timeline.jsonl", "actions.jsonl", "decisions.jsonl", "attempts.jsonl"]
+        all_ok = True
+        hash_results = {}
+
+        for stream in streams:
+            res = store.verify_stream_integrity(stream)
+            hash_results[stream] = res
+            if not res["valid"]:
+                all_ok = False
+                if not getattr(args, "json", False):
+                    print(f"{Theme.ICON_ERROR} {stream} hash chain broken!")
+                    for err in res["errors"]:
+                        print(f"  - {err}")
+            elif not getattr(args, "json", False):
+                print(f"{Theme.ICON_SUCCESS} {stream} verified ({res['events_checked']} events)")
+
+        if not getattr(args, "json", False):
+            print(f"\n{Theme.ICON_SEARCH} Validating schema and JSONL constraints...")
+
+        val_res = store.validate_all(strict=getattr(args, "strict", False))
+        if val_res["summary"]["status"] == "❌":
+            all_ok = False
+            if not getattr(args, "json", False):
+                print(f"{Theme.ICON_ERROR} Schema validation failed!")
+                for key, section in val_res.items():
+                    if isinstance(section, dict) and section.get("status") == "❌":
+                        print(f"  - {key}: {section.get('errors')}")
+
+        if all_ok:
+            if getattr(args, "json", False):
+                print(json.dumps({"ok": True, "message": "Ledger verified", "hash_results": hash_results, "schema": val_res}))
             else:
-                print(result.stdout)
-                print(f"\n{Theme.ICON_SUCCESS} Verification passed!")
+                print(f"\n{Theme.ICON_SUCCESS} Rekall vault is cryptographically sound and valid.")
         else:
-            if args.json:
-                print(json.dumps({
-                    "ok": False,
-                    "message": "Verification failed",
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "exit_code": result.returncode
-                }))
+            if getattr(args, "json", False):
+                print(json.dumps({"ok": False, "message": "Verification failed", "hash_results": hash_results, "schema": val_res}))
             else:
-                print(result.stdout)
-                print(result.stderr, file=sys.stderr)
-                die(ExitCode.VALIDATION_FAILED, "Verification failed", args.json)
+                die(ExitCode.VALIDATION_FAILED, "Vault verification failed.", False)
+
     except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, f"Failed to execute verification: {e}", args.json)
+        die(ExitCode.INTERNAL_ERROR, f"Failed to execute verification: {e}", getattr(args, "json", False))
 
 
 def cmd_features(args):
@@ -2000,7 +1983,7 @@ def _build_agents_md(proj: dict, mode: str) -> str:
     lines.append('rekall session end --summary "Where I stopped and what comes next"')
     lines.append("```")
     lines.append("")
-    lines.append("This records a handoff note and warns about any unrecorded work.")
+    lines.append("This records a session note and warns about any unrecorded work.")
     lines.append("")
 
     # Mode
@@ -2130,7 +2113,8 @@ def cmd_init(args):
 
         # 2. Build Markdown
         lines = []
-        lines.append(f"# Initialization Cheat Sheet: {repo_name}")
+        project_id = store.project_config.get("project_id", repo_name)
+        lines.append(f"# Initialization Cheat Sheet: {project_id}")
         lines.append(f"**Generated**: {timestamp}")
         lines.append(f"**execution ledger Last Updated**: {last_updated}")
         lines.append("")
@@ -2202,12 +2186,9 @@ def cmd_init(args):
 
         lines.append("## Next Recommended Commands")
         lines.append("```bash")
-        lines.append("rekall status")
-        lines.append("rekall guard")
-        lines.append("rekall blockers")
-        lines.append(
-            f"rekall handoff {store.project_config.get('project_id', repo_name)} -o ./handoff/"
-        )
+        lines.append("rekall brief")
+        lines.append("rekall log")
+        lines.append("rekall checkpoint")
         lines.append("```")
         lines.append("")
 
@@ -2252,7 +2233,7 @@ def cmd_init(args):
         else:
             print(f"Created: {out_path}")
             print(
-                f"Next: rekall status | rekall blockers | rekall handoff {store.project_config.get('project_id', repo_name)}"
+                "Next: rekall brief | rekall log | rekall checkpoint"
             )
 
     except Exception as e:
@@ -2475,14 +2456,12 @@ def main():
     desc = """Rekall: persistent execution memory for AI coding agents.
 
 START HERE:
-  rekall demo                              # See Rekall in action
   rekall init                              # Create a vault in your project
   rekall agents                            # Generate AGENTS.md operating contract
 
 SESSION WORKFLOW:
   rekall brief                             # What to work on, what to avoid
   rekall checkpoint --summary "..."        # Log a milestone
-  rekall session end --summary "..."       # Record handoff note
 
 Type 'rekall <command> --help' for details on any command.
 """
@@ -2666,19 +2645,6 @@ Type 'rekall <command> --help' for details on any command.
         "--store-dir", default=".", help="Target Directory of the StateStore"
     )
     parser_import.set_defaults(func=cmd_import)
-
-    # Handoff
-    parser_handoff = subparsers.add_parser(
-        "handoff",
-        help=argparse.SUPPRESS,  # Advanced: generate handoff pack
-        parents=[shared_flags],
-    )
-    parser_handoff.add_argument("project_id", help="The Project ID being handed off")
-    parser_handoff.add_argument(
-        "--store-dir", default=".", help="Directory of the current StateStore"
-    )
-    parser_handoff.add_argument("--out", "-o", required=True, help="Output directory")
-    parser_handoff.set_defaults(func=cmd_handoff)
 
     # Executive Query Aliases
 
@@ -2966,7 +2932,7 @@ Type 'rekall <command> --help' for details on any command.
     # Serve (MCP)
     parser_serve = subparsers.add_parser(
         "serve",
-        help="Launch MCP server (used by IDE configs, not manually).",
+        help=argparse.SUPPRESS,  # Used by IDE configs, not manually
         parents=[shared_flags],
     )
     parser_serve.add_argument(
@@ -3019,14 +2985,6 @@ Type 'rekall <command> --help' for details on any command.
     parser_onboard.add_argument("--store-dir", help="StateStore directory")
     parser_onboard.set_defaults(func=cmd_onboard)
 
-    # Verify
-    parser_verify = subparsers.add_parser(
-        "verify",
-        help="Run local verification scripts (CI pre-push checks).",
-        parents=[shared_flags],
-    )
-    parser_verify.add_argument("--store-dir", help="StateStore directory")
-    parser_verify.set_defaults(func=cmd_verify)
 
     # Hooks
     parser_hooks = subparsers.add_parser(

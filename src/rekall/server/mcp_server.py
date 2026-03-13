@@ -995,85 +995,40 @@ def actuate_file_write(args: dict) -> list:
     except Exception as e:
         return [{"error": {"code": "VALIDATION_ERROR", "message": f"Failed to record outcome: {e}", "outcome": outcome_metadata}}]
 
-def rekall_status_mcp(args: dict) -> list:
-    """Provides an executive summary of the current reality."""
-    project_id = args.get("project_id")
-    if not project_id:
-        raise ValueError("project_id is required")
-    store = get_store()
-    import dataclasses
 
-    from rekall.core.executive_queries import ExecutiveQueryType, query_executive_status
-    try:
-        resp = query_executive_status(store, ExecutiveQueryType.ON_TRACK)
-        return [{"executive_response": dataclasses.asdict(resp)}]
-    except Exception as e:
-        return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
-
-def rekall_record_mcp(args: dict) -> list:
-    """Unified entry point for recording work items, attempts, and decisions."""
-    project_id = args.get("project_id")
-    rtype = args.get("type", "timeline")
-    data = args.get("data", {})
-    actor = args.get("actor")
-    reason = args.get("reason")
-    idemp = args.get("idempotency_key")
-
-    if not project_id or not actor:
-        raise ValueError("project_id and actor are required")
-
-    store = get_store()
-    try:
-        if rtype == "work_item":
-            res = store.create_work_item(data, actor, reason=reason)
-            return [{"work_item": res}]
-        elif rtype == "attempt":
-            res = store.append_attempt(data, actor, reason=reason, idempotency_key=idemp)
-            return [{"attempt": res}]
-        elif rtype == "decision":
-            res = store.propose_decision(data, actor, reason=reason, idempotency_key=idemp)
-            return [{"decision": res}]
-        else:
-            res = store.append_timeline(data, actor, reason=reason, idempotency_key=idemp)
-            return [{"event": res}]
-    except Exception as e:
-        return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
 
 def rekall_verify_mcp(args: dict) -> list:
-    """Executes local verification scripts."""
-    import platform
-    import subprocess
-    system = platform.system()
-    if system == "Windows":
-        cmd = ["powershell", "-ExecutionPolicy", "Bypass", "-File", "scripts/verify.ps1"]
-    else:
-        cmd = ["bash", "scripts/verify.sh"]
-
+    """Verifies cryptographic integrity and schema of the Rekall ledger."""
+    store = get_store()
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        return [{
-            "ok": result.returncode == 0,
-            "message": "Verification passed" if result.returncode == 0 else "Verification failed",
-            "stdout": result.stdout,
-            "stderr": result.stderr
-        }]
-    except Exception as e:
-        return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
+        streams = ["timeline.jsonl", "actions.jsonl", "decisions.jsonl", "attempts.jsonl"]
+        hash_results = {}
+        for stream in streams:
+            res = store.verify_stream_integrity(stream)
+            hash_results[stream] = res
 
-def rekall_handoff_mcp(args: dict) -> list:
-    """Generates a boot brief and snapshot for session handoff."""
-    project_id = args.get("project_id")
-    out_dir = args.get("out_dir", "./handoff")
-    if not project_id:
-        raise ValueError("project_id is required")
+        val_res = store.validate_all(strict=True)
+        ok = val_res.get("summary", {}).get("status") != "❌"
+        for res in hash_results.values():
+            if not res["valid"]:
+                ok = False
 
-    import argparse
-
-    from rekall.cli import cmd_handoff
-    ns = argparse.Namespace(store_dir=None, out=out_dir, project_id=project_id, json=True)
-    try:
-        cmd_handoff(ns)
-        return [{"status": "success", "message": f"Handoff generated in {out_dir}"}]
+        if ok:
+            return [{
+                "ok": True,
+                "message": "Cryptographic integrity and schema verified",
+                "hash_chain": hash_results,
+                "schema_validation": val_res
+            }]
+        else:
+            return [{
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Ledger verification failed",
+                    "hash_chain": hash_results,
+                    "schema_validation": val_res
+                }
+            }]
     except Exception as e:
         return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
 
@@ -1293,31 +1248,7 @@ TOOLS_DEF = [
         "description": "One-call session brief. Returns focus, blockers, failed attempts (do not retry), and pending decisions. Call this at the start of every session.",
         "inputSchema": {"type": "object", "properties": {}}
     },
-    {
-        "name": "rekall.status",
-        "description": "Get an executive summary of the project reality, including high-priority work items and blockers.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {"project_id": {"type": "string"}}
-        }
-    },
-    {
-        "name": "rekall.record",
-        "description": "Record an event to the ledger. Use for work items, attempts, or decisions.",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id", "actor", "type", "data"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "actor": {"type": "object"},
-                "type": {"type": "string", "description": "work_item | attempt | decision | timeline"},
-                "data": {"type": "object", "description": "Payload for the record"},
-                "reason": {"type": "string", "description": "Human-readable justification"},
-                "idempotency_key": {"type": "string"}
-            }
-        }
-    },
+
     {
         "name": "rekall.checkpoint",
         "description": "Create a durable checkpoint of current progress. Optionally attaches a git commit.",
@@ -1346,32 +1277,17 @@ TOOLS_DEF = [
     },
     {
         "name": "rekall.verify",
-        "description": "Run local verification scripts (CI pre-push checks) to ensure code quality and zero regressions.",
+        "description": "Verify cryptographic integrity and hash chain (tamper evidence) of the project ledger.",
         "inputSchema": {"type": "object", "properties": {}}
     },
-    {
-        "name": "rekall.handoff",
-        "description": "Generate a session handoff package (boot brief + state snapshot).",
-        "inputSchema": {
-            "type": "object",
-            "required": ["project_id"],
-            "properties": {
-                "project_id": {"type": "string"},
-                "out_dir": {"type": "string", "default": "./handoff"}
-            }
-        }
-    }
 ]
 
 TOOL_REGISTRY = {
     "rekall.init": project_bootstrap,
     "rekall.brief": session_brief,
-    "rekall.status": rekall_status_mcp,
-    "rekall.record": rekall_record_mcp,
     "rekall.checkpoint": rekall_checkpoint,
     "rekall.log": rekall_log_mcp,
     "rekall.verify": rekall_verify_mcp,
-    "rekall.handoff": rekall_handoff_mcp,
 }
 
 
