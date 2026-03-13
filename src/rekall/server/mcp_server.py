@@ -1227,6 +1227,66 @@ def actuate_commit(args: dict) -> list:
         return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
 
 
+def rekall_attempt(args: dict) -> list:
+    """Record a failed or successful attempt."""
+    store = get_store()
+    try:
+        title = args.get("title")
+        outcome = args.get("outcome", "failed")
+        evidence = args.get("evidence", "")
+        work_item_id = args.get("work_item_id")
+
+        if not title:
+            raise ValueError("title is required")
+
+        attempt = {
+            "title": title,
+            "outcome": outcome,
+            "evidence": evidence,
+        }
+        if work_item_id:
+            attempt["work_item_id"] = work_item_id
+
+        actor = args.get("actor", {"actor_id": "mcp_agent"})
+        record = store.append_attempt(attempt, actor)
+        return [{"text": json.dumps({
+            "status": "recorded",
+            "attempt_id": record.get("attempt_id"),
+            "outcome": outcome,
+            "title": title,
+        }, indent=2)}]
+    except Exception as e:
+        return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
+
+
+def rekall_decision(args: dict) -> list:
+    """Propose a decision for the project."""
+    store = get_store()
+    try:
+        title = args.get("title")
+        rationale = args.get("rationale", "")
+        tradeoffs = args.get("tradeoffs", "")
+
+        if not title:
+            raise ValueError("title is required")
+
+        record = {
+            "title": title,
+            "rationale": rationale,
+            "tradeoffs": tradeoffs,
+            "status": "proposed",
+        }
+        actor = args.get("actor", {"actor_id": "mcp_agent"})
+        result = store.append_decision(record, actor)
+        return [{"text": json.dumps({
+            "status": "proposed",
+            "decision_id": result.get("decision_id"),
+            "title": title,
+        }, indent=2)}]
+    except Exception as e:
+        return [{"error": {"code": "VALIDATION_ERROR", "message": str(e)}}]
+
+
 # --- MCP JSON-RPC Server Core ---
 
 TOOLS_DEF = [
@@ -1281,6 +1341,33 @@ TOOLS_DEF = [
         "description": "Verify cryptographic integrity and hash chain (tamper evidence) of the project ledger.",
         "inputSchema": {"type": "object", "properties": {}}
     },
+    {
+        "name": "rekall.attempt",
+        "description": "Record a failed or successful attempt. Use this when something was tried and failed — future sessions will see 'DO NOT RETRY' warnings.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["title"],
+            "properties": {
+                "title": {"type": "string", "description": "What was attempted"},
+                "outcome": {"type": "string", "description": "failed | succeeded (default: failed)"},
+                "evidence": {"type": "string", "description": "Why it failed or evidence of the outcome"},
+                "work_item_id": {"type": "string", "description": "Optional associated work item ID"},
+            }
+        }
+    },
+    {
+        "name": "rekall.decision",
+        "description": "Propose a decision with rationale and tradeoffs. Records architectural choices for future reference.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["title"],
+            "properties": {
+                "title": {"type": "string", "description": "The decision being proposed"},
+                "rationale": {"type": "string", "description": "Why this decision is proposed"},
+                "tradeoffs": {"type": "string", "description": "Tradeoffs considered"},
+            }
+        }
+    },
 ]
 
 TOOL_REGISTRY = {
@@ -1289,6 +1376,8 @@ TOOL_REGISTRY = {
     "rekall.checkpoint": rekall_checkpoint,
     "rekall.log": rekall_log_mcp,
     "rekall.verify": rekall_verify_mcp,
+    "rekall.attempt": rekall_attempt,
+    "rekall.decision": rekall_decision,
 }
 
 

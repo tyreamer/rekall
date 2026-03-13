@@ -34,6 +34,7 @@ class WarningModel(TypedDict):
 
 class BriefModel(TypedDict, total=False):
     project: str
+    goal: Optional[str]
     generated_at: str
     summary: Dict[str, Any]
     warnings: List[WarningModel]
@@ -69,6 +70,7 @@ def generate_brief_model(store: StateStore) -> BriefModel:
 
 def _brief_from_computed_state(computed, proj: dict, project_id: str) -> BriefModel:
     """Build a BriefModel from a ComputedState (deterministic path)."""
+    goal = proj.get("goal") or proj.get("description")
     last_cp: Optional[CheckpointModel] = None
     if computed.last_checkpoint:
         last_cp = {
@@ -115,6 +117,7 @@ def _brief_from_computed_state(computed, proj: dict, project_id: str) -> BriefMo
 
     return {
         "project": project_id,
+        "goal": goal if goal and goal != "N/A" else None,
         "generated_at": datetime.now().isoformat(),
         "summary": {"next_action": next_action, "last_checkpoint": last_cp},
         "warnings": warnings,
@@ -183,8 +186,10 @@ def _brief_from_streams(store: StateStore, proj: dict, project_id: str) -> Brief
     elif last_cp:
         next_action = f"Continue after '{last_cp['summary']}'"
 
+    goal = proj.get("goal") or proj.get("description")
     return {
         "project": project_id,
+        "goal": goal if goal and goal != "N/A" else None,
         "generated_at": datetime.now().isoformat(),
         "summary": {"next_action": next_action, "last_checkpoint": last_cp},
         "warnings": warnings,
@@ -206,24 +211,30 @@ def _compute_generic_recommendations(blockers, decisions, last_cp) -> List[str]:
     return recs
 
 
-def render_brief_default(model: BriefModel) -> str:
-    """Concise 10-second scan for humans."""
+def render_brief_default(model: BriefModel, store=None) -> str:
+    """Concise 10-second scan for humans and agents."""
     lines = [f"\U0001F4CB REKALL SESSION BRIEF \u2014 {model['project']}"]
+
+    # Show project goal if set
+    goal = model.get("goal")
+    if goal:
+        lines.append(f"Goal: {goal}")
 
     # Clean Slate Check
     if not any([model["summary"]["last_checkpoint"], model["warnings"], model["blockers"], model["open_decisions"]]):
-        lines.append("\nThis project has a clean slate.")
-        lines.append("No checkpoints, failed attempts, blockers, or decisions yet.")
-        lines.append("\nNext:")
-        lines.append(f"  {model['summary']['next_action']}")
-        lines.append("  rekall checkpoint --summary \"what you did\"")
+        lines.append("\nFresh project. No history yet.")
+        lines.append("\nQuick start:")
+        lines.append("  1. Do your work normally")
+        lines.append("  2. rekall checkpoint --summary \"what you did\"")
+        lines.append("  3. If something fails: rekall attempts add <id> --title \"...\" --evidence \"...\"")
+        lines.append("\nRekall will track your progress and warn future sessions about failed paths.")
         return "\n".join(lines)
 
     # Sections
     sections = [
         ("Current Focus", [model["summary"]["next_action"]]),
         ("Last checkpoint", [model["summary"]["last_checkpoint"]["summary"]] if model["summary"]["last_checkpoint"] else []),
-        ("Do not repeat", [w["message"] for w in model["warnings"]]),
+        ("DO NOT RETRY", [w["message"] for w in model["warnings"]]),
         ("Needs decision", [d["title"] for d in model["open_decisions"]]),
         ("Blocked by", [b["title"] for b in model["blockers"]]),
         ("Constraints", model["constraints"])
@@ -233,8 +244,19 @@ def render_brief_default(model: BriefModel) -> str:
         if not items:
             continue
         lines.append(f"\n{title}:")
-        for item in items[:2]: # Strict default limit
+        for item in items[:3]:
             lines.append(f"  {item}")
+
+    # Stats line if store available
+    if store:
+        try:
+            from rekall.core.stats import compute_stats, format_stats_line
+            stats = compute_stats(store)
+            stats_line = format_stats_line(stats)
+            if stats_line:
+                lines.append(f"\nValue: {stats_line}")
+        except Exception:
+            pass
 
     return "\n".join(lines)
 

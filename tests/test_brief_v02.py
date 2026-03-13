@@ -70,9 +70,9 @@ def test_brief_empty_state(empty_store):
     model = generate_brief_model(empty_store)
     output = render_brief_default(model)
 
-    assert "clean slate" in output
-    assert "No checkpoints" in output
-    assert "Start working" in output
+    assert "Fresh project" in output
+    assert "Quick start" in output
+    assert "checkpoint" in output
 
 def test_brief_active_state_default(active_store):
     model = generate_brief_model(active_store)
@@ -82,7 +82,7 @@ def test_brief_active_state_default(active_store):
     assert "Resolve pending decision: Postgres vs MySQL" in output
     assert "Last checkpoint:" in output
     assert "Set up database schema" in output
-    assert "Do not repeat:" in output
+    assert "DO NOT RETRY:" in output
     assert "Failed: Use SQLite" in output
     assert "Blocked by:" in output
     assert "API Integration" in output
