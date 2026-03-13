@@ -28,6 +28,12 @@
       "segments": [],
       "id_field": "event_id",
       "latest_hash": "8c198688ad35af52bc8d9c33e3cefe1bd417cc3b8da69b763521a220c61e0f79"
+    },
+    "head_moves": {
+      "active_file": "streams/head_moves/active.jsonl",
+      "segments": [],
+      "id_field": "head_move_id",
+      "latest_hash": "cc30fb68b617f158bcfb40ce2936aa3d33e763895b99e8f210f39b338025590d"
     }
   }
 }

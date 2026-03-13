@@ -715,7 +715,8 @@ def cmd_verify(args):
         if not getattr(args, "json", False):
             print(f"\n{Theme.ICON_SEARCH} Verifying ledger cryptographic integrity...")
 
-        streams = ["timeline.jsonl", "actions.jsonl", "decisions.jsonl", "attempts.jsonl"]
+        streams = ["timeline.jsonl", "actions.jsonl", "decisions.jsonl",
+                   "attempts.jsonl", "head_moves", "activity"]
         all_ok = True
         hash_results = {}
 
@@ -756,6 +757,91 @@ def cmd_verify(args):
 
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Failed to execute verification: {e}", getattr(args, "json", False))
+
+
+def cmd_rewind(args):
+    """Rewind HEAD to a prior point. Append-only — never deletes history."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
+    store = StateStore(store_dir)
+
+    to_event_id = getattr(args, "to_event", None)
+    to_timestamp = getattr(args, "to_timestamp", None)
+    reason = getattr(args, "reason", "Manual rewind")
+
+    if not to_event_id and not to_timestamp:
+        die(ExitCode.USER_ERROR, "Specify --to-event <id> or --to-timestamp <ts>", getattr(args, "json", False))
+
+    actor = {"actor_id": getattr(args, "actor", "cli_user")}
+
+    try:
+        hm = store.rewind(
+            actor=actor,
+            reason=reason,
+            to_event_id=to_event_id,
+            to_timestamp=to_timestamp,
+        )
+        if getattr(args, "json", False):
+            print(json.dumps(hm, indent=2))
+        else:
+            target = to_event_id or to_timestamp
+            print(f"{Theme.ICON_SUCCESS} HEAD rewound to {target}")
+            print(f"   HeadMove ID: {hm.get('head_move_id')}")
+            print(f"   Reason: {reason}")
+            print("\n   History is preserved. Use 'rekall resume' to view computed state.")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, str(e), getattr(args, "json", False))
+
+
+def cmd_resume(args):
+    """Resume from computed state at current HEAD."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
+    store = StateStore(store_dir)
+
+    try:
+        state = store.compute_state()
+        from rekall.core.brief import generate_brief_model
+        brief = generate_brief_model(store)
+
+        if getattr(args, "json", False):
+            print(json.dumps({
+                "head_event_id": state.head_event_id,
+                "head_timestamp": state.head_timestamp,
+                "work_items": len(state.work_items),
+                "open_decisions": len(state.open_decisions),
+                "failed_attempts": len(state.failed_attempts),
+                "last_checkpoint": state.last_checkpoint,
+                "brief": brief,
+            }, indent=2, default=str))
+        else:
+            print(f"\n{Theme.ICON_TARGET} Rekall Resume — Computed State at HEAD")
+            print(f"   HEAD: {state.head_event_id or '(latest)'}")
+            print(f"   Timestamp: {state.head_timestamp or '(empty)'}")
+            print(f"   Work Items: {len(state.work_items)}")
+            if state.last_checkpoint:
+                print(f"   Last Checkpoint: {state.last_checkpoint.get('summary', 'N/A')}")
+            if state.open_decisions:
+                print(f"   Pending Decisions: {len(state.open_decisions)}")
+            if state.failed_attempts:
+                print(f"   Failed Attempts (DO NOT RETRY): {len(state.failed_attempts)}")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, str(e), getattr(args, "json", False))
+
+
+def cmd_checkpoint_snapshot(args):
+    """Save a global snapshot of the computed state."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
+    store = StateStore(store_dir)
+
+    try:
+        snap = store.save_snapshot()
+        if getattr(args, "json", False):
+            print(json.dumps({"status": "ok", "snapshot_hash": snap["snapshot_hash"]}))
+        else:
+            print(f"{Theme.ICON_SUCCESS} Snapshot saved")
+            print(f"   HEAD: {snap.get('head_event_id', 'N/A')}")
+            print(f"   Hash: {snap['snapshot_hash'][:16]}...")
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, str(e), getattr(args, "json", False))
 
 
 def cmd_features(args):
@@ -2827,6 +2913,28 @@ Type 'rekall <command> --help' for details on any command.
     )
     parser_verify.set_defaults(func=cmd_verify)
 
+    # Rewind (hidden/advanced)
+    parser_rewind = subparsers.add_parser(
+        "rewind",
+        help=argparse.SUPPRESS,
+        parents=[shared_flags],
+    )
+    parser_rewind.add_argument("--to-event", default=None, help="Target event ID")
+    parser_rewind.add_argument("--to-timestamp", default=None, help="Target ISO timestamp")
+    parser_rewind.add_argument("--reason", default="Manual rewind", help="Reason for rewind")
+    parser_rewind.add_argument("--actor", default="cli_user", help="Actor ID")
+    parser_rewind.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_rewind.set_defaults(func=cmd_rewind)
+
+    # Resume (hidden/advanced)
+    parser_resume = subparsers.add_parser(
+        "resume",
+        help=argparse.SUPPRESS,
+        parents=[shared_flags],
+    )
+    parser_resume.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_resume.set_defaults(func=cmd_resume)
+
     # Bundle
     parser_bundle = subparsers.add_parser(
         "bundle",
@@ -3147,7 +3255,8 @@ Type 'rekall <command> --help' for details on any command.
     # --- Session gate: nudge CLI agents that skip 'rekall brief' ---
     _SESSION_GATE_EXEMPT = {"brief", "init", "session", "demo", "features",
                             "agents", "assistants", "serve", "doctor", "hooks",
-                            "mode", "validate", "verify"}
+                            "mode", "validate", "verify", "rewind", "resume",
+                            "snapshot"}
     if args.command not in _SESSION_GATE_EXEMPT:
         try:
             vault = resolve_vault_dir()
