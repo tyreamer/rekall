@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 _base_dir: Optional[Path] = None
 _store: Optional[StateStore] = None
+_session_briefed: bool = False  # Session gate: has the agent seen the brief?
 
 
 def get_store() -> StateStore:
@@ -1318,9 +1319,14 @@ def handle_request(req: dict):
                 {"jsonrpc": "2.0", "id": req_id, "result": {"tools": TOOLS_DEF}}
             )
         elif method == "tools/call":
+            global _session_briefed
             params = req.get("params", {})
             name = params.get("name")
             args = params.get("arguments", {})
+
+            # Session gate: track when the agent has seen the brief
+            if name in ("rekall.brief", "rekall.init"):
+                _session_briefed = True
 
             if name in TOOL_REGISTRY:
                 try:
@@ -1346,6 +1352,23 @@ def handle_request(req: dict):
                             response_text = json.dumps(first["executive_response"], indent=2)
                         else:
                             response_text = json.dumps(first, indent=2)
+
+                    # --- Session gate: auto-inject brief on first non-brief tool call ---
+                    if not _session_briefed and not is_error:
+                        _session_briefed = True
+                        try:
+                            brief_data = session_brief({})
+                            first_brief = brief_data[0] if brief_data else {}
+                            if isinstance(first_brief, dict) and "error" not in first_brief:
+                                brief_text = first_brief.get("text", json.dumps(first_brief, indent=2)) if isinstance(first_brief, dict) else str(first_brief)
+                                response_text = (
+                                    "=== REKALL SESSION CONTEXT (auto-injected) ===\n"
+                                    + brief_text
+                                    + "\n=== END SESSION CONTEXT ===\n\n"
+                                    + response_text
+                                )
+                        except Exception:
+                            pass  # Don't break the actual tool call if brief fails
 
                     send_response(
                         {

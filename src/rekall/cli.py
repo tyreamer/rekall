@@ -3144,6 +3144,41 @@ Type 'rekall <command> --help' for details on any command.
 
     setup_logging(args.json, getattr(args, "quiet", False))
 
+    # --- Session gate: nudge CLI agents that skip 'rekall brief' ---
+    _SESSION_GATE_EXEMPT = {"brief", "init", "session", "demo", "features",
+                            "agents", "assistants", "serve", "doctor", "hooks",
+                            "mode", "validate", "verify"}
+    if args.command not in _SESSION_GATE_EXEMPT:
+        try:
+            vault = resolve_vault_dir()
+            if (vault / "manifest.json").exists():
+                store = StateStore(vault)
+                from rekall.core.brief import generate_brief_model
+                brief_model = generate_brief_model(store)
+                # Check if there's meaningful context to surface
+                has_warnings = bool(brief_model.get("warnings"))
+                has_blockers = bool(brief_model.get("blockers"))
+                has_decisions = bool(brief_model.get("open_decisions"))
+                summary = brief_model.get("summary", {})
+                next_action = summary.get("next_action", "")
+                if has_warnings or has_blockers or has_decisions or next_action:
+                    nudge_parts = ["\n--- REKALL SESSION CONTEXT (auto-injected) ---"]
+                    if next_action:
+                        nudge_parts.append(f"  Focus: {next_action}")
+                    if has_blockers:
+                        nudge_parts.append(f"  Blockers: {len(brief_model['blockers'])}")
+                    if has_warnings:
+                        for w in brief_model["warnings"][:3]:
+                            title = w.get("title", w.get("message", ""))
+                            nudge_parts.append(f"  DO NOT RETRY: {title}")
+                    if has_decisions:
+                        for d in brief_model["open_decisions"][:3]:
+                            nudge_parts.append(f"  Pending decision: {d.get('title', '')}")
+                    nudge_parts.append("--- END SESSION CONTEXT ---\n")
+                    print("\n".join(nudge_parts), file=sys.stderr)
+        except Exception:
+            pass  # Never break the actual command
+
     try:
         args.func(args)
     except SystemExit as e:
