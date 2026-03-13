@@ -1355,7 +1355,6 @@ def handle_request(req: dict):
 
                     # --- Session gate: auto-inject brief on first non-brief tool call ---
                     if not _session_briefed and not is_error:
-                        _session_briefed = True
                         try:
                             brief_data = session_brief({})
                             first_brief = brief_data[0] if brief_data else {}
@@ -1367,8 +1366,9 @@ def handle_request(req: dict):
                                     + "\n=== END SESSION CONTEXT ===\n\n"
                                     + response_text
                                 )
+                                _session_briefed = True
                         except Exception:
-                            pass  # Don't break the actual tool call if brief fails
+                            pass  # Don't break the actual tool call; will retry next call
 
                     send_response(
                         {
