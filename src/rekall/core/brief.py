@@ -57,8 +57,11 @@ def generate_brief_model(store: StateStore) -> BriefModel:
     try:
         computed = store.compute_state()
         return _brief_from_computed_state(computed, proj, project_id)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug(
+            "compute_state() failed, falling back to stream reads: %s", e
+        )
 
     # Fallback: direct stream reads (backward compat)
     return _brief_from_streams(store, proj, project_id)

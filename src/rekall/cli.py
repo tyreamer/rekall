@@ -715,22 +715,22 @@ def cmd_verify(args):
         if not getattr(args, "json", False):
             print(f"\n{Theme.ICON_SEARCH} Verifying ledger cryptographic integrity...")
 
-        streams = ["timeline.jsonl", "actions.jsonl", "decisions.jsonl",
-                   "attempts.jsonl", "head_moves", "activity"]
+        streams = ["timeline", "work_items", "decisions", "attempts",
+                   "activity", "head_moves"]
         all_ok = True
         hash_results = {}
 
         for stream in streams:
             res = store.verify_stream_integrity(stream)
             hash_results[stream] = res
-            if not res["valid"]:
+            if res["errors"]:
                 all_ok = False
                 if not getattr(args, "json", False):
                     print(f"{Theme.ICON_ERROR} {stream} hash chain broken!")
                     for err in res["errors"]:
                         print(f"  - {err}")
-            elif not getattr(args, "json", False):
-                print(f"{Theme.ICON_SUCCESS} {stream} verified ({res['events_checked']} events)")
+            elif res["count"] > 0 and not getattr(args, "json", False):
+                print(f"{Theme.ICON_SUCCESS} {stream} verified ({res['count']} events)")
 
         if not getattr(args, "json", False):
             print(f"\n{Theme.ICON_SEARCH} Validating schema and JSONL constraints...")
@@ -826,22 +826,6 @@ def cmd_resume(args):
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, str(e), getattr(args, "json", False))
 
-
-def cmd_checkpoint_snapshot(args):
-    """Save a global snapshot of the computed state."""
-    store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
-    store = StateStore(store_dir)
-
-    try:
-        snap = store.save_snapshot()
-        if getattr(args, "json", False):
-            print(json.dumps({"status": "ok", "snapshot_hash": snap["snapshot_hash"]}))
-        else:
-            print(f"{Theme.ICON_SUCCESS} Snapshot saved")
-            print(f"   HEAD: {snap.get('head_event_id', 'N/A')}")
-            print(f"   Hash: {snap['snapshot_hash'][:16]}...")
-    except Exception as e:
-        die(ExitCode.INTERNAL_ERROR, str(e), getattr(args, "json", False))
 
 
 def cmd_features(args):

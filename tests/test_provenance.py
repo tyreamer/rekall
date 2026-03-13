@@ -215,3 +215,49 @@ class TestComputeStateIntegration:
 
         state = store.compute_state()
         assert state.last_checkpoint["summary"] == "Early"
+
+    def test_full_flow_store_to_brief(self, store):
+        """Integration: StateStore → compute_state() → generate_brief_model()."""
+        from rekall.core.brief import generate_brief_model
+
+        store.create_work_item(
+            work_item={"title": "Build API", "status": "in_progress", "priority": "p1"},
+            actor={"actor_id": "agent"},
+        )
+        store.append_timeline(
+            event={"type": "milestone", "summary": "API scaffolding done"},
+            actor={"actor_id": "agent"},
+        )
+
+        brief = generate_brief_model(store)
+        assert brief["project"] is not None
+        assert "API scaffolding done" in brief["summary"]["last_checkpoint"]["summary"]
+        assert brief["summary"]["next_action"].startswith("Continue after")
+
+    def test_brief_after_rewind_reflects_computed_state(self, store):
+        """Brief uses reducer output, so rewind changes what brief shows."""
+        from rekall.core.brief import generate_brief_model
+
+        store.append_timeline(
+            event={"type": "milestone", "summary": "Good checkpoint"},
+            actor={"actor_id": "test"},
+        )
+        early_ts = store._load_stream_raw("timeline")[0]["timestamp"]
+
+        store.append_timeline(
+            event={"type": "milestone", "summary": "Bad checkpoint"},
+            actor={"actor_id": "test"},
+        )
+
+        # Before rewind
+        brief = generate_brief_model(store)
+        assert "Bad checkpoint" in brief["summary"]["last_checkpoint"]["summary"]
+
+        # After rewind
+        store.rewind(
+            actor={"actor_id": "human"},
+            reason="bad run",
+            to_timestamp=early_ts,
+        )
+        brief = generate_brief_model(store)
+        assert "Good checkpoint" in brief["summary"]["last_checkpoint"]["summary"]
