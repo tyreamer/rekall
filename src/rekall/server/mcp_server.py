@@ -1034,13 +1034,26 @@ def rekall_verify_mcp(args: dict) -> list:
         return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
 
 def rekall_log_mcp(args: dict) -> list:
-    """Returns a concatenated log of recent timeline events and activity."""
+    """Returns a unified log of recent events: checkpoints, attempts, and decisions."""
     limit = args.get("limit", 20)
     store = get_store()
     try:
-        timeline = store._load_stream("timeline.jsonl") or []
-        activity = store._load_stream("activity.jsonl") or []
-        combined = sorted(timeline + activity, key=lambda x: x.get("timestamp", ""), reverse=True)
+        timeline = store._load_stream_raw("timeline", hot_only=False) or []
+        attempts = store._load_stream_raw("attempts", hot_only=False) or []
+        decisions = store._load_stream_raw("decisions", hot_only=False) or []
+
+        combined = []
+        for e in timeline:
+            e["_event_type"] = "checkpoint" if e.get("type") == "milestone" else e.get("type", "note")
+            combined.append(e)
+        for a in attempts:
+            a["_event_type"] = f"attempt_{a.get('outcome', 'unknown')}"
+            combined.append(a)
+        for d in decisions:
+            d["_event_type"] = f"decision_{d.get('status', 'proposed')}"
+            combined.append(d)
+
+        combined.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         return [{"items": combined[:limit]}]
     except Exception as e:
         return [{"error": {"code": "INTERNAL_ERROR", "message": str(e)}}]
