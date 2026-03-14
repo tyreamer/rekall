@@ -759,6 +759,20 @@ def cmd_verify(args):
         die(ExitCode.INTERNAL_ERROR, f"Failed to execute verification: {e}", getattr(args, "json", False))
 
 
+def cmd_explorer(args):
+    """Launch the Forensic Explorer in your browser."""
+    port = getattr(args, "port", 7700)
+    no_browser = getattr(args, "no_browser", False)
+
+    try:
+        from rekall.explorer.server import start_server
+        start_server(port=port, open_browser=not no_browser)
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, str(e), getattr(args, "json", False))
+
+
 def cmd_stats(args):
     """Show local usage stats from the vault."""
     store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
@@ -2978,6 +2992,16 @@ Type 'rekall <command> --help' for details on any command.
     )
     parser_verify.set_defaults(func=cmd_verify)
 
+    # Explorer (hidden/advanced)
+    parser_explorer = subparsers.add_parser(
+        "explorer",
+        help=argparse.SUPPRESS,
+        parents=[shared_flags],
+    )
+    parser_explorer.add_argument("--port", type=int, default=7700, help="Port for the explorer server")
+    parser_explorer.add_argument("--no-browser", action="store_true", help="Don't auto-open browser")
+    parser_explorer.set_defaults(func=cmd_explorer)
+
     # Stats (hidden/advanced)
     parser_stats = subparsers.add_parser(
         "stats",
@@ -3322,7 +3346,7 @@ Type 'rekall <command> --help' for details on any command.
     _SESSION_GATE_EXEMPT = {"brief", "init", "session", "demo", "features",
                             "agents", "assistants", "serve", "doctor", "hooks",
                             "mode", "validate", "verify", "rewind", "resume",
-                            "snapshot"}
+                            "snapshot", "explorer"}
     if args.command not in _SESSION_GATE_EXEMPT:
         try:
             vault = resolve_vault_dir()
