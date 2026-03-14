@@ -759,6 +759,20 @@ def cmd_verify(args):
         die(ExitCode.INTERNAL_ERROR, f"Failed to execute verification: {e}", getattr(args, "json", False))
 
 
+def cmd_stats(args):
+    """Show local usage stats from the vault."""
+    store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
+    store = StateStore(store_dir)
+
+    from rekall.core.stats import compute_stats, format_stats_full
+    stats = compute_stats(store)
+
+    if getattr(args, "json", False):
+        print(json.dumps(stats, indent=2, default=str))
+    else:
+        print(format_stats_full(stats))
+
+
 def cmd_rewind(args):
     """Rewind HEAD to a prior point. Append-only — never deletes history."""
     store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
@@ -1812,7 +1826,7 @@ def cmd_brief(args):
         elif getattr(args, "full", False):
             print(render_brief_full(model))
         else:
-            print(render_brief_default(model))
+            print(render_brief_default(model, store=store))
 
     except Exception as e:
         die(ExitCode.INTERNAL_ERROR, f"Brief failed: {friendly_error(e)}", args.json)
@@ -2360,8 +2374,19 @@ def cmd_hooks(args):
     pre_push_path = hooks_dir / "pre-push"
 
     if args.subcommand == "install":
-        # Install post-commit
-        post_commit_script = "#!/bin/sh\necho '\\n\\033[33m\U0001f4a1 Rekall Reminder: Checkpoint your work!\\033[0m'\necho 'Run: rekall checkpoint --summary \"...\" --commit auto\\n'\n"
+        auto_checkpoint = getattr(args, "auto_checkpoint", False)
+
+        if auto_checkpoint:
+            # Auto-checkpoint: silently records each commit as a milestone
+            post_commit_script = """#!/bin/sh
+COMMIT_MSG=$(git log -1 --format=%s 2>/dev/null)
+COMMIT_SHA=$(git log -1 --format=%h 2>/dev/null)
+rekall checkpoint --type milestone --title "$COMMIT_MSG" --summary "Auto-checkpoint: $COMMIT_MSG" --commit "$COMMIT_SHA" --quiet 2>/dev/null || true
+"""
+        else:
+            # Reminder only (default)
+            post_commit_script = "#!/bin/sh\necho '\\n\\033[33m\U0001f4a1 Rekall Reminder: Checkpoint your work!\\033[0m'\necho 'Run: rekall checkpoint --summary \"...\" --commit auto\\n'\n"
+
         post_commit_path.write_text(post_commit_script, encoding="utf-8")
         post_commit_path.chmod(post_commit_path.stat().st_mode | stat.S_IEXEC)
 
@@ -2473,10 +2498,11 @@ def _generate_ide_instruction_files(force=False):
 
     instruction = (
         "COMPULSORY FIRST STEP: Before doing any work, get your bearings: "
-        "call `session.brief` (MCP) or `rekall brief` (CLI). "
+        "call `rekall.brief` (MCP) or `rekall brief` (CLI). "
         "This returns current focus, blockers, failed attempts, and next actions. "
-        "Log decisions with `decision.propose` and attempts with `attempt.append`. "
-        "Checkpoint completed work with `rekall_checkpoint --commit auto`. "
+        "Log failed attempts with `rekall.attempt` (MCP) or `rekall attempts add` (CLI). "
+        "Log decisions with `rekall.decision` (MCP) or `rekall decisions propose` (CLI). "
+        "Checkpoint completed work with `rekall.checkpoint` (MCP) or `rekall checkpoint --commit auto` (CLI). "
         "End sessions with `rekall session end --summary '...'`. "
         "YOLO mode applies to execution speed, NOT the Rekall protocol."
     )
@@ -2897,6 +2923,15 @@ Type 'rekall <command> --help' for details on any command.
     )
     parser_verify.set_defaults(func=cmd_verify)
 
+    # Stats (hidden/advanced)
+    parser_stats = subparsers.add_parser(
+        "stats",
+        help=argparse.SUPPRESS,
+        parents=[shared_flags],
+    )
+    parser_stats.add_argument("--store-dir", default=".", help="Directory of the StateStore")
+    parser_stats.set_defaults(func=cmd_stats)
+
     # Rewind (hidden/advanced)
     parser_rewind = subparsers.add_parser(
         "rewind",
@@ -3115,6 +3150,7 @@ Type 'rekall <command> --help' for details on any command.
 
     parser_hooks_install = hooks_subparsers.add_parser("install", help="Install git hooks.")
     parser_hooks_install.add_argument("--enforce", action="store_true", help="Enforce checkpoints via pre-push")
+    parser_hooks_install.add_argument("--auto-checkpoint", action="store_true", help="Auto-checkpoint on every git commit")
     parser_hooks_install.set_defaults(func=cmd_hooks)
 
     parser_hooks_uninstall = hooks_subparsers.add_parser("uninstall", help="Uninstall git hooks.")
