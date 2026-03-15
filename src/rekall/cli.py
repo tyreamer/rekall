@@ -1501,37 +1501,71 @@ def cmd_lock(args):
         die(ExitCode.INTERNAL_ERROR, f"Failed to acquire lock: {friendly_error(e)}", args.json)
 
 def cmd_log(args):
-    """View the event timeline (like git log)."""
+    """View the unified event log (timeline + attempts + decisions)."""
     store_dir = resolve_vault_dir(getattr(args, "store_dir", "project-state"))
     ensure_state_initialized(store_dir, getattr(args, "json", False))
     try:
         from rekall.core.state_store import StateStore
         store = StateStore(store_dir)
-        events = sorted(
-            store._load_stream_raw("timeline.jsonl", hot_only=False),
-            key=lambda e: e.get("timestamp", ""),
-            reverse=True,
-        )
+
+        # Collect events from all relevant streams
+        all_events = []
+
+        for e in store._load_stream_raw("timeline", hot_only=False):
+            etype = e.get("type", "note")
+            summary = e.get("summary", e.get("title", ""))
+            label = "CHECKPOINT" if etype == "milestone" else etype.upper().replace("_", " ")
+            all_events.append({
+                "timestamp": e.get("timestamp", ""),
+                "label": label,
+                "summary": summary,
+                "git_sha": e.get("git_sha"),
+                "raw": e,
+            })
+
+        for a in store._load_stream_raw("attempts", hot_only=False):
+            outcome = str(a.get("outcome", "")).upper()
+            title = a.get("title") or a.get("hypothesis", "")
+            evidence = a.get("evidence", "")
+            summary = f"{title}"
+            if evidence:
+                summary += f" — {evidence}"
+            all_events.append({
+                "timestamp": a.get("timestamp", ""),
+                "label": f"ATTEMPT {outcome}" if outcome else "ATTEMPT",
+                "summary": summary,
+                "git_sha": None,
+                "raw": a,
+            })
+
+        for d in store._load_stream_raw("decisions", hot_only=False):
+            status = d.get("status", "proposed").upper()
+            title = d.get("title", "")
+            all_events.append({
+                "timestamp": d.get("timestamp", ""),
+                "label": f"DECISION {status}",
+                "summary": title,
+                "git_sha": None,
+                "raw": d,
+            })
+
+        all_events.sort(key=lambda e: e["timestamp"], reverse=True)
+
         limit = getattr(args, "limit", 50)
         if limit:
-            events = events[:limit]
+            all_events = all_events[:limit]
 
         if getattr(args, "json", False):
-            import json
-            print(json.dumps(events, indent=2, default=str))
+            print(json.dumps([e["raw"] for e in all_events], indent=2, default=str))
         else:
-            if not events:
-                print("No events found in timeline.")
+            if not all_events:
+                print("No events recorded yet.")
                 return
-            for e in events:
-                ts = e.get("timestamp", "")[:19].replace("T", " ")
-                etype = str(e.get("type", "note")).upper()
-                summary = e.get("summary", "")
-                git_sha = e.get("git_sha", "")
-
-                line = f"{Theme.ICON_INFO} {ts} [{etype}] {summary}"
-                if git_sha:
-                    line += f" (git: {git_sha[:7]})"
+            for e in all_events:
+                ts = e["timestamp"][:19].replace("T", " ") if e["timestamp"] else ""
+                line = f"{Theme.ICON_INFO} {ts} [{e['label']}] {e['summary']}"
+                if e.get("git_sha"):
+                    line += f" (git: {e['git_sha'][:7]})"
                 print(line)
     except Exception as exc:
         die(ExitCode.INTERNAL_ERROR, f"Log failed: {friendly_error(exc)}", getattr(args, "json", False))
@@ -2555,7 +2589,28 @@ def _generate_ide_instruction_files(force=False):
         claude_file.write_text(_json.dumps(settings, indent=2) + "\n", encoding="utf-8")
         print("\u2705 Created/Updated .claude/settings.json")
 
+    # Cursor MCP config (repo-local, shareable)
+    cursor_mcp = Path(".cursor/mcp.json")
+    if not cursor_mcp.exists() or force:
+        mcp_config = {
+            "mcpServers": {
+                "rekall": {
+                    "command": "rekall",
+                    "args": ["serve", "--store-dir", "./project-state"]
+                }
+            }
+        }
+        cursor_mcp.write_text(_json.dumps(mcp_config, indent=2) + "\n", encoding="utf-8")
+        print("\u2705 Created .cursor/mcp.json (MCP auto-configured)")
+
     print("\n\U0001f916 Assistant integration rules established.")
+
+    # Print setup hints for IDEs that need manual config
+    print("\nIDE setup:")
+    print("  Cursor:      MCP auto-configured via .cursor/mcp.json")
+    print("  Claude Code:  Run: claude mcp add rekall -- rekall serve --store-dir ./project-state")
+    print("  Windsurf:    Add to MCP settings: rekall serve --store-dir ./project-state")
+    print("  CLI agents:  Just run rekall brief — no setup needed")
 
 
 def cmd_assistants(args):

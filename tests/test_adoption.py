@@ -34,6 +34,8 @@ class TestStats:
         assert stats["sessions"] == 0
         assert stats["retries_prevented"] == 0
         assert stats["estimated_tokens_saved"] == 0
+        assert stats["decisions_total"] == 0
+        assert stats["attempts_total"] == 0
 
     def test_stats_with_activity(self, store):
         store.append_timeline(
@@ -44,28 +46,38 @@ class TestStats:
             {"title": "Try redis", "outcome": "failed", "evidence": "OOM"},
             {"actor_id": "test"},
         )
+        store.append_decision(
+            {"title": "Use Postgres", "status": "proposed", "rationale": "SQL"},
+            {"actor_id": "test"},
+        )
         stats = compute_stats(store)
         assert stats["checkpoints"] == 1
         assert stats["failed_attempts_recorded"] == 1
         assert stats["retries_prevented"] == 1
         assert stats["estimated_tokens_saved"] == 4000
+        assert stats["attempts_total"] == 1
+        assert stats["decisions_total"] == 1
+        assert stats["decisions_open"] == 1
 
     def test_format_stats_line_empty(self):
-        stats = {"checkpoints": 0, "retries_prevented": 0, "estimated_tokens_saved": 0}
+        stats = {"checkpoints": 0, "retries_prevented": 0, "estimated_tokens_saved": 0, "decisions_total": 0}
         assert format_stats_line(stats) == ""
 
     def test_format_stats_line_with_data(self):
-        stats = {"checkpoints": 5, "retries_prevented": 3, "estimated_tokens_saved": 12000}
+        stats = {"checkpoints": 5, "retries_prevented": 3, "estimated_tokens_saved": 12000, "decisions_total": 2}
         line = format_stats_line(stats)
         assert "5 checkpoints" in line
         assert "3 retries prevented" in line
+        assert "2 decisions" in line
         assert "12,000 tokens saved" in line
 
     def test_format_stats_full(self, store):
         stats = compute_stats(store)
         output = format_stats_full(stats)
         assert "Rekall Usage Stats" in output
-        assert "Checkpoints recorded" in output
+        assert "Checkpoints:" in output
+        assert "Attempts:" in output
+        assert "Decisions:" in output
 
 
 class TestBriefGoal:
