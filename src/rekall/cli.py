@@ -2585,23 +2585,40 @@ def _generate_ide_instruction_files(force=False):
         claude_md.write_text(claude_content, encoding="utf-8")
         print("\u2705 Created CLAUDE.md")
 
-    # Claude
+    # Claude Code: settings.json with hooks for automatic brief injection
     claude_dir = Path(".claude")
     claude_dir.mkdir(exist_ok=True)
     claude_file = claude_dir / "settings.json"
-    if not claude_file.exists() or force:
-        settings = {
-            "customInstructions": instruction
-        }
-        if claude_file.exists():
-            try:
-                with open(claude_file, "r") as f:
-                    settings = _json.load(f)
-                settings["customInstructions"] = instruction
-            except Exception:
-                pass
-        claude_file.write_text(_json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-        print("\u2705 Created/Updated .claude/settings.json")
+
+    # Build settings with SessionStart hook
+    settings = {}
+    if claude_file.exists() and not force:
+        try:
+            with open(claude_file, "r", encoding="utf-8") as f:
+                settings = _json.load(f)
+        except Exception:
+            pass
+
+    settings["customInstructions"] = instruction
+
+    # SessionStart hook: auto-inject rekall brief into every session
+    # This makes the brief UNAVOIDABLE — the agent sees it without choosing to call it
+    settings["hooks"] = {
+        "SessionStart": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "rekall brief 2>/dev/null || true"
+                    }
+                ]
+            }
+        ]
+    }
+
+    claude_file.write_text(_json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    print("\u2705 Created/Updated .claude/settings.json (hooks: auto-brief on session start)")
 
     # Cursor MCP config (repo-local, shareable)
     cursor_mcp = Path(".cursor/mcp.json")
