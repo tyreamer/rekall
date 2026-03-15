@@ -5,18 +5,19 @@
       "active_file": "streams/work_items/active.jsonl",
       "segments": [],
       "id_field": "event_id",
-      "latest_hash": "a0c08194883f11469be9631b373df48504f9e2bfa17521adb4bd9f41f24351b4"
+      "latest_hash": "11047e7dcae87275b4d16254a35cefc82abfa8e4c1fa37dda3dd8747806e51d8"
     },
     "activity": {
       "active_file": "streams/activity/active.jsonl",
       "segments": [],
       "id_field": "activity_id",
-      "latest_hash": "c9d5bf737b769842bfcb0810988a62a2725380ea180200bc5e32fccff7248ddf"
+      "latest_hash": "588475c614b5e5b79a86a2f7889fe70435306aa1ca769d6bbd5fb82f13b74b4e"
     },
     "attempts": {
       "active_file": "streams/attempts/active.jsonl",
       "segments": [],
-      "id_field": "attempt_id"
+      "id_field": "attempt_id",
+      "latest_hash": "25299bd5841e7ec940fa5bd25f076003969625a15099b9ad2f280b2217ad0d3c"
     },
     "decisions": {
       "active_file": "streams/decisions/active.jsonl",
@@ -27,7 +28,7 @@
       "active_file": "streams/timeline/active.jsonl",
       "segments": [],
       "id_field": "event_id",
-      "latest_hash": "8c198688ad35af52bc8d9c33e3cefe1bd417cc3b8da69b763521a220c61e0f79"
+      "latest_hash": "b27b1abf85b10838f69c1fd32685edd31f0caba65598f6c1877ecf9b4bbd9248"
     },
     "head_moves": {
       "active_file": "streams/head_moves/active.jsonl",

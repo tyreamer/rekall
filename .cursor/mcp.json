@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "rekall": {
+      "command": "rekall",
+      "args": [
+        "serve",
+        "--store-dir",
+        "./project-state"
+      ]
+    }
+  }
+}
