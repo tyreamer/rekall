@@ -90,8 +90,11 @@ main.has-detail{grid-template-columns:1fr 380px}
   transition:all .1s;white-space:nowrap;letter-spacing:.03em;text-transform:uppercase;
 }
 .jbtn:hover{border-color:var(--border-hover);color:var(--text-1)}
+.jbtn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .toolbar-meta{margin-left:auto;font-size:10px;color:var(--text-3);font-family:var(--mono);display:flex;align-items:center;gap:6px}
 .kbd{font-family:var(--mono);font-size:8px;color:var(--text-3);background:var(--bg-3);padding:1px 4px;border-radius:2px;border:1px solid var(--border)}
+.toolbar-label{font-size:9px;color:var(--text-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em}
+.toolbar-sep{width:1px;height:16px;background:var(--border);margin:0 4px}
 
 /* Column header */
 .col-head{
@@ -122,7 +125,7 @@ main.has-detail{grid-template-columns:1fr 380px}
 @keyframes flash{0%{background:var(--accent-soft)}100%{background:transparent}}
 .row span{padding:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
 
-/* Type rail — left edge color indicator */
+/* Type rail */
 .row-rail{width:4px;height:100%;opacity:.5;transition:opacity .1s}
 .rail-checkpoint{background:var(--accent)}
 .rail-attempt_failed{background:var(--red)}
@@ -167,10 +170,17 @@ main.has-detail{grid-template-columns:1fr 380px}
   display:none;flex-direction:column;
 }
 .det-head{
-  padding:12px 16px;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
 }
-.det-head h3{font-size:12px;font-weight:600;letter-spacing:-.02em}
+.det-head h3{font-size:12px;font-weight:600;letter-spacing:-.02em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.det-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.det-act{
+  font-size:9px;padding:3px 8px;border-radius:3px;border:1px solid var(--border);
+  background:var(--bg-2);color:var(--text-2);cursor:pointer;font-family:var(--mono);
+  transition:all .1s;white-space:nowrap;letter-spacing:.02em;
+}
+.det-act:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .det-close{background:none;border:none;color:var(--text-3);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:3px;transition:all .1s}
 .det-close:hover{background:var(--bg-3);color:var(--text-0)}
 
@@ -187,19 +197,25 @@ main.has-detail{grid-template-columns:1fr 380px}
 .det-integrity{display:flex;align-items:center;gap:6px;margin-top:6px}
 .det-integrity .dot{width:8px;height:8px}
 .det-related{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.det-chip-group{display:inline-flex;align-items:stretch;border-radius:3px;overflow:hidden;border:1px solid var(--border)}
 .det-chip{
   font-family:var(--mono);font-size:9px;color:var(--text-2);
-  background:var(--bg-3);padding:2px 6px;border-radius:3px;cursor:pointer;
-  border:1px solid var(--border);transition:all .1s;
+  background:var(--bg-3);padding:2px 6px;cursor:pointer;transition:all .1s;border:none;
 }
-.det-chip:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.det-chip:hover{color:var(--accent);background:var(--accent-soft)}
+.det-chip-trace{
+  font-family:var(--mono);font-size:8px;color:var(--text-3);
+  background:var(--bg-4);padding:2px 4px;cursor:pointer;transition:all .1s;
+  border-left:1px solid var(--border);border:none;
+}
+.det-chip-trace:hover{color:var(--purple);background:var(--purple-soft)}
 .det-raw{
   background:var(--bg-0);border-radius:0 0 var(--radius) var(--radius);
   padding:10px 12px;font-family:var(--mono);font-size:9px;line-height:1.6;
   color:var(--text-2);max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all;
 }
 
-/* ═══ LINEAGE / TRACE VIEW ═══ */
+/* ═══ TRACE VIEW ═══ */
 #lineage{overflow:hidden;position:relative;display:none;flex-direction:column}
 .lin-toolbar{
   flex-shrink:0;display:flex;align-items:center;gap:6px;
@@ -209,7 +225,7 @@ main.has-detail{grid-template-columns:1fr 380px}
 .lin-canvas{flex:1;overflow:auto;position:relative}
 .lin-svg{overflow:visible}
 
-/* Lineage nodes */
+/* Trace nodes */
 .ln{cursor:pointer;transition:opacity .15s}
 .ln:hover .ln-shape{filter:brightness(1.3);stroke-width:2.5}
 .ln.selected .ln-shape{stroke-width:3;filter:brightness(1.4)}
@@ -218,15 +234,21 @@ main.has-detail{grid-template-columns:1fr 380px}
 .ln-label{font-family:var(--sans);font-size:9px;fill:var(--text-1);pointer-events:none}
 .ln-ts{font-family:var(--mono);font-size:8px;fill:var(--text-3);pointer-events:none}
 
-/* Lineage edges */
+/* Trace edges */
 .le{fill:none;stroke-width:1.5;transition:opacity .15s}
 .le-chain{stroke:var(--border-hover);opacity:.4}
 .le-causal{stroke:var(--accent);opacity:.3;stroke-dasharray:5,4}
 .le.dimmed{opacity:.08}
-.le-arrow{fill:var(--border-hover);opacity:.4}
 
 /* Dead end marker */
 .dead-end{stroke:var(--red);stroke-width:2;opacity:.5}
+
+/* Trace isolated state */
+.trace-isolated{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;gap:12px;color:var(--text-3);
+}
+.trace-isolated-label{font-size:11px;font-family:var(--mono);letter-spacing:.02em}
 
 /* Tooltip */
 .tt{
@@ -282,6 +304,7 @@ main.has-detail{grid-template-columns:1fr 380px}
           <span id="ledger-count"></span>
           <span class="kbd">j</span><span class="kbd">k</span>
           <span class="kbd">Enter</span>
+          <span class="kbd">t</span> trace
           <span class="kbd">/</span>
         </div>
       </div>
@@ -303,7 +326,16 @@ main.has-detail{grid-template-columns:1fr 380px}
           <button class="jbtn" data-ljump="decision">Last Decision</button>
           <button class="jbtn" data-ljump="head_move">Last HEAD</button>
         </div>
-        <div class="lin-hint">Select an event to explore its causal neighborhood</div>
+        <div class="toolbar-sep"></div>
+        <span class="toolbar-label">Depth</span>
+        <div class="toolbar-group">
+          <button class="jbtn" data-depth="1">1</button>
+          <button class="jbtn active" data-depth="2">2</button>
+          <button class="jbtn" data-depth="3">3</button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <button class="jbtn" id="trace-to-ledger" title="View selected event in Ledger">&#8592; Ledger</button>
+        <div class="lin-hint">Select event to explore causal neighborhood &middot; <span class="kbd">t</span> toggle</div>
       </div>
       <div class="lin-canvas" id="lin-canvas"></div>
       <div class="tt" id="tooltip"></div>
@@ -312,7 +344,10 @@ main.has-detail{grid-template-columns:1fr 380px}
     <div id="detail">
       <div class="det-head">
         <h3 id="det-title">Evidence</h3>
-        <button class="det-close" id="det-close">&times;</button>
+        <div class="det-actions">
+          <button class="det-act" id="det-trace" title="View in Trace">Trace &#8594;</button>
+          <button class="det-close" id="det-close">&times;</button>
+        </div>
       </div>
       <div class="det-body" id="det-body"></div>
     </div>
@@ -320,12 +355,13 @@ main.has-detail{grid-template-columns:1fr 380px}
 </div>
 
 <script>
-/* ═══════════════════════════════════════════ STATE ═══════════════════════════════════════════ */
+/* ═══ STATE ═══ */
 let allEvents=[], filteredEvents=[], selectedId=null, focusIdx=-1;
 let currentMode='ledger', activeFilter='all', verifyResults={};
+let traceDepth=2;
 const ROW_H=34;
 
-/* ═══════════════════════════════════════════ INIT ═══════════════════════════════════════════ */
+/* ═══ INIT ═══ */
 async function init(){ await refresh(); setInterval(refresh,3000); }
 
 async function refresh(){
@@ -340,7 +376,35 @@ async function refresh(){
   applyFilter();
 }
 
-/* ═══════════════════════════════════════════ FILTER ═══════════════════════════════════════════ */
+/* ═══ MODE SWITCHING (synchronized) ═══ */
+function switchMode(mode){
+  if(mode===currentMode)return;
+  currentMode=mode;
+  document.querySelectorAll('.mode-btn').forEach(b=>{
+    b.classList.toggle('active',b.dataset.mode===mode);
+  });
+  document.getElementById('ledger').style.display=mode==='ledger'?'flex':'none';
+  document.getElementById('lineage').style.display=mode==='lineage'?'flex':'none';
+
+  // Auto-select latest checkpoint if switching to trace with no selection
+  if(mode==='lineage'&&!selectedId){
+    const cp=allEvents.find(e=>e.type==='checkpoint');
+    if(cp){selectedId=cp.id;showDetail(cp)}
+  }
+
+  applyFilter();
+
+  // Center on selected event in the target view
+  if(selectedId){
+    if(mode==='ledger'){
+      const idx=filteredEvents.findIndex(e=>e.id===selectedId);
+      if(idx>=0){focusIdx=idx;ensure(idx)}
+    }
+    // Trace auto-centers in renderTrace via scrollTo
+  }
+}
+
+/* ═══ FILTER ═══ */
 function applyFilter(){
   const q=document.getElementById('search').value.toLowerCase();
   filteredEvents=allEvents.filter(e=>{
@@ -353,7 +417,7 @@ function applyFilter(){
   if(currentMode==='lineage')renderTrace();
 }
 
-/* ═══════════════════════════════════════════ HELPERS ═══════════════════════════════════════════ */
+/* ═══ HELPERS ═══ */
 const BM={checkpoint:'b-checkpoint',session_end:'b-session_end',attempt_failed:'b-attempt_failed',attempt_succeeded:'b-attempt_succeeded',decision_proposed:'b-decision_proposed',decision_decided:'b-decision_decided',wi_created:'b-wi_created',wi_patched:'b-wi_patched',head_move:'b-head_move',policyevaluation:'b-policyevaluation',approvalrequired:'b-approvalrequired',approvalgranted:'b-approvalgranted'};
 function bc(t){return BM[t.replace(/[^a-z_]/g,'')]||'b-default'}
 function bl(t){return t.replace(/_/g,' ')}
@@ -372,7 +436,7 @@ function railClass(type){
   return'rail-default';
 }
 
-/* ═══════════════════════════════════════════ VIRTUAL LEDGER ═══════════════════════════════════════════ */
+/* ═══ VIRTUAL LEDGER ═══ */
 const sEl=()=>document.getElementById('ledger-scroll');
 const spEl=()=>document.getElementById('vscroll-spacer');
 const wEl=()=>document.getElementById('vscroll-window');
@@ -408,11 +472,17 @@ function renderLedger(){
 sEl().addEventListener('scroll',renderLedger);
 new ResizeObserver(()=>{if(currentMode==='ledger')renderLedger()}).observe(sEl());
 
-/* ═══════════════════════════════════════════ KEYBOARD ═══════════════════════════════════════════ */
+/* ═══ KEYBOARD ═══ */
 document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT'){if(e.key==='Escape')e.target.blur();return}
   if(e.key==='/'){e.preventDefault();document.getElementById('search').focus();return}
   if(e.key==='Escape'){closeDetail();return}
+  // t: toggle mode with selection preserved
+  if(e.key==='t'){
+    e.preventDefault();
+    switchMode(currentMode==='ledger'?'lineage':'ledger');
+    return;
+  }
   if(currentMode!=='ledger')return;
   const t=filteredEvents.length;if(!t)return;
   if(e.key==='j'||e.key==='ArrowDown'){e.preventDefault();focusIdx=Math.min(focusIdx+1,t-1);ensure(focusIdx);renderLedger()}
@@ -423,21 +493,20 @@ document.addEventListener('keydown',e=>{
 });
 function ensure(i){const c=sEl(),top=i*ROW_H,bot=top+ROW_H;if(top<c.scrollTop)c.scrollTop=top;else if(bot>c.scrollTop+c.clientHeight)c.scrollTop=bot-c.clientHeight}
 
-/* ═══════════════════════════════════════════ JUMPS ═══════════════════════════════════════════ */
+/* ═══ JUMPS ═══ */
 document.querySelectorAll('.jbtn[data-jump]').forEach(b=>{
   b.addEventListener('click',()=>{const t=b.dataset.jump,i=filteredEvents.findIndex(e=>e.type.includes(t));if(i>=0){focusIdx=i;ensure(i);showDetail(filteredEvents[i])}})
 });
 
-/* ═══════════════════════════════════════════ DETAIL PANEL ═══════════════════════════════════════════ */
+/* ═══ DETAIL PANEL ═══ */
 function showDetail(ev){
   selectedId=ev.id;
   focusIdx=filteredEvents.findIndex(e=>e.id===ev.id);
   const p=document.getElementById('detail'),m=document.getElementById('main');
   p.style.display='flex';m.classList.add('has-detail');
-  document.getElementById('det-title').textContent='Evidence — '+bl(ev.type);
+  document.getElementById('det-title').textContent='Evidence \u2014 '+bl(ev.type);
   const b=document.getElementById('det-body');
 
-  // Identity card
   let h=`<div class="det-card"><div class="det-card-head">Event</div><div class="det-card-body">
     <div class="det-field"><span class="badge ${bc(ev.type)}" style="margin-bottom:6px">${bl(ev.type)}</span></div>
     <div class="det-field"><div class="det-label">Summary</div><div class="det-val">${esc(ev.summary)}</div></div>`;
@@ -448,7 +517,6 @@ function showDetail(ev){
   if(ev.git_sha)h+=`<div class="det-field"><div class="det-label">Git SHA</div><div class="det-mono">${ev.git_sha}</div></div>`;
   h+=`</div></div>`;
 
-  // Integrity card
   if(ev.event_hash){
     h+=`<div class="det-card"><div class="det-card-head">Integrity</div><div class="det-card-body">
       <div class="det-field"><div class="det-label">Event Hash</div><div class="det-hash">${ev.event_hash}</div></div>
@@ -457,14 +525,14 @@ function showDetail(ev){
     </div></div>`;
   }
 
-  // Related
   if(ev.related_ids&&ev.related_ids.length){
     h+=`<div class="det-card"><div class="det-card-head">Related Events</div><div class="det-card-body">
-      <div class="det-related">${ev.related_ids.map(id=>`<span class="det-chip" data-id="${id}">${id.slice(0,14)}</span>`).join('')}</div>
+      <div class="det-related">${ev.related_ids.map(id=>
+        `<span class="det-chip-group"><span class="det-chip" data-id="${id}">${id.slice(0,14)}</span><span class="det-chip-trace" data-trace-id="${id}" title="View in Trace">\u2192T</span></span>`
+      ).join('')}</div>
     </div></div>`;
   }
 
-  // Raw evidence
   h+=`<div class="det-card"><div class="det-card-head">Raw Evidence</div><pre class="det-raw">${esc(JSON.stringify(ev.raw,null,2))}</pre></div>`;
   b.innerHTML=h;
   if(currentMode==='ledger')renderLedger();
@@ -478,25 +546,21 @@ function closeDetail(){
   if(currentMode==='ledger')renderLedger();
 }
 
-/* ═══════════════════════════════════════════ TRACE VIEW (Causal Neighborhood) ═══════════════════════════════════════════ */
+/* ═══ TRACE VIEW (Causal Neighborhood) ═══ */
 function renderTrace(){
   const canvas=document.getElementById('lin-canvas');
   if(!filteredEvents.length){canvas.innerHTML='<div class="empty">No events to trace</div>';return}
 
-  // Build neighborhood around selected event (or latest)
-  const src=filteredEvents.slice().reverse(); // oldest first
+  const src=filteredEvents.slice().reverse();
   const idMap=new Map(); src.forEach((e,i)=>idMap.set(e.id,i));
   const hashMap=new Map(); src.forEach((e,i)=>{if(e.event_hash)hashMap.set(e.event_hash,i)});
 
-  // Find center
   let centerIdx=src.length-1;
   if(selectedId){const si=idMap.get(selectedId);if(si!==undefined)centerIdx=si}
 
-  // Collect neighborhood: center + predecessors + successors + related
   const neighborhood=new Set();
-  const HOPS=3;
+  const HOPS=traceDepth;
 
-  // BFS backward (prev_hash chain + related_ids)
   function walkBack(idx,depth){
     if(depth>HOPS||neighborhood.has(idx))return;
     neighborhood.add(idx);
@@ -504,7 +568,6 @@ function renderTrace(){
     if(e.prev_hash){const pi=hashMap.get(e.prev_hash);if(pi!==undefined)walkBack(pi,depth+1)}
     if(e.related_ids)for(const r of e.related_ids){const ri=idMap.get(r);if(ri!==undefined)walkBack(ri,depth+1)}
   }
-  // BFS forward (find events whose prev_hash points to this one)
   const fwdMap=new Map();
   src.forEach((e,i)=>{if(e.prev_hash){const pi=hashMap.get(e.prev_hash);if(pi!==undefined){if(!fwdMap.has(pi))fwdMap.set(pi,[]);fwdMap.get(pi).push(i)}}});
   function walkFwd(idx,depth){
@@ -512,7 +575,6 @@ function renderTrace(){
     neighborhood.add(idx);
     const fwd=fwdMap.get(idx)||[];
     for(const fi of fwd)walkFwd(fi,depth+1);
-    // Also follow related
     const e=src[idx];
     if(e.related_ids)for(const r of e.related_ids){const ri=idMap.get(r);if(ri!==undefined&&!neighborhood.has(ri))walkFwd(ri,depth+1)}
   }
@@ -520,11 +582,20 @@ function renderTrace(){
   walkBack(centerIdx,0);
   walkFwd(centerIdx,0);
 
-  // Sort neighborhood by timestamp
   const nodes=[...neighborhood].sort((a,b)=>src[a].timestamp.localeCompare(src[b].timestamp));
   if(!nodes.length)nodes.push(centerIdx);
 
-  // Layout: compact grid. X = position in sorted order, Y = stream lane (only used lanes)
+  // Isolated event: show graceful empty state
+  if(nodes.length<=1){
+    const ev=src[centerIdx];
+    canvas.innerHTML=`<div class="trace-isolated">
+      <span class="badge ${bc(ev.type)}">${bl(ev.type)}</span>
+      <div class="trace-isolated-label">Isolated event &mdash; no causal connections in this vault</div>
+      <div style="font-size:10px;color:var(--text-3);max-width:300px;text-align:center">${esc(ev.summary)}</div>
+    </div>`;
+    return;
+  }
+
   const usedStreams=[...new Set(nodes.map(i=>src[i].stream))];
   const streamY=new Map();usedStreams.forEach((s,i)=>streamY.set(s,i));
 
@@ -532,7 +603,6 @@ function renderTrace(){
   const svgW=nodes.length*(nW+gapX)+padL*2;
   const svgH=usedStreams.length*(nH+gapY)+padT+40;
 
-  // Position map
   const pos=new Map();
   nodes.forEach((ni,xi)=>{
     const e=src[ni];
@@ -543,40 +613,32 @@ function renderTrace(){
 
   let svg=`<svg class="lin-svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}">`;
 
-  // Stream lane labels
   usedStreams.forEach((s,i)=>{
     const y=padT+i*(nH+gapY)+nH/2+4;
     svg+=`<text x="4" y="${y}" style="font-family:var(--sans);font-size:9px;fill:var(--text-3);font-weight:500">${s}</text>`;
   });
 
-  // Edges
   const nodeSet=new Set(nodes);
   nodes.forEach(ni=>{
     const e=src[ni],p=pos.get(ni);if(!p)return;
-
-    // Hash chain edge (backward)
     if(e.prev_hash){
       const pi=hashMap.get(e.prev_hash);
       if(pi!==undefined&&nodeSet.has(pi)){
         const pp=pos.get(pi);if(pp){
-          const dim=!neighborhood.has(pi)||!neighborhood.has(ni)?' dimmed':'';
-          svg+=`<path class="le le-chain${dim}" d="M${pp.x+nW},${pp.y+nH/2} C${pp.x+nW+20},${pp.y+nH/2} ${p.x-20},${p.y+nH/2} ${p.x},${p.y+nH/2}"/>`;
+          svg+=`<path class="le le-chain" d="M${pp.x+nW},${pp.y+nH/2} C${pp.x+nW+20},${pp.y+nH/2} ${p.x-20},${p.y+nH/2} ${p.x},${p.y+nH/2}"/>`;
         }
       }
     }
-    // Causal edges
     if(e.related_ids)for(const r of e.related_ids){
       const ri=idMap.get(r);
       if(ri!==undefined&&nodeSet.has(ri)&&ri!==ni){
         const rp=pos.get(ri);if(rp){
-          const x1=Math.min(rp.x+nW,p.x+nW),y1=rp.y+nH/2,x2=Math.max(rp.x,p.x),y2=p.y+nH/2;
-          svg+=`<path class="le le-causal" d="M${rp.x+nW},${y1} C${rp.x+nW+16},${y1} ${p.x-16},${y2} ${p.x},${y2}"/>`;
+          svg+=`<path class="le le-causal" d="M${rp.x+nW},${rp.y+nH/2} C${rp.x+nW+16},${rp.y+nH/2} ${p.x-16},${p.y+nH/2} ${p.x},${p.y+nH/2}"/>`;
         }
       }
     }
   });
 
-  // Dead-end markers for failed attempts with no successors
   nodes.forEach(ni=>{
     const e=src[ni],p=pos.get(ni);if(!p)return;
     if(e.type==='attempt_failed'&&!(fwdMap.get(ni)||[]).some(fi=>nodeSet.has(fi))){
@@ -585,7 +647,6 @@ function renderTrace(){
     }
   });
 
-  // Nodes
   nodes.forEach(ni=>{
     const e=src[ni],p=pos.get(ni);if(!p)return;
     const isCenter=ni===centerIdx;
@@ -603,7 +664,6 @@ function renderTrace(){
   svg+='</svg>';
   canvas.innerHTML=svg;
 
-  // Scroll to center
   const cp=pos.get(centerIdx);
   if(cp){
     canvas.scrollLeft=Math.max(0,cp.x-canvas.clientWidth/2+nW/2);
@@ -623,48 +683,47 @@ function traceShape(e,x,y,w,h,isCenter){
   };
   const c=cols[e.type]||{f:'var(--bg-3)',s:'var(--border-hover)'};
   const sw=isCenter?2.5:1.5;
-
   if(e.type==='attempt_failed'){
-    const cx=x+w/2,cy=y+h/2,rx=w/2,ry=h/2;
+    const cx=x+w/2,cy=y+h/2;
     return`<polygon class="ln-shape" points="${cx},${y} ${x+w},${cy} ${cx},${y+h} ${x},${cy}" fill="${c.f}" stroke="${c.s}" stroke-width="${sw}"/>`;
   }
-  if(e.type==='head_move'){
-    return`<circle class="ln-shape" cx="${x+w/2}" cy="${y+h/2}" r="${h/2}" fill="${c.f}" stroke="${c.s}" stroke-width="${sw}"/>`;
-  }
+  if(e.type==='head_move') return`<circle class="ln-shape" cx="${x+w/2}" cy="${y+h/2}" r="${h/2}" fill="${c.f}" stroke="${c.s}" stroke-width="${sw}"/>`;
   if(e.type.includes('decision')){
-    // Hexagonal hint for decisions (branch points)
-    const cx=x+w/2,cy=y+h/2,hw=w/2,hh=h/2;
+    const cx=x+w/2,cy=y+h/2;
     return`<polygon class="ln-shape" points="${x+12},${y} ${x+w-12},${y} ${x+w},${cy} ${x+w-12},${y+h} ${x+12},${y+h} ${x},${cy}" fill="${c.f}" stroke="${c.s}" stroke-width="${sw}"/>`;
   }
   return`<rect class="ln-shape" x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${c.f}" stroke="${c.s}" stroke-width="${sw}"/>`;
 }
 
-/* ═══════════════════════════════════════════ EVENT HANDLERS ═══════════════════════════════════════════ */
-document.querySelectorAll('.mode-btn').forEach(b=>{b.addEventListener('click',()=>{
-  document.querySelectorAll('.mode-btn').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');currentMode=b.dataset.mode;
-  document.getElementById('ledger').style.display=currentMode==='ledger'?'flex':'none';
-  document.getElementById('lineage').style.display=currentMode==='lineage'?'flex':'none';
-  applyFilter();
-})});
+/* ═══ EVENT HANDLERS ═══ */
 
+// Mode toggle via header buttons
+document.querySelectorAll('.mode-btn').forEach(b=>{
+  b.addEventListener('click',()=>switchMode(b.dataset.mode));
+});
+
+// Filter buttons
 document.querySelectorAll('.fbtn').forEach(b=>{b.addEventListener('click',()=>{
   document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');activeFilter=b.dataset.filter;focusIdx=-1;applyFilter();
 })});
 
+// Search
 document.getElementById('search').addEventListener('input',()=>{focusIdx=-1;applyFilter()});
 
+// Ledger row clicks
 document.getElementById('vscroll-window').addEventListener('click',e=>{
   const r=e.target.closest('.row');if(!r)return;
   const ev=allEvents.find(x=>x.id===r.dataset.id);if(ev)showDetail(ev);
 });
 
+// Trace node clicks
 document.getElementById('lin-canvas').addEventListener('click',e=>{
   const n=e.target.closest('.ln');if(!n)return;
   const ev=allEvents.find(x=>x.id===n.dataset.id);if(ev){showDetail(ev);renderTrace()}
 });
 
+// Trace tooltip
 document.getElementById('lin-canvas').addEventListener('mousemove',e=>{
   const n=e.target.closest('.ln'),tt=document.getElementById('tooltip');
   if(!n){tt.style.display='none';return}
@@ -674,12 +733,44 @@ document.getElementById('lin-canvas').addEventListener('mousemove',e=>{
 });
 document.getElementById('lin-canvas').addEventListener('mouseleave',()=>{document.getElementById('tooltip').style.display='none'});
 
+// Detail close
 document.getElementById('det-close').addEventListener('click',closeDetail);
-document.getElementById('det-body').addEventListener('click',e=>{
-  const c=e.target.closest('.det-chip');if(!c)return;
-  const ev=allEvents.find(x=>x.id===c.dataset.id);if(ev)showDetail(ev);
+
+// Detail: "View in Trace" button
+document.getElementById('det-trace').addEventListener('click',()=>{
+  if(selectedId)switchMode('lineage');
 });
 
+// Trace toolbar: "View in Ledger" button
+document.getElementById('trace-to-ledger').addEventListener('click',()=>{
+  switchMode('ledger');
+});
+
+// Detail: related chip clicks (navigate) and trace-chip clicks (open in trace)
+document.getElementById('det-body').addEventListener('click',e=>{
+  const chip=e.target.closest('.det-chip');
+  const traceChip=e.target.closest('.det-chip-trace');
+  if(traceChip){
+    const id=traceChip.dataset.traceId;
+    const ev=allEvents.find(x=>x.id===id);
+    if(ev){selectedId=ev.id;showDetail(ev);switchMode('lineage')}
+    return;
+  }
+  if(chip){
+    const ev=allEvents.find(x=>x.id===chip.dataset.id);
+    if(ev)showDetail(ev);
+  }
+});
+
+// Trace depth control
+document.querySelectorAll('[data-depth]').forEach(b=>{b.addEventListener('click',()=>{
+  document.querySelectorAll('[data-depth]').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  traceDepth=parseInt(b.dataset.depth);
+  renderTrace();
+})});
+
+// Trace jump buttons
 document.querySelectorAll('[data-ljump]').forEach(b=>{b.addEventListener('click',()=>{
   const t=b.dataset.ljump;
   const ev=filteredEvents.find(e=>e.type.includes(t));

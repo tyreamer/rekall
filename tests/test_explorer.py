@@ -119,4 +119,4 @@ class TestHTMLServing:
         content = html_path.read_text(encoding="utf-8")
         assert "Forensic Explorer" in content
         assert "Ledger" in content
-        assert "Lineage" in content
+        assert "Trace" in content
