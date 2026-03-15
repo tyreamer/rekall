@@ -116,7 +116,7 @@ class TestHTMLServing:
         from pathlib import Path
         html_path = Path(__file__).parent.parent / "src" / "rekall" / "explorer" / "index.html"
         assert html_path.exists()
-        content = html_path.read_text()
+        content = html_path.read_text(encoding="utf-8")
         assert "Forensic Explorer" in content
         assert "Ledger" in content
         assert "Lineage" in content

@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rekall Forensic Explorer</title>
 <style>
-/* ── Reset & Base ── */
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
   --bg-0:#0a0a0b;--bg-1:#111113;--bg-2:#1a1a1e;--bg-3:#222228;
@@ -19,7 +18,7 @@
   --cyan:#06b6d4;--cyan-bg:rgba(6,182,212,.08);
   --mono:'SF Mono','Cascadia Code','Fira Code',monospace;
   --sans:'Inter','SF Pro Display',-apple-system,sans-serif;
-  --radius:6px;
+  --radius:6px;--row-h:32px;
 }
 body{background:var(--bg-0);color:var(--text-0);font-family:var(--sans);font-size:13px;line-height:1.5;overflow:hidden;height:100vh}
 ::selection{background:var(--accent);color:var(--bg-0)}
@@ -28,89 +27,95 @@ body{background:var(--bg-0);color:var(--text-0);font-family:var(--sans);font-siz
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--border-hover)}
 
-/* ── Layout ── */
-#app{display:grid;grid-template-rows:48px 1fr;height:100vh}
+#app{display:grid;grid-template-rows:44px 1fr;height:100vh}
 
 /* ── Header ── */
 header{
   display:flex;align-items:center;justify-content:space-between;
-  padding:0 16px;background:var(--bg-1);border-bottom:1px solid var(--border);
-  gap:16px;z-index:100;
+  padding:0 12px;background:var(--bg-1);border-bottom:1px solid var(--border);gap:10px;z-index:100;
 }
-.logo{font-weight:600;font-size:14px;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
-.logo-mark{width:18px;height:18px;border-radius:4px;background:var(--accent);opacity:.9}
+.logo{font-weight:600;font-size:13px;letter-spacing:-.02em;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.logo-mark{width:14px;height:14px;border-radius:3px;background:var(--accent);opacity:.9}
 .header-center{display:flex;align-items:center;gap:2px;background:var(--bg-2);border-radius:var(--radius);padding:2px}
 .mode-btn{
-  padding:5px 14px;border-radius:4px;border:none;cursor:pointer;
-  font-size:12px;font-weight:500;font-family:var(--sans);
-  background:transparent;color:var(--text-1);transition:all .15s;
+  padding:4px 12px;border-radius:4px;border:none;cursor:pointer;
+  font-size:11px;font-weight:500;font-family:var(--sans);
+  background:transparent;color:var(--text-1);transition:all .12s;
 }
 .mode-btn.active{background:var(--bg-0);color:var(--text-0);box-shadow:0 1px 2px rgba(0,0,0,.3)}
 .mode-btn:hover:not(.active){color:var(--text-0)}
-.header-right{display:flex;align-items:center;gap:12px}
+.header-right{display:flex;align-items:center;gap:8px}
 .search-box{
   background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);
-  padding:5px 10px;color:var(--text-0);font-size:12px;font-family:var(--sans);width:220px;
+  padding:4px 8px;color:var(--text-0);font-size:11px;font-family:var(--sans);width:200px;
   outline:none;transition:border-color .15s;
 }
 .search-box:focus{border-color:var(--accent)}
 .search-box::placeholder{color:var(--text-2)}
-.stat-pill{
-  font-size:11px;color:var(--text-1);background:var(--bg-2);
-  padding:3px 8px;border-radius:10px;font-family:var(--mono);
+.pill{font-size:10px;color:var(--text-1);background:var(--bg-2);padding:2px 7px;border-radius:10px;font-family:var(--mono);white-space:nowrap}
+.verify-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:3px}
+.verify-ok{background:var(--accent)}.verify-fail{background:var(--red)}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block;margin-right:3px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.jump-btn{
+  font-size:10px;padding:2px 7px;border-radius:3px;border:1px solid var(--border);
+  background:transparent;color:var(--text-2);cursor:pointer;font-family:var(--mono);
+  transition:all .1s;white-space:nowrap;
 }
-.verify-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
-.verify-ok{background:var(--accent)}
-.verify-fail{background:var(--red)}
+.jump-btn:hover{border-color:var(--text-1);color:var(--text-0)}
 
 /* ── Main ── */
-main{display:grid;grid-template-columns:1fr 380px;overflow:hidden}
+main{display:grid;grid-template-columns:1fr 360px;overflow:hidden}
 main.no-detail{grid-template-columns:1fr}
 
-/* ── Ledger View ── */
-#ledger{overflow:auto;position:relative}
+/* ── Ledger ── */
+#ledger{display:flex;flex-direction:column;overflow:hidden;position:relative}
 .ledger-toolbar{
-  position:sticky;top:0;z-index:10;background:var(--bg-1);
-  border-bottom:1px solid var(--border);display:flex;align-items:center;
-  padding:6px 12px;gap:8px;
+  flex-shrink:0;background:var(--bg-1);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:4px 8px;gap:4px;overflow-x:auto;
 }
 .filter-btn{
-  font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid var(--border);
-  background:transparent;color:var(--text-1);cursor:pointer;font-family:var(--sans);
-  transition:all .12s;white-space:nowrap;
+  font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);
+  background:transparent;color:var(--text-2);cursor:pointer;font-family:var(--sans);
+  transition:all .1s;white-space:nowrap;
 }
 .filter-btn:hover{border-color:var(--text-2);color:var(--text-0)}
 .filter-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
-.ledger-count{font-size:11px;color:var(--text-2);margin-left:auto;font-family:var(--mono)}
+.ledger-meta{font-size:10px;color:var(--text-2);margin-left:auto;font-family:var(--mono);white-space:nowrap;display:flex;gap:8px;align-items:center}
 
-table{width:100%;border-collapse:collapse;table-layout:fixed}
-thead{position:sticky;top:38px;z-index:9}
-th{
-  text-align:left;padding:6px 12px;font-size:11px;font-weight:500;
-  color:var(--text-2);text-transform:uppercase;letter-spacing:.04em;
-  background:var(--bg-1);border-bottom:1px solid var(--border);
+/* Virtual scroll container */
+.ledger-scroll{flex:1;overflow-y:auto;position:relative}
+.ledger-header{
+  display:grid;grid-template-columns:28px 130px 120px 1fr 80px 70px;
+  position:sticky;top:0;z-index:9;background:var(--bg-1);border-bottom:1px solid var(--border);
 }
-td{
-  padding:7px 12px;border-bottom:1px solid var(--bg-2);font-size:12px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  transition:background .1s;
+.ledger-header span{
+  padding:4px 8px;font-size:10px;font-weight:500;color:var(--text-2);
+  text-transform:uppercase;letter-spacing:.04em;
 }
-tr{cursor:pointer}
-tr:hover td{background:var(--bg-2)}
-tr.selected td{background:var(--accent-bg)}
+.vscroll-spacer{position:relative}
+.vscroll-window{position:absolute;left:0;right:0}
 
-.col-ts{width:140px;font-family:var(--mono);color:var(--text-1);font-size:11px}
-.col-type{width:130px}
-.col-actor{width:90px;color:var(--text-2);font-size:11px}
-.col-summary{min-width:200px}
-.col-verify{width:36px;text-align:center}
-.col-hash{width:80px;font-family:var(--mono);font-size:10px;color:var(--text-2)}
+/* Rows */
+.ledger-row{
+  display:grid;grid-template-columns:28px 130px 120px 1fr 80px 70px;
+  height:var(--row-h);align-items:center;border-bottom:1px solid var(--bg-2);
+  cursor:pointer;transition:background .08s;
+}
+.ledger-row:hover{background:var(--bg-2)}
+.ledger-row.selected{background:var(--accent-bg)}
+.ledger-row.focused{outline:1px solid var(--accent);outline-offset:-1px}
+.ledger-row.new-event{animation:flash .6s ease-out}
+@keyframes flash{0%{background:var(--accent-bg)}100%{background:transparent}}
+.ledger-row span{padding:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.ledger-row .r-verify{text-align:center;font-size:10px}
+.ledger-row .r-ts{font-family:var(--mono);color:var(--text-1);font-size:10px}
+.ledger-row .r-actor{color:var(--text-2);font-size:10px}
+.ledger-row .r-hash{font-family:var(--mono);font-size:9px;color:var(--text-2)}
 
-/* ── Type Badges ── */
 .badge{
-  display:inline-block;padding:1px 7px;border-radius:3px;
-  font-size:10px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;
-  font-family:var(--mono);
+  display:inline-block;padding:1px 6px;border-radius:3px;
+  font-size:9px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;font-family:var(--mono);
 }
 .badge-checkpoint{color:var(--accent);background:var(--accent-bg)}
 .badge-session_end{color:var(--text-1);background:var(--bg-3)}
@@ -125,127 +130,129 @@ tr.selected td{background:var(--accent-bg)}
 .badge-approvalgranted{color:var(--accent);background:var(--accent-bg)}
 .badge-default{color:var(--text-2);background:var(--bg-3)}
 
-.verify-icon{font-size:11px}
-.verify-icon.ok{color:var(--accent)}
-.verify-icon.none{color:var(--text-2);opacity:.3}
+.vi{font-size:9px}.vi.ok{color:var(--accent)}.vi.no{color:var(--text-2);opacity:.3}
 
 /* ── Detail Panel ── */
-#detail{
-  border-left:1px solid var(--border);background:var(--bg-1);overflow-y:auto;
-  display:flex;flex-direction:column;
-}
-.detail-header{
-  padding:14px 16px;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;justify-content:space-between;
-}
-.detail-header h3{font-size:13px;font-weight:600}
-.detail-close{
-  background:none;border:none;color:var(--text-2);cursor:pointer;
-  font-size:16px;padding:2px 6px;border-radius:4px;
-}
+#detail{border-left:1px solid var(--border);background:var(--bg-1);overflow-y:auto;display:flex;flex-direction:column}
+.detail-header{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.detail-header h3{font-size:12px;font-weight:600}
+.detail-close{background:none;border:none;color:var(--text-2);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px}
 .detail-close:hover{background:var(--bg-2);color:var(--text-0)}
-.detail-body{padding:16px;flex:1;overflow-y:auto}
-.detail-section{margin-bottom:16px}
-.detail-section h4{font-size:11px;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
-.detail-value{font-size:12px;color:var(--text-0);word-break:break-all}
-.detail-mono{font-family:var(--mono);font-size:11px;color:var(--text-1)}
+.detail-body{padding:12px;flex:1;overflow-y:auto}
+.detail-section{margin-bottom:12px}
+.detail-section h4{font-size:10px;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.detail-value{font-size:11px;color:var(--text-0);word-break:break-all}
+.detail-mono{font-family:var(--mono);font-size:10px;color:var(--text-1)}
 .detail-raw{
   background:var(--bg-0);border:1px solid var(--border);border-radius:var(--radius);
-  padding:10px;font-family:var(--mono);font-size:10px;line-height:1.6;
-  color:var(--text-1);overflow-x:auto;max-height:300px;overflow-y:auto;
-  white-space:pre-wrap;word-break:break-all;
+  padding:8px;font-family:var(--mono);font-size:9px;line-height:1.5;
+  color:var(--text-1);overflow-x:auto;max-height:280px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;
 }
-.detail-badge{margin-bottom:4px}
-.detail-related{display:flex;flex-wrap:wrap;gap:4px}
-.related-chip{
-  font-family:var(--mono);font-size:10px;color:var(--text-1);
-  background:var(--bg-2);padding:2px 6px;border-radius:3px;cursor:pointer;
-}
+.detail-related{display:flex;flex-wrap:wrap;gap:3px}
+.related-chip{font-family:var(--mono);font-size:9px;color:var(--text-1);background:var(--bg-2);padding:1px 5px;border-radius:3px;cursor:pointer}
 .related-chip:hover{color:var(--accent);background:var(--accent-bg)}
 
-/* ── Lineage View ── */
+/* ── Lineage ── */
 #lineage{overflow:auto;position:relative;display:none}
-.lineage-container{min-height:100%;padding:20px;position:relative}
-svg.lineage-svg{width:100%;overflow:visible}
+.lineage-container{min-height:100%;padding:16px;position:relative}
+svg.lineage-svg{overflow:visible}
 .lineage-node{cursor:pointer}
-.lineage-node circle,.lineage-node rect,.lineage-node polygon{
-  stroke-width:1.5;transition:all .15s;
-}
-.lineage-node:hover circle,.lineage-node:hover rect,.lineage-node:hover polygon{
-  stroke-width:2.5;filter:brightness(1.2);
-}
-.lineage-node.selected circle,.lineage-node.selected rect,.lineage-node.selected polygon{
-  stroke-width:3;filter:brightness(1.3);
-}
-.lineage-node text{font-family:var(--sans);font-size:10px;fill:var(--text-1);pointer-events:none}
-.lineage-edge{stroke:var(--border);stroke-width:1;fill:none;opacity:.6}
-.lineage-edge.causal{stroke:var(--accent);opacity:.4;stroke-dasharray:4,3}
-.lineage-time-label{font-family:var(--mono);font-size:9px;fill:var(--text-2)}
-.lineage-lane-label{font-family:var(--sans);font-size:10px;fill:var(--text-2);font-weight:500}
-.lineage-tooltip{
-  position:absolute;background:var(--bg-2);border:1px solid var(--border);
-  border-radius:var(--radius);padding:8px 10px;font-size:11px;
-  pointer-events:none;z-index:50;max-width:300px;
-  box-shadow:0 4px 12px rgba(0,0,0,.4);display:none;
-}
-.lineage-tooltip .tt-type{font-weight:600;margin-bottom:2px}
-.lineage-tooltip .tt-summary{color:var(--text-1)}
-.lineage-tooltip .tt-ts{color:var(--text-2);font-family:var(--mono);font-size:10px}
+.lineage-node circle,.lineage-node rect,.lineage-node polygon{stroke-width:1.5;transition:all .12s}
+.lineage-node:hover circle,.lineage-node:hover rect,.lineage-node:hover polygon{stroke-width:2.5;filter:brightness(1.2)}
+.lineage-node.selected circle,.lineage-node.selected rect,.lineage-node.selected polygon{stroke-width:3;filter:brightness(1.3)}
+.lineage-node text{font-family:var(--sans);font-size:9px;fill:var(--text-1);pointer-events:none}
+.lineage-edge{stroke:var(--border);stroke-width:1;fill:none;opacity:.5}
+.lineage-edge.causal{stroke:var(--accent);opacity:.35;stroke-dasharray:4,3}
+.lineage-time-label{font-family:var(--mono);font-size:8px;fill:var(--text-2)}
+.lineage-lane-label{font-family:var(--sans);font-size:9px;fill:var(--text-2);font-weight:500}
 
-/* ── Empty state ── */
-.empty-state{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-2);font-size:14px}
+/* Lineage toolbar */
+.lineage-toolbar{
+  position:sticky;top:0;z-index:10;background:var(--bg-1);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:4px 8px;gap:6px;
+}
+
+/* Minimap */
+.minimap{
+  position:absolute;bottom:8px;right:8px;width:200px;height:60px;
+  background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius);
+  overflow:hidden;z-index:20;cursor:pointer;
+}
+.minimap svg{width:100%;height:100%}
+.minimap-viewport{fill:rgba(16,185,129,.1);stroke:var(--accent);stroke-width:1}
+
+/* Tooltip */
+.lineage-tooltip{
+  position:fixed;background:var(--bg-2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:6px 8px;font-size:10px;
+  pointer-events:none;z-index:50;max-width:280px;box-shadow:0 4px 12px rgba(0,0,0,.4);display:none;
+}
+.tt-type{font-weight:600;margin-bottom:1px}.tt-summary{color:var(--text-1)}.tt-ts{color:var(--text-2);font-family:var(--mono);font-size:9px}
+
+.empty-state{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-2);font-size:13px}
+
+/* ── Keyboard hint ── */
+.kbd{font-family:var(--mono);font-size:9px;color:var(--text-2);background:var(--bg-2);padding:1px 4px;border-radius:2px;border:1px solid var(--border)}
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <div class="logo"><div class="logo-mark"></div> Rekall Forensic Explorer</div>
+    <div class="logo"><div class="logo-mark"></div> Rekall Explorer</div>
     <div class="header-center">
       <button class="mode-btn active" data-mode="ledger">Ledger</button>
       <button class="mode-btn" data-mode="lineage">Lineage</button>
     </div>
     <div class="header-right">
-      <input class="search-box" type="text" placeholder="Search events..." id="search">
-      <span class="stat-pill" id="stat-events">-</span>
-      <span class="stat-pill" id="stat-verify"><span class="verify-dot" id="verify-dot"></span>-</span>
+      <input class="search-box" type="text" placeholder="Search... ( / )" id="search">
+      <button class="jump-btn" data-jump="checkpoint" title="Latest checkpoint">CP</button>
+      <button class="jump-btn" data-jump="attempt_failed" title="Latest failure">FAIL</button>
+      <button class="jump-btn" data-jump="decision" title="Latest decision">DEC</button>
+      <button class="jump-btn" data-jump="head_move" title="Latest HEAD move">HEAD</button>
+      <span class="pill" id="stat-events">-</span>
+      <span class="pill" id="stat-verify"><span class="verify-dot" id="verify-dot"></span>-</span>
+      <span class="pill"><span class="live-dot"></span>Live</span>
     </div>
   </header>
 
   <main id="main">
-    <!-- Ledger View -->
     <div id="ledger">
       <div class="ledger-toolbar">
         <button class="filter-btn active" data-filter="all">All</button>
         <button class="filter-btn" data-filter="checkpoint">Checkpoints</button>
         <button class="filter-btn" data-filter="attempt">Attempts</button>
         <button class="filter-btn" data-filter="decision">Decisions</button>
-        <button class="filter-btn" data-filter="head_move">HEAD Moves</button>
+        <button class="filter-btn" data-filter="head_move">HEAD</button>
         <button class="filter-btn" data-filter="wi_">Work Items</button>
         <button class="filter-btn" data-filter="policy">Policy</button>
-        <span class="ledger-count" id="ledger-count"></span>
+        <span class="ledger-meta">
+          <span id="ledger-count"></span>
+          <span class="kbd">j</span><span class="kbd">k</span> nav
+          <span class="kbd">Enter</span> detail
+        </span>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th class="col-verify"></th>
-            <th class="col-ts">Timestamp</th>
-            <th class="col-type">Type</th>
-            <th class="col-summary">Summary</th>
-            <th class="col-actor">Actor</th>
-            <th class="col-hash">Hash</th>
-          </tr>
-        </thead>
-        <tbody id="ledger-body"></tbody>
-      </table>
+      <div class="ledger-header">
+        <span></span><span>Time</span><span>Type</span><span>Summary</span><span>Actor</span><span>Hash</span>
+      </div>
+      <div class="ledger-scroll" id="ledger-scroll">
+        <div class="vscroll-spacer" id="vscroll-spacer">
+          <div class="vscroll-window" id="vscroll-window"></div>
+        </div>
+      </div>
     </div>
 
-    <!-- Lineage View (hidden by default) -->
-    <div id="lineage">
+    <div id="lineage" style="display:none">
+      <div class="lineage-toolbar">
+        <button class="jump-btn" data-ljump="latest">Latest</button>
+        <button class="jump-btn" data-ljump="attempt_failed">Last Failure</button>
+        <button class="jump-btn" data-ljump="decision">Last Decision</button>
+        <button class="jump-btn" data-ljump="head_move">Last HEAD Move</button>
+      </div>
       <div class="lineage-container" id="lineage-container"></div>
+      <div class="minimap" id="minimap"></div>
       <div class="lineage-tooltip" id="tooltip"></div>
     </div>
 
-    <!-- Detail Panel -->
     <div id="detail" style="display:none">
       <div class="detail-header">
         <h3 id="detail-title">Event Detail</h3>
@@ -257,274 +264,425 @@ svg.lineage-svg{width:100%;overflow:visible}
 </div>
 
 <script>
-// ── State ──
-let allEvents = [];
-let filteredEvents = [];
-let selectedId = null;
-let currentMode = 'ledger';
-let activeFilter = 'all';
-let verifyResults = {};
+/* ═══════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════ */
+let allEvents = [], filteredEvents = [], selectedId = null, focusIdx = -1;
+let currentMode = 'ledger', activeFilter = 'all', verifyResults = {};
+let pollTimer = null, lastEventCount = 0;
 
-// ── Init ──
+const ROW_H = 32; // must match --row-h
+
+/* ═══════════════════════════════════════════
+   INIT & LIVE REFRESH
+   ═══════════════════════════════════════════ */
 async function init() {
-  const [eventsRes, statsRes, verifyRes] = await Promise.all([
+  await refreshData();
+  startPolling();
+}
+
+async function refreshData() {
+  const [eventsRes, verifyRes] = await Promise.all([
     fetch('/api/events').then(r => r.json()),
-    fetch('/api/stats').then(r => r.json()),
     fetch('/api/verify').then(r => r.json()),
   ]);
 
+  const prevCount = allEvents.length;
+  const prevIds = new Set(allEvents.map(e => e.id));
   allEvents = eventsRes;
   verifyResults = verifyRes;
 
-  document.getElementById('stat-events').textContent = `${allEvents.length} events`;
+  // Track new events for flash animation
+  if (prevCount > 0) {
+    allEvents.forEach(e => { e._isNew = !prevIds.has(e.id); });
+  }
 
-  const allOk = Object.values(verifyResults).every(v => !v.errors || v.errors.length === 0);
+  document.getElementById('stat-events').textContent = `${allEvents.length}`;
+  const allOk = Object.values(verifyResults).every(v => !v.errors || !v.errors.length);
   const dot = document.getElementById('verify-dot');
-  const verifyPill = document.getElementById('stat-verify');
   dot.className = 'verify-dot ' + (allOk ? 'verify-ok' : 'verify-fail');
-  verifyPill.innerHTML = dot.outerHTML + (allOk ? 'Verified' : 'Issues');
+  document.getElementById('stat-verify').innerHTML = dot.outerHTML + (allOk ? 'OK' : '!!');
 
   applyFilter();
+
+  // If new events arrived, notify
+  if (prevCount > 0 && allEvents.length > prevCount) {
+    lastEventCount = allEvents.length;
+  }
 }
 
-// ── Filtering ──
+function startPolling() {
+  pollTimer = setInterval(refreshData, 3000);
+}
+
+/* ═══════════════════════════════════════════
+   FILTERING
+   ═══════════════════════════════════════════ */
 function applyFilter() {
-  const search = document.getElementById('search').value.toLowerCase();
+  const q = document.getElementById('search').value.toLowerCase();
   filteredEvents = allEvents.filter(e => {
     if (activeFilter !== 'all' && !e.type.includes(activeFilter)) return false;
-    if (search && !e.summary.toLowerCase().includes(search) &&
-        !e.id.toLowerCase().includes(search) &&
-        !e.type.toLowerCase().includes(search)) return false;
+    if (q && !e.summary.toLowerCase().includes(q) && !e.id.toLowerCase().includes(q) && !e.type.toLowerCase().includes(q)) return false;
     return true;
   });
-  document.getElementById('ledger-count').textContent = `${filteredEvents.length} / ${allEvents.length}`;
-  if (currentMode === 'ledger') renderLedger();
+  document.getElementById('ledger-count').textContent = `${filteredEvents.length}/${allEvents.length}`;
+  if (currentMode === 'ledger') renderVirtualLedger();
   if (currentMode === 'lineage') renderLineage();
 }
 
-// ── Badge helper ──
-function badgeClass(type) {
-  const t = type.replace(/[^a-z_]/g, '');
-  const map = {
-    checkpoint:'badge-checkpoint', session_end:'badge-session_end',
-    attempt_failed:'badge-attempt_failed', attempt_succeeded:'badge-attempt_succeeded',
-    decision_proposed:'badge-decision_proposed', decision_decided:'badge-decision_decided',
-    wi_created:'badge-wi_created', wi_patched:'badge-wi_patched',
-    head_move:'badge-head_move', policyevaluation:'badge-policyevaluation',
-    approvalrequired:'badge-approvalrequired', approvalgranted:'badge-approvalgranted',
-  };
-  return map[t] || 'badge-default';
-}
+/* ═══════════════════════════════════════════
+   BADGE HELPERS
+   ═══════════════════════════════════════════ */
+const BADGE_MAP = {
+  checkpoint:'badge-checkpoint',session_end:'badge-session_end',
+  attempt_failed:'badge-attempt_failed',attempt_succeeded:'badge-attempt_succeeded',
+  decision_proposed:'badge-decision_proposed',decision_decided:'badge-decision_decided',
+  wi_created:'badge-wi_created',wi_patched:'badge-wi_patched',
+  head_move:'badge-head_move',policyevaluation:'badge-policyevaluation',
+  approvalrequired:'badge-approvalrequired',approvalgranted:'badge-approvalgranted',
+};
+function bc(type){ return BADGE_MAP[type.replace(/[^a-z_]/g,'')] || 'badge-default'; }
+function bl(type){ return type.replace(/_/g,' '); }
+function esc(s){ if(!s)return ''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function escSvg(s){ return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):''; }
 
-function badgeLabel(type) {
-  return type.replace(/_/g, ' ');
-}
+/* ═══════════════════════════════════════════
+   VIRTUAL SCROLLING LEDGER
+   ═══════════════════════════════════════════ */
+const scrollEl = () => document.getElementById('ledger-scroll');
+const spacerEl = () => document.getElementById('vscroll-spacer');
+const windowEl = () => document.getElementById('vscroll-window');
 
-// ── Ledger Rendering ──
-function renderLedger() {
-  const tbody = document.getElementById('ledger-body');
-  const rows = filteredEvents.map(e => {
-    const ts = e.timestamp ? e.timestamp.slice(0,19).replace('T',' ') : '';
-    const hash = e.event_hash ? e.event_hash.slice(0,8) : '';
-    const sel = e.id === selectedId ? ' selected' : '';
-    const verIcon = e.verified ? '<span class="verify-icon ok">&#9679;</span>' : '<span class="verify-icon none">&#9675;</span>';
-    return `<tr class="${sel}" data-id="${e.id}">
-      <td class="col-verify">${verIcon}</td>
-      <td class="col-ts">${ts}</td>
-      <td class="col-type"><span class="badge ${badgeClass(e.type)}">${badgeLabel(e.type)}</span></td>
-      <td class="col-summary">${esc(e.summary)}</td>
-      <td class="col-actor">${esc(e.actor)}</td>
-      <td class="col-hash">${hash}</td>
-    </tr>`;
-  });
-  tbody.innerHTML = rows.join('');
-}
+function renderVirtualLedger() {
+  const container = scrollEl();
+  const total = filteredEvents.length;
+  const totalH = total * ROW_H;
+  spacerEl().style.height = totalH + 'px';
 
-function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  const scrollTop = container.scrollTop;
+  const viewH = container.clientHeight;
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - 5);
+  const endIdx = Math.min(total, Math.ceil((scrollTop + viewH) / ROW_H) + 5);
 
-// ── Detail Panel ──
-function showDetail(event) {
-  selectedId = event.id;
-  const panel = document.getElementById('detail');
-  const main = document.getElementById('main');
-  panel.style.display = 'flex';
-  main.classList.remove('no-detail');
-
-  document.getElementById('detail-title').textContent = badgeLabel(event.type);
-  const body = document.getElementById('detail-body');
+  const win = windowEl();
+  win.style.top = (startIdx * ROW_H) + 'px';
 
   let html = '';
-  html += `<div class="detail-section detail-badge"><span class="badge ${badgeClass(event.type)}">${badgeLabel(event.type)}</span></div>`;
-  html += sec('Summary', event.summary);
-  if (event.detail) html += sec('Detail', event.detail);
-  html += sec('Timestamp', `<span class="detail-mono">${event.timestamp}</span>`);
-  html += sec('Actor', event.actor);
-  html += sec('Stream', event.stream);
-  html += sec('ID', `<span class="detail-mono">${event.id}</span>`);
+  for (let i = startIdx; i < endIdx; i++) {
+    const e = filteredEvents[i];
+    const ts = e.timestamp ? e.timestamp.slice(5,19).replace('T',' ') : '';
+    const hash = e.event_hash ? e.event_hash.slice(0,7) : '';
+    const sel = e.id === selectedId ? ' selected' : '';
+    const foc = i === focusIdx ? ' focused' : '';
+    const nw = e._isNew ? ' new-event' : '';
+    const vi = e.verified ? '<span class="vi ok">&#9679;</span>' : '<span class="vi no">&#9675;</span>';
+    html += `<div class="ledger-row${sel}${foc}${nw}" data-id="${e.id}" data-idx="${i}">
+      <span class="r-verify">${vi}</span>
+      <span class="r-ts">${ts}</span>
+      <span><span class="badge ${bc(e.type)}">${bl(e.type)}</span></span>
+      <span>${esc(e.summary)}</span>
+      <span class="r-actor">${esc(e.actor)}</span>
+      <span class="r-hash">${hash}</span>
+    </div>`;
+    if (e._isNew) e._isNew = false; // Only flash once
+  }
+  win.innerHTML = html;
+}
 
-  if (event.git_sha) html += sec('Git SHA', `<span class="detail-mono">${event.git_sha}</span>`);
+scrollEl().addEventListener('scroll', () => renderVirtualLedger());
 
-  if (event.event_hash) {
-    html += sec('Integrity', `
-      <div class="detail-mono">Hash: ${event.event_hash}</div>
-      <div class="detail-mono" style="margin-top:2px">Prev: ${event.prev_hash || 'genesis'}</div>
-      <div style="margin-top:4px"><span class="verify-icon ${event.verified?'ok':'none'}">${event.verified?'&#9679;':'&#9675;'}</span> ${event.verified?'Hash chain verified':'Not verified'}</div>
-    `);
+// Ensure resize re-renders
+new ResizeObserver(() => { if (currentMode === 'ledger') renderVirtualLedger(); }).observe(scrollEl());
+
+/* ═══════════════════════════════════════════
+   KEYBOARD NAVIGATION
+   ═══════════════════════════════════════════ */
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') {
+    if (e.key === 'Escape') { e.target.blur(); return; }
+    return;
   }
 
+  if (e.key === '/') { e.preventDefault(); document.getElementById('search').focus(); return; }
+  if (e.key === 'Escape') { closeDetail(); return; }
+
+  if (currentMode !== 'ledger') return;
+  const total = filteredEvents.length;
+  if (!total) return;
+
+  if (e.key === 'j' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    focusIdx = Math.min(focusIdx + 1, total - 1);
+    ensureVisible(focusIdx);
+    renderVirtualLedger();
+  } else if (e.key === 'k' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    focusIdx = Math.max(focusIdx - 1, 0);
+    ensureVisible(focusIdx);
+    renderVirtualLedger();
+  } else if (e.key === 'Enter' && focusIdx >= 0) {
+    e.preventDefault();
+    showDetail(filteredEvents[focusIdx]);
+  } else if (e.key === 'g' && !e.ctrlKey) {
+    focusIdx = 0;
+    ensureVisible(0);
+    renderVirtualLedger();
+  } else if (e.key === 'G') {
+    focusIdx = total - 1;
+    ensureVisible(focusIdx);
+    renderVirtualLedger();
+  }
+});
+
+function ensureVisible(idx) {
+  const container = scrollEl();
+  const top = idx * ROW_H;
+  const bot = top + ROW_H;
+  if (top < container.scrollTop) container.scrollTop = top;
+  else if (bot > container.scrollTop + container.clientHeight) container.scrollTop = bot - container.clientHeight;
+}
+
+/* ═══════════════════════════════════════════
+   JUMP BUTTONS
+   ═══════════════════════════════════════════ */
+document.querySelectorAll('.jump-btn[data-jump]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const type = btn.dataset.jump;
+    const idx = filteredEvents.findIndex(e => e.type.includes(type));
+    if (idx >= 0) {
+      focusIdx = idx;
+      ensureVisible(idx);
+      showDetail(filteredEvents[idx]);
+    }
+  });
+});
+
+/* ═══════════════════════════════════════════
+   DETAIL PANEL
+   ═══════════════════════════════════════════ */
+function showDetail(event) {
+  selectedId = event.id;
+  focusIdx = filteredEvents.findIndex(e => e.id === event.id);
+  const panel = document.getElementById('detail');
+  const main = document.getElementById('main');
+  panel.style.display = 'flex'; main.classList.remove('no-detail');
+
+  document.getElementById('detail-title').textContent = bl(event.type);
+  const body = document.getElementById('detail-body');
+  let h = '';
+  h += `<div class="detail-section"><span class="badge ${bc(event.type)}">${bl(event.type)}</span></div>`;
+  h += sec('Summary', event.summary);
+  if (event.detail) h += sec('Detail', event.detail);
+  h += sec('Timestamp', `<span class="detail-mono">${event.timestamp}</span>`);
+  h += sec('Actor', event.actor);
+  h += sec('Stream', event.stream);
+  h += sec('ID', `<span class="detail-mono">${event.id}</span>`);
+  if (event.git_sha) h += sec('Git SHA', `<span class="detail-mono">${event.git_sha}</span>`);
+  if (event.event_hash) {
+    h += sec('Integrity', `<div class="detail-mono">Hash: ${event.event_hash}</div>
+      <div class="detail-mono" style="margin-top:2px">Prev: ${event.prev_hash||'genesis'}</div>
+      <div style="margin-top:3px"><span class="vi ${event.verified?'ok':'no'}">${event.verified?'&#9679;':'&#9675;'}</span> ${event.verified?'Chain verified':'Unverified'}</div>`);
+  }
   if (event.related_ids && event.related_ids.length) {
-    html += `<div class="detail-section"><h4>Related</h4><div class="detail-related">${
-      event.related_ids.map(id => `<span class="related-chip" data-id="${id}">${id.slice(0,12)}</span>`).join('')
+    h += `<div class="detail-section"><h4>Related</h4><div class="detail-related">${
+      event.related_ids.map(id=>`<span class="related-chip" data-id="${id}">${id.slice(0,12)}</span>`).join('')
     }</div></div>`;
   }
-
-  html += `<div class="detail-section"><h4>Raw Event</h4><pre class="detail-raw">${esc(JSON.stringify(event.raw, null, 2))}</pre></div>`;
-
-  body.innerHTML = html;
-  renderLedger(); // Re-render to update selection
+  h += `<div class="detail-section"><h4>Raw</h4><pre class="detail-raw">${esc(JSON.stringify(event.raw,null,2))}</pre></div>`;
+  body.innerHTML = h;
+  if (currentMode === 'ledger') renderVirtualLedger();
+  if (currentMode === 'lineage') renderLineage();
 }
 
-function sec(title, content) {
-  return `<div class="detail-section"><h4>${title}</h4><div class="detail-value">${content}</div></div>`;
-}
+function sec(t,c){ return `<div class="detail-section"><h4>${t}</h4><div class="detail-value">${c}</div></div>`; }
 
 function closeDetail() {
   selectedId = null;
   document.getElementById('detail').style.display = 'none';
   document.getElementById('main').classList.add('no-detail');
-  renderLedger();
+  if (currentMode === 'ledger') renderVirtualLedger();
 }
 
-// ── Lineage Rendering ──
+/* ═══════════════════════════════════════════
+   LINEAGE VIEW
+   ═══════════════════════════════════════════ */
 function renderLineage() {
   const container = document.getElementById('lineage-container');
-  const events = filteredEvents.slice().reverse(); // Oldest first for left-to-right
-  if (!events.length) { container.innerHTML = '<div class="empty-state">No events to display</div>'; return; }
+  const events = filteredEvents.slice().reverse();
+  if (!events.length) { container.innerHTML = '<div class="empty-state">No events</div>'; return; }
 
-  // Lane assignment by stream type
-  const lanes = { timeline: 0, attempts: 1, decisions: 2, work_items: 3, head_moves: 4, activity: 5 };
-  const laneLabels = { timeline: 'Timeline', attempts: 'Attempts', decisions: 'Decisions', work_items: 'Work Items', head_moves: 'HEAD', activity: 'Activity' };
-  const usedLanes = new Set(events.map(e => e.stream));
+  const lanes = {timeline:0,attempts:1,decisions:2,work_items:3,head_moves:4,activity:5};
+  const laneNames = {timeline:'Timeline',attempts:'Attempts',decisions:'Decisions',work_items:'Work Items',head_moves:'HEAD',activity:'Activity'};
+  const used = new Set(events.map(e=>e.stream));
+  const lm = {}; let li = 0;
+  for (const k of Object.keys(lanes)) { if (used.has(k)) lm[k] = li++; }
+  const nL = li || 1;
 
-  const nodeW = 120, nodeH = 52, padX = 60, padY = 70, headerH = 30;
-  const laneMap = {};
-  let laneIdx = 0;
-  for (const [key, _] of Object.entries(lanes)) {
-    if (usedLanes.has(key)) { laneMap[key] = laneIdx++; }
-  }
-  const totalLanes = laneIdx || 1;
-  const svgW = events.length * (nodeW + padX) + padX * 2;
-  const svgH = totalLanes * (nodeH + padY) + headerH + padY;
+  const nW=100,nH=40,pX=40,pY=56,hH=24;
+  const svgW = events.length*(nW+pX)+pX*2;
+  const svgH = nL*(nH+pY)+hH+pY;
 
-  // Build SVG
   let svg = `<svg class="lineage-svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}">`;
 
   // Lane labels
-  for (const [stream, li] of Object.entries(laneMap)) {
-    const y = headerH + li * (nodeH + padY) + nodeH / 2 + 4;
-    svg += `<text class="lineage-lane-label" x="10" y="${y}">${laneLabels[stream] || stream}</text>`;
+  for (const [s,l] of Object.entries(lm)) {
+    svg += `<text class="lineage-lane-label" x="6" y="${hH+l*(nH+pY)+nH/2+3}">${laneNames[s]||s}</text>`;
   }
 
-  // Time axis labels (sample every ~5 events)
-  const step = Math.max(1, Math.floor(events.length / 10));
-  for (let i = 0; i < events.length; i += step) {
-    const x = padX * 2 + i * (nodeW + padX) + nodeW / 2;
-    const ts = events[i].timestamp ? events[i].timestamp.slice(5,16).replace('T',' ') : '';
-    svg += `<text class="lineage-time-label" x="${x}" y="${svgH - 6}" text-anchor="middle">${ts}</text>`;
+  // Time labels
+  const step = Math.max(1,Math.floor(events.length/12));
+  for (let i=0;i<events.length;i+=step) {
+    const x=pX*2+i*(nW+pX)+nW/2;
+    const ts=events[i].timestamp?events[i].timestamp.slice(5,16).replace('T',' '):'';
+    svg += `<text class="lineage-time-label" x="${x}" y="${svgH-4}" text-anchor="middle">${ts}</text>`;
   }
 
-  // Edges: hash chain (prev_hash links within same stream)
-  const hashIndex = {};
-  events.forEach((e, i) => { if (e.event_hash) hashIndex[e.event_hash] = i; });
-  events.forEach((e, i) => {
-    if (e.prev_hash && hashIndex[e.prev_hash] !== undefined) {
-      const pi = hashIndex[e.prev_hash];
-      const x1 = padX * 2 + pi * (nodeW + padX) + nodeW;
-      const y1 = headerH + (laneMap[events[pi].stream] || 0) * (nodeH + padY) + nodeH / 2;
-      const x2 = padX * 2 + i * (nodeW + padX);
-      const y2 = headerH + (laneMap[e.stream] || 0) * (nodeH + padY) + nodeH / 2;
-      svg += `<path class="lineage-edge" d="M${x1},${y1} C${x1+30},${y1} ${x2-30},${y2} ${x2},${y2}"/>`;
+  // Hash chain edges
+  const hi={}; events.forEach((e,i)=>{ if(e.event_hash) hi[e.event_hash]=i; });
+  events.forEach((e,i)=>{
+    if(e.prev_hash && hi[e.prev_hash]!==undefined){
+      const p=hi[e.prev_hash];
+      const x1=pX*2+p*(nW+pX)+nW, y1=hH+(lm[events[p].stream]||0)*(nH+pY)+nH/2;
+      const x2=pX*2+i*(nW+pX), y2=hH+(lm[e.stream]||0)*(nH+pY)+nH/2;
+      svg += `<path class="lineage-edge" d="M${x1},${y1} C${x1+20},${y1} ${x2-20},${y2} ${x2},${y2}"/>`;
     }
   });
 
-  // Causal edges: related_ids
-  const idIndex = {};
-  events.forEach((e, i) => { idIndex[e.id] = i; });
-  events.forEach((e, i) => {
-    if (e.related_ids) {
-      for (const rid of e.related_ids) {
-        if (idIndex[rid] !== undefined && idIndex[rid] !== i) {
-          const ri = idIndex[rid];
-          const x1 = padX * 2 + Math.min(ri, i) * (nodeW + padX) + nodeW;
-          const y1 = headerH + (laneMap[events[Math.min(ri, i)].stream] || 0) * (nodeH + padY) + nodeH / 2;
-          const x2 = padX * 2 + Math.max(ri, i) * (nodeW + padX);
-          const y2 = headerH + (laneMap[events[Math.max(ri, i)].stream] || 0) * (nodeH + padY) + nodeH / 2;
-          svg += `<path class="lineage-edge causal" d="M${x1},${y1} C${x1+25},${y1} ${x2-25},${y2} ${x2},${y2}"/>`;
-        }
+  // Causal edges
+  const ii={}; events.forEach((e,i)=>{ ii[e.id]=i; });
+  events.forEach((e,i)=>{
+    if(e.related_ids) for(const r of e.related_ids){
+      if(ii[r]!==undefined && ii[r]!==i){
+        const ri=ii[r];
+        const a=Math.min(ri,i),b=Math.max(ri,i);
+        const x1=pX*2+a*(nW+pX)+nW, y1=hH+(lm[events[a].stream]||0)*(nH+pY)+nH/2;
+        const x2=pX*2+b*(nW+pX), y2=hH+(lm[events[b].stream]||0)*(nH+pY)+nH/2;
+        svg += `<path class="lineage-edge causal" d="M${x1},${y1} C${x1+16},${y1} ${x2-16},${y2} ${x2},${y2}"/>`;
       }
     }
   });
 
   // Nodes
-  events.forEach((e, i) => {
-    const x = padX * 2 + i * (nodeW + padX);
-    const y = headerH + (laneMap[e.stream] || 0) * (nodeH + padY);
-    const sel = e.id === selectedId ? ' selected' : '';
-    const shape = nodeShape(e, x, y);
-    const label = e.summary ? e.summary.slice(0, 16) + (e.summary.length > 16 ? '...' : '') : e.type;
-    svg += `<g class="lineage-node${sel}" data-id="${e.id}" data-idx="${i}">
-      ${shape}
-      <text x="${x + nodeW/2}" y="${y + nodeH + 14}" text-anchor="middle">${escSvg(label)}</text>
-    </g>`;
+  events.forEach((e,i)=>{
+    const x=pX*2+i*(nW+pX), y=hH+(lm[e.stream]||0)*(nH+pY);
+    const sel = e.id===selectedId?' selected':'';
+    const shape = nShape(e,x,y,nW,nH);
+    const label = e.summary?(e.summary.slice(0,14)+(e.summary.length>14?'..':'')):e.type;
+    svg += `<g class="lineage-node${sel}" data-id="${e.id}" data-idx="${i}">${shape}<text x="${x+nW/2}" y="${y+nH+12}" text-anchor="middle">${escSvg(label)}</text></g>`;
   });
 
   svg += '</svg>';
   container.innerHTML = svg;
-
-  // Scroll to rightmost (latest) on first render
-  container.scrollLeft = container.scrollWidth;
+  renderMinimap(events, svgW, svgH, lm, nW, nH, pX, pY, hH);
 }
 
-function nodeShape(e, x, y) {
-  const w = 120, h = 52, r = 6;
-  const colors = {
-    checkpoint: { fill: 'var(--accent-bg)', stroke: 'var(--accent)' },
-    attempt_failed: { fill: 'var(--red-bg)', stroke: 'var(--red)' },
-    attempt_succeeded: { fill: 'var(--accent-bg)', stroke: 'var(--accent)' },
-    decision_proposed: { fill: 'var(--amber-bg)', stroke: 'var(--amber)' },
-    decision_decided: { fill: 'var(--blue-bg)', stroke: 'var(--blue)' },
-    head_move: { fill: 'var(--purple-bg)', stroke: 'var(--purple)' },
-    session_end: { fill: 'var(--bg-3)', stroke: 'var(--text-2)' },
+function nShape(e,x,y,w,h){
+  const cols = {
+    checkpoint:{f:'var(--accent-bg)',s:'var(--accent)'},
+    attempt_failed:{f:'var(--red-bg)',s:'var(--red)'},
+    attempt_succeeded:{f:'var(--accent-bg)',s:'var(--accent)'},
+    decision_proposed:{f:'var(--amber-bg)',s:'var(--amber)'},
+    decision_decided:{f:'var(--blue-bg)',s:'var(--blue)'},
+    head_move:{f:'var(--purple-bg)',s:'var(--purple)'},
+    session_end:{f:'var(--bg-3)',s:'var(--text-2)'},
   };
-  const c = colors[e.type] || { fill: 'var(--bg-3)', stroke: 'var(--border-hover)' };
-
-  // Different shapes by type
-  if (e.type.startsWith('attempt_failed')) {
-    // Diamond for failures
-    const cx = x + w/2, cy = y + h/2;
-    return `<polygon points="${cx},${y} ${x+w},${cy} ${cx},${y+h} ${x},${cy}" fill="${c.fill}" stroke="${c.stroke}"/>`;
+  const c=cols[e.type]||{f:'var(--bg-3)',s:'var(--border-hover)'};
+  if(e.type.startsWith('attempt_failed')){
+    const cx=x+w/2,cy=y+h/2;
+    return `<polygon points="${cx},${y} ${x+w},${cy} ${cx},${y+h} ${x},${cy}" fill="${c.f}" stroke="${c.s}"/>`;
   }
-  if (e.type === 'head_move') {
-    // Circle for HEAD moves
-    return `<circle cx="${x+w/2}" cy="${y+h/2}" r="${h/2}" fill="${c.fill}" stroke="${c.stroke}"/>`;
-  }
-  // Rounded rect for everything else
-  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="${c.fill}" stroke="${c.stroke}"/>`;
+  if(e.type==='head_move') return `<circle cx="${x+w/2}" cy="${y+h/2}" r="${h/2}" fill="${c.f}" stroke="${c.s}"/>`;
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="${c.f}" stroke="${c.s}"/>`;
 }
 
-function escSvg(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+/* ═══════════════════════════════════════════
+   MINIMAP
+   ═══════════════════════════════════════════ */
+function renderMinimap(events, svgW, svgH, lm, nW, nH, pX, pY, hH) {
+  const mm = document.getElementById('minimap');
+  const container = document.getElementById('lineage-container');
+  const scaleX = 200 / svgW, scaleY = 60 / svgH;
 
-// ── Event Handlers ──
+  let svg = `<svg viewBox="0 0 200 60">`;
+  // Dots for each event
+  events.forEach((e,i) => {
+    const x = (pX*2 + i*(nW+pX) + nW/2) * scaleX;
+    const y = (hH + (lm[e.stream]||0)*(nH+pY) + nH/2) * scaleY;
+    const col = e.type.includes('failed') ? 'var(--red)' : e.type==='checkpoint' ? 'var(--accent)' : 'var(--text-2)';
+    svg += `<circle cx="${x}" cy="${y}" r="1.5" fill="${col}" opacity=".7"/>`;
+  });
 
+  // Viewport rect
+  const vw = (container.clientWidth / svgW) * 200;
+  const vh = (container.clientHeight / svgH) * 60;
+  const vx = (container.scrollLeft / svgW) * 200;
+  const vy = (container.scrollTop / svgH) * 60;
+  svg += `<rect class="minimap-viewport" x="${vx}" y="${vy}" width="${Math.max(vw,10)}" height="${Math.max(vh,8)}" rx="2"/>`;
+  svg += '</svg>';
+  mm.innerHTML = svg;
+
+  // Click to navigate
+  mm._svgW = svgW; mm._svgH = svgH;
+}
+
+document.getElementById('minimap').addEventListener('click', (e) => {
+  const mm = document.getElementById('minimap');
+  const container = document.getElementById('lineage-container');
+  const rect = mm.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = (e.clientY - rect.top) / rect.height;
+  container.scrollLeft = x * (mm._svgW || 1) - container.clientWidth / 2;
+  container.scrollTop = y * (mm._svgH || 1) - container.clientHeight / 2;
+  setTimeout(() => renderLineage(), 50);
+});
+
+// Update minimap on scroll
+document.getElementById('lineage-container').addEventListener('scroll', () => {
+  // Lightweight minimap viewport update
+  const mm = document.getElementById('minimap');
+  const vp = mm.querySelector('.minimap-viewport');
+  if (!vp || !mm._svgW) return;
+  const container = document.getElementById('lineage-container');
+  vp.setAttribute('x', (container.scrollLeft / mm._svgW) * 200);
+  vp.setAttribute('y', (container.scrollTop / mm._svgH) * 60);
+});
+
+/* ═══════════════════════════════════════════
+   LINEAGE JUMP BUTTONS
+   ═══════════════════════════════════════════ */
+document.querySelectorAll('[data-ljump]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const type = btn.dataset.ljump;
+    const events = filteredEvents.slice().reverse();
+    let idx;
+    if (type === 'latest') {
+      idx = events.length - 1;
+    } else {
+      // Find last event of this type (from the end)
+      for (let i = events.length - 1; i >= 0; i--) {
+        if (events[i].type.includes(type)) { idx = i; break; }
+      }
+    }
+    if (idx === undefined) return;
+    const container = document.getElementById('lineage-container');
+    const nW = 100, pX = 40;
+    container.scrollLeft = Math.max(0, (pX*2 + idx*(nW+pX)) - container.clientWidth/2);
+    const ev = events[idx];
+    if (ev) showDetail(ev);
+  });
+});
+
+/* ═══════════════════════════════════════════
+   EVENT HANDLERS
+   ═══════════════════════════════════════════ */
 // Mode toggle
 document.querySelectorAll('.mode-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     currentMode = btn.dataset.mode;
-
-    document.getElementById('ledger').style.display = currentMode === 'ledger' ? 'block' : 'none';
-    document.getElementById('lineage').style.display = currentMode === 'lineage' ? 'block' : 'none';
+    document.getElementById('ledger').style.display = currentMode==='ledger'?'flex':'none';
+    document.getElementById('lineage').style.display = currentMode==='lineage'?'block':'none';
     applyFilter();
   });
 });
@@ -532,75 +690,54 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
 // Filter buttons
 document.querySelectorAll('.filter-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     activeFilter = btn.dataset.filter;
+    focusIdx = -1;
     applyFilter();
   });
 });
 
 // Search
-document.getElementById('search').addEventListener('input', () => applyFilter());
+document.getElementById('search').addEventListener('input', () => { focusIdx = -1; applyFilter(); });
 
-// Ledger row clicks
-document.getElementById('ledger-body').addEventListener('click', (e) => {
-  const tr = e.target.closest('tr');
-  if (!tr) return;
-  const id = tr.dataset.id;
-  const event = allEvents.find(ev => ev.id === id);
-  if (event) showDetail(event);
+// Ledger row clicks (delegated on virtual scroll window)
+document.getElementById('vscroll-window').addEventListener('click', (e) => {
+  const row = e.target.closest('.ledger-row');
+  if (!row) return;
+  const ev = allEvents.find(x => x.id === row.dataset.id);
+  if (ev) showDetail(ev);
 });
 
-// Lineage node clicks
+// Lineage clicks
 document.getElementById('lineage-container').addEventListener('click', (e) => {
   const node = e.target.closest('.lineage-node');
   if (!node) return;
-  const id = node.dataset.id;
-  const event = allEvents.find(ev => ev.id === id);
-  if (event) {
-    showDetail(event);
-    // If switching to ledger, scroll to the row
-    if (currentMode === 'lineage') renderLineage();
-  }
+  const ev = allEvents.find(x => x.id === node.dataset.id);
+  if (ev) { showDetail(ev); renderLineage(); }
 });
 
 // Lineage tooltip
 document.getElementById('lineage-container').addEventListener('mousemove', (e) => {
   const node = e.target.closest('.lineage-node');
-  const tooltip = document.getElementById('tooltip');
-  if (!node) { tooltip.style.display = 'none'; return; }
-  const idx = parseInt(node.dataset.idx);
-  const ev = filteredEvents.slice().reverse()[idx];
-  if (!ev) { tooltip.style.display = 'none'; return; }
-  const ts = ev.timestamp ? ev.timestamp.slice(0,19).replace('T',' ') : '';
-  tooltip.innerHTML = `<div class="tt-type">${badgeLabel(ev.type)}</div><div class="tt-summary">${esc(ev.summary)}</div><div class="tt-ts">${ts}</div>`;
-  tooltip.style.display = 'block';
-  tooltip.style.left = (e.clientX + 12) + 'px';
-  tooltip.style.top = (e.clientY - 10) + 'px';
+  const tt = document.getElementById('tooltip');
+  if (!node) { tt.style.display='none'; return; }
+  const ev = allEvents.find(x => x.id === node.dataset.id);
+  if (!ev) { tt.style.display='none'; return; }
+  tt.innerHTML = `<div class="tt-type">${bl(ev.type)}</div><div class="tt-summary">${esc(ev.summary)}</div><div class="tt-ts">${ev.timestamp?ev.timestamp.slice(0,19).replace('T',' '):''}</div>`;
+  tt.style.display='block'; tt.style.left=(e.clientX+10)+'px'; tt.style.top=(e.clientY-8)+'px';
 });
-document.getElementById('lineage-container').addEventListener('mouseleave', () => {
-  document.getElementById('tooltip').style.display = 'none';
-});
+document.getElementById('lineage-container').addEventListener('mouseleave', ()=>{ document.getElementById('tooltip').style.display='none'; });
 
 // Detail close
 document.getElementById('detail-close').addEventListener('click', closeDetail);
 
-// Related chip clicks
+// Related chips
 document.getElementById('detail-body').addEventListener('click', (e) => {
   const chip = e.target.closest('.related-chip');
   if (!chip) return;
-  const id = chip.dataset.id;
-  const event = allEvents.find(ev => ev.id === id);
-  if (event) showDetail(event);
-});
-
-// Keyboard: Escape to close detail
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeDetail();
-  if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
-    e.preventDefault();
-    document.getElementById('search').focus();
-  }
+  const ev = allEvents.find(x => x.id === chip.dataset.id);
+  if (ev) showDetail(ev);
 });
 
 // Start
