@@ -11,7 +11,7 @@
       "active_file": "streams/activity/active.jsonl",
       "segments": [],
       "id_field": "activity_id",
-      "latest_hash": "a16d59d15e3027c4652bcd95ab77624e9a49fc78e5afc491e3c865de92051811"
+      "latest_hash": "1fd508f6ef0ccbc3e9777531fb1a11c67742a5c9501f36e976bed89aa72626ba"
     },
     "attempts": {
       "active_file": "streams/attempts/active.jsonl",
@@ -23,7 +23,7 @@
       "active_file": "streams/decisions/active.jsonl",
       "segments": [],
       "id_field": "decision_id",
-      "latest_hash": "9cc8b6d434a45f70006f96ac950ecf02d83fdafb5c24a1d32fe4cebf88d307b4"
+      "latest_hash": "ad42251c8d66d284dc7233157c713f485780b456cee902239dd31191c8b4a1b1"
     },
     "timeline": {
       "active_file": "streams/timeline/active.jsonl",

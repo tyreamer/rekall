@@ -1420,6 +1420,14 @@ def cmd_checkpoint(args):
             out_payload["git_sha"] = git_sha
 
         if args.json:
+            # Include recording prompts in JSON output so MCP agents see them
+            decisions = store._load_stream_raw("decisions", hot_only=True)
+            attempts = store._load_stream_raw("attempts", hot_only=True)
+            out_payload["_prompts"] = []
+            if not decisions:
+                out_payload["_prompts"].append("No decisions recorded yet. If you made architectural choices, run: rekall decisions propose --title '...' --rationale '...' --tradeoffs '...'")
+            if not attempts:
+                out_payload["_prompts"].append("No failed attempts recorded yet. If anything failed, run: rekall attempts add <id> --title '...' --evidence '...'")
             print(json.dumps(out_payload))
         else:
             print(f"\n\\u2705 Checkpoint saved [{ctype}]")
@@ -1429,6 +1437,17 @@ def cmd_checkpoint(args):
                 print(f"   Git Commit  : {git_sha} ({git_subject})")
             if export_path:
                 print(f"   Export path : {export_path}")
+
+            # Recording audit: remind about decisions and attempts
+            decisions = store._load_stream_raw("decisions", hot_only=True)
+            attempts = store._load_stream_raw("attempts", hot_only=True)
+            prompts = []
+            if not decisions:
+                prompts.append("decisions (rekall decisions propose --title '...' --rationale '...' --tradeoffs '...')")
+            if not attempts:
+                prompts.append("failed attempts (rekall attempts add <id> --title '...' --evidence '...')")
+            if prompts:
+                print(f"\n   {Theme.ICON_WARNING} Recording gap: no {' or '.join(prompts)} logged yet.")
             print("")
 
         # Best-effort Hub sync on checkpoint
@@ -1991,19 +2010,23 @@ def _detect_bypass(store: StateStore, store_dir) -> list:
     except Exception:
         pass
 
-    # 2. Check for empty ledger despite having work items
-    work_items = list(store.work_items.values())
-    attempts = store._load_stream("attempts", hot_only=True)
-    if work_items and not attempts:
-        in_progress = [w for w in work_items if w.get("status") == "in_progress"]
-        if in_progress:
-            warnings.append(
-                f"{len(in_progress)} work item(s) in progress but no attempts recorded. "
-                f"Log work with `rekall attempts add <work_item_id> --title '...'`."
-            )
-
-    # 3. Check for pending decisions that are stale
+    # 2. Check for zero decisions recorded this session
     decisions = store._load_stream("decisions", hot_only=True)
+    if not decisions:
+        warnings.append(
+            "No decisions recorded. If you made architectural choices or tradeoffs, "
+            "run: rekall decisions propose --title '...' --rationale '...' --tradeoffs '...'"
+        )
+
+    # 3. Check for zero attempts recorded
+    attempts = store._load_stream("attempts", hot_only=True)
+    if not attempts:
+        warnings.append(
+            "No failed attempts recorded. If anything was tried and didn't work, "
+            "run: rekall attempts add <id> --title '...' --evidence '...'"
+        )
+
+    # 4. Check for pending decisions that are stale
     pending = [d for d in decisions if d.get("status") in ("proposed", "pending", "PENDING")]
     if pending:
         warnings.append(

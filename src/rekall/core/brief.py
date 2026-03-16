@@ -258,6 +258,12 @@ def render_brief_default(model: BriefModel, store=None) -> str:
         except Exception:
             pass
 
+    # Protocol reminder: what to record during this session
+    lines.append("\nProtocol:")
+    lines.append("  Checkpoint work:   rekall checkpoint --summary '...' --commit auto")
+    lines.append("  Log failed paths:  rekall attempts add <id> --title '...' --evidence '...'")
+    lines.append("  Record decisions:  rekall decisions propose --title '...' --rationale '...' --tradeoffs '...'")
+
     return "\n".join(lines)
 
 
