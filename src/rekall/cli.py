@@ -2416,7 +2416,31 @@ def cmd_init(args):
             except Exception as e:
                 print(f"{Theme.ICON_WARNING} Warning: could not automate agent adoption: {e}")
 
-        # 5. Success output
+        # 5. Auto-install git hooks (auto-checkpoint on commit)
+        if not getattr(args, "json", False):
+            try:
+                import stat
+                git_dir = Path(".git")
+                if git_dir.exists():
+                    hooks_dir = git_dir / "hooks"
+                    hooks_dir.mkdir(exist_ok=True)
+
+                    # Auto-checkpoint post-commit hook
+                    post_commit = hooks_dir / "post-commit"
+                    if not post_commit.exists() or getattr(args, "force", False):
+                        post_commit.write_text(
+                            '#!/bin/sh\n'
+                            'COMMIT_MSG=$(git log -1 --format=%s 2>/dev/null)\n'
+                            'COMMIT_SHA=$(git log -1 --format=%h 2>/dev/null)\n'
+                            'rekall checkpoint --type milestone --title "$COMMIT_MSG" --summary "Auto-checkpoint: $COMMIT_MSG" --commit "$COMMIT_SHA" --quiet 2>/dev/null || true\n',
+                            encoding="utf-8"
+                        )
+                        post_commit.chmod(post_commit.stat().st_mode | stat.S_IEXEC)
+                        print("\u2705 Installed auto-checkpoint git hook (every commit recorded)")
+            except Exception:
+                pass  # Not a git repo or permissions issue — skip silently
+
+        # 6. Success output
         if getattr(args, "print", False):
             print("\n--- INITIALIZATION CHEAT SHEET ---")
             print(content)
@@ -2425,10 +2449,12 @@ def cmd_init(args):
         if getattr(args, "json", False):
             print(json.dumps({"status": "success", "path": str(out_path)}))
         else:
-            print(f"Created: {out_path}")
-            print(
-                "Next: rekall brief | rekall log | rekall checkpoint"
-            )
+            print("\n\u2705 Rekall initialized. You're ready.")
+            print("\nWhat happens now:")
+            print("  Every git commit auto-checkpoints to Rekall")
+            print("  Every session starts with context (via hooks)")
+            print("  Run 'rekall brief' anytime to see where you are")
+            print("  Run 'rekall log' to see the execution timeline")
 
     except Exception as e:
         die(

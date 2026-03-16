@@ -36,7 +36,7 @@ def test_init_auto_init(temp_repo, capfd):
     assert "What is Rekall?" in content
 
     captured = capfd.readouterr()
-    assert f"Created: {cheat_sheet}" in captured.out
+    assert "Rekall initialized" in captured.out or f"Created: {cheat_sheet}" in captured.out
 
 
 def test_init_existing_repo(temp_repo, capfd):
