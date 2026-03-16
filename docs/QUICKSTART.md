@@ -48,10 +48,15 @@ rekall stats        # Usage metrics: checkpoints, retries prevented, tokens save
 rekall verify       # Cryptographic integrity check
 ```
 
-### 6. Visual Explorer
+### 6. Forensic Explorer
 ```bash
-rekall explorer     # Opens browser with Ledger + Lineage views
+rekall explorer     # Opens browser at http://127.0.0.1:7700
 ```
+Two views, one record:
+- **Ledger** — dense event table with filters, search, keyboard nav (`j`/`k`/`Enter`/`/`)
+- **Trace** — causal neighborhood graph (press `t` to toggle, adjust depth 1/2/3)
+
+Filter by time (1h/24h/7d/30d) or type (Checkpoints/Attempts/Decisions). Both views stay in sync.
 
 ---
 

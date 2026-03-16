@@ -87,12 +87,13 @@ Tamper-evident history.
 
 ## BONUS: FORENSIC EXPLORER — SHIPPED
 
-Local browser UI for inspecting the execution record (`rekall explorer`).
+Dual-mode browser UI for inspecting the execution record (`rekall explorer`).
 
-- **Ledger View** — Dense, filterable event table with keyboard navigation, virtual scrolling, hash chain detail.
-- **Lineage View** — SVG causality graph with stream lanes, minimap, jump-to shortcuts.
+- **Ledger View** — Dense evidence table with type/time filters, keyboard nav, virtual scroll, hash chain verification.
+- **Trace View** — Causal neighborhood graph with adjustable depth (1/2/3 hops), dead-end markers, branch-point shapes.
+- **Cross-mode sync** — `t` toggles modes with selection locked. "Trace →" / "← Ledger" buttons. Filters apply to both.
 - **Live refresh** — Polls every 3s, new events flash on arrival.
-- Zero external dependencies.
+- Zero external dependencies. Ships inside the pip package.
 
 ---
 
