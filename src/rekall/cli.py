@@ -1423,11 +1423,13 @@ def cmd_checkpoint(args):
             # Include recording prompts in JSON output so MCP agents see them
             decisions = store._load_stream_raw("decisions", hot_only=True)
             attempts = store._load_stream_raw("attempts", hot_only=True)
-            out_payload["_prompts"] = []
+            json_prompts: list = []
             if not decisions:
-                out_payload["_prompts"].append("No decisions recorded yet. If you made architectural choices, run: rekall decisions propose --title '...' --rationale '...' --tradeoffs '...'")
+                json_prompts.append("No decisions recorded yet. If you made architectural choices, run: rekall decisions propose --title '...' --rationale '...' --tradeoffs '...'")
             if not attempts:
-                out_payload["_prompts"].append("No failed attempts recorded yet. If anything failed, run: rekall attempts add <id> --title '...' --evidence '...'")
+                json_prompts.append("No failed attempts recorded yet. If anything failed, run: rekall attempts add <id> --title '...' --evidence '...'")
+            if json_prompts:
+                out_payload["_prompts"] = json_prompts
             print(json.dumps(out_payload))
         else:
             print(f"\n\\u2705 Checkpoint saved [{ctype}]")
@@ -1452,13 +1454,11 @@ def cmd_checkpoint(args):
 
         # Best-effort integrity check on checkpoint
         try:
-            for stream in ["timeline", "work_items", "decisions", "attempts"]:
-                res = store.verify_stream_integrity(stream)
-                if res["errors"]:
-                    if args.json:
-                        pass  # Already in payload
-                    else:
-                        print(f"   {Theme.ICON_ERROR} Integrity issue in {stream}: {res['errors'][0]}")
+            for stream_name in ["timeline", "work_items", "decisions", "attempts"]:
+                vr = store.verify_stream_integrity(stream_name)
+                if vr["errors"]:
+                    if not args.json:
+                        print(f"   {Theme.ICON_ERROR} Integrity issue in {stream_name}: {vr['errors'][0]}")
         except Exception:
             pass
 

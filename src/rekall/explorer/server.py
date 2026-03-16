@@ -8,12 +8,12 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from rekall.core.state_store import StateStore, resolve_vault_dir
 
-_store: StateStore = None  # type: ignore
+_store: Optional[StateStore] = None
 
 
 def _get_store() -> StateStore:
