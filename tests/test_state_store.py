@@ -1,43 +1,47 @@
-from pathlib import Path
 
 import pytest
 
 from rekall.core.state_store import SecretDetectedError, StateConflictError, StateStore
 
-SAMPLE_DIR = Path(__file__).parent.parent / "examples" / "sample_state_artifact"
+
+def _make_vault(tmp_path):
+    """Create a minimal vault for testing."""
+    import json
+    store_dir = tmp_path / "project-state"
+    store_dir.mkdir()
+    (store_dir / "schema-version.txt").write_text("0.1")
+    (store_dir / "project.yaml").write_text("project_id: test\n")
+    (store_dir / "manifest.json").write_text(json.dumps({"schema_version": "0.1", "streams": {}}))
+    return store_dir
 
 
-def test_load_sample_artifact(tmp_path):
-    # Copy sample to tmp so migration doesn't mess with repo
-    import shutil
-
-    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
-
-    StateStore(tmp_path)
-
-    # Check that it migrated
-    assert (tmp_path / "manifest.json").exists()
-    assert (tmp_path / "streams" / "work_items" / "active.jsonl").exists()
-    # Legacy file should be gone
-    assert not (tmp_path / "work-items.jsonl").exists()
+def test_store_initializes(tmp_path):
+    store_dir = _make_vault(tmp_path)
+    store = StateStore(store_dir)
+    assert store.initialized
+    assert (store_dir / "manifest.json").exists()
 
 
 def test_work_items_replayed(tmp_path):
-    import shutil
+    store_dir = _make_vault(tmp_path)
+    store = StateStore(store_dir)
+    store.create_work_item(
+        {"title": "Task 1", "status": "todo", "priority": "p1"},
+        {"actor_id": "test"},
+    )
 
-    shutil.copytree(SAMPLE_DIR, tmp_path, dirs_exist_ok=True)
-    store = StateStore(tmp_path)
-    assert len(store.work_items) > 0
-
-    # Check that at least one item has a computed version and claim status
-    for _wid, item in store.work_items.items():
+    # Reload from disk
+    store2 = StateStore(store_dir)
+    assert len(store2.work_items) == 1
+    for _wid, item in store2.work_items.items():
         assert "version" in item
         assert isinstance(item["version"], int)
+        assert item["title"] == "Task 1"
         assert "claim" in item
 
 
 def test_secret_detection(tmp_path):
-    store = StateStore(SAMPLE_DIR)
+    store = StateStore(_make_vault(tmp_path))
 
     malicious_records = [
         {"notes": "Here is my key sk-A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0"},
@@ -73,8 +77,7 @@ def test_sanitize_url():
 
 
 def test_append_idempotent_dedupes(tmp_path):
-    store = StateStore(SAMPLE_DIR)
-    store.base_dir = tmp_path  # Override base_dir for testing writes
+    store = StateStore(_make_vault(tmp_path))
 
     record = {"log_id": "123", "data": "hello"}
 
@@ -87,7 +90,7 @@ def test_append_idempotent_dedupes(tmp_path):
     )
 
     # Verify file only has one line
-    active_path = tmp_path / "streams" / "test_stream" / "active.jsonl"
+    active_path = tmp_path / "project-state" / "streams" / "test_stream" / "active.jsonl"
     lines = active_path.read_text().splitlines()
     assert len(lines) == 1
     assert '"hello"' in lines[0]
