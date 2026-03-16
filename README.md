@@ -104,14 +104,35 @@ rekall stats
 Inspect your execution record visually with the built-in Forensic Explorer:
 
 ```bash
-rekall explorer
+rekall explorer              # Opens browser at http://127.0.0.1:7700
+rekall explorer --port 8080  # Custom port
+rekall explorer --no-browser # Start server without opening browser
 ```
 
-Opens a local browser UI with two modes:
-- **Ledger View** — Dense, filterable event table with keyboard navigation, hash chain verification, and detail panel
-- **Lineage View** — SVG causality graph showing event relationships across streams
+Two synchronized views over one immutable execution record:
 
-Features: live auto-refresh, virtual scrolling for large histories, minimap navigation, jump-to-latest shortcuts.
+**Ledger View** (system of record)
+- Dense, filterable event table across all streams
+- Type filters (Checkpoints / Attempts / Decisions / HEAD / Work Items)
+- Time-range filters (All / 1h / 24h / 7d / 30d)
+- Keyboard navigation: `j`/`k` move, `Enter` inspect, `g`/`G` top/bottom, `/` search
+- Jump buttons for latest checkpoint, failure, decision, or HEAD move
+- Evidence panel with hash chain verification and raw JSON
+- Virtual scrolling for large histories
+- Live auto-refresh (3s polling, new events flash green)
+
+**Trace View** (causal explanation)
+- Causal neighborhood graph centered on selected event
+- Adjustable depth (1/2/3 hops) for broader or tighter context
+- Failed attempts shown as diamonds with dead-end markers
+- Decisions shown as hexagons (branch points)
+- HEAD moves shown as circles (redirections)
+
+**Cross-mode sync:**
+- `t` toggles between Ledger and Trace, preserving selection
+- "Trace →" button in Evidence panel opens event in Trace
+- "← Ledger" button in Trace jumps to exact Ledger row
+- Time and type filters apply to both views simultaneously
 
 ## How State is Stored
 
