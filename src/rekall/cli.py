@@ -1450,6 +1450,18 @@ def cmd_checkpoint(args):
                 print(f"\n   {Theme.ICON_WARNING} Recording gap: no {' or '.join(prompts)} logged yet.")
             print("")
 
+        # Best-effort integrity check on checkpoint
+        try:
+            for stream in ["timeline", "work_items", "decisions", "attempts"]:
+                res = store.verify_stream_integrity(stream)
+                if res["errors"]:
+                    if args.json:
+                        pass  # Already in payload
+                    else:
+                        print(f"   {Theme.ICON_ERROR} Integrity issue in {stream}: {res['errors'][0]}")
+        except Exception:
+            pass
+
         # Best-effort Hub sync on checkpoint
         _try_hub_sync(base_dir, store.manifest, quiet=getattr(args, "quiet", True))
 
@@ -2624,8 +2636,9 @@ def _generate_ide_instruction_files(force=False):
 
     settings["customInstructions"] = instruction
 
-    # SessionStart hook: auto-inject rekall brief into every session
-    # This makes the brief UNAVOIDABLE — the agent sees it without choosing to call it
+    # Hooks: auto-brief on start, auto-session-end on exit
+    # SessionStart: inject brief (unavoidable context)
+    # SessionEnd: run session end with audit (catches missing decisions/attempts)
     settings["hooks"] = {
         "SessionStart": [
             {
@@ -2634,6 +2647,17 @@ def _generate_ide_instruction_files(force=False):
                     {
                         "type": "command",
                         "command": "rekall brief 2>/dev/null || true"
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "rekall session end --summary 'Auto-ended by Claude Code session hook' 2>/dev/null || true"
                     }
                 ]
             }

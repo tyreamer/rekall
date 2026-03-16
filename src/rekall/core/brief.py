@@ -258,6 +258,15 @@ def render_brief_default(model: BriefModel, store=None) -> str:
         except Exception:
             pass
 
+    # Guard checks: surface drift and integrity warnings inline
+    if store:
+        try:
+            drift = store.check_drift()
+            if drift:
+                lines.append(f"\nDrift: {drift}")
+        except Exception:
+            pass
+
     # Protocol reminder: what to record during this session
     lines.append("\nProtocol:")
     lines.append("  Checkpoint work:   rekall checkpoint --summary '...' --commit auto")

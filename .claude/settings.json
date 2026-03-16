@@ -11,6 +11,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "rekall session end --summary 'Auto-ended by Claude Code session hook' 2>/dev/null || true"
+          }
+        ]
+      }
     ]
   }
 }
