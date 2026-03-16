@@ -1,115 +1,64 @@
 # Rekall Roadmap
 
 **Version**: v0.2 (Mar 2026)
-**Status**: Phases 1, 3, 4 shipped. Phase 2 in progress.
+**Focus**: Get to 100 real users. Distribution over features.
 
-Rekall's mission is to be the **persistent, immutable reality layer** for autonomous coding agents — while staying relentlessly developer-friendly.
+## Core Wedge (shipped, validated)
 
-### Non-Negotiables
-- Append-only immutability. History is never truncated or deleted.
-- Deterministic resumption: agents can stop and resume from Rekall state exactly as it was.
-- Developer wedge: default experience is **OPEN and helpful** (saves time and API credits), never bureaucratic approval theater.
-- Local-first. No hosted server required. Sharing happens via verifiable bundles.
+The problem: AI agents start every session cold, retry known failures, re-debate settled decisions.
 
-We build in **"Proof of Physics" order** — first prove the foundational mechanics, then layer on the delightful features.
+The solution: `pip install rekall.tools && rekall init` gives agents persistent context.
 
----
+**What works today:**
+- `rekall init` — one command sets up everything (vault, hooks, IDE configs)
+- `rekall brief` — auto-injected at session start via hooks
+- `rekall checkpoint` — auto-records on git commit, manual for milestones
+- `rekall attempts add` — records failures so agents see DO NOT RETRY
+- `rekall decisions propose` — records architectural choices with rationale
+- `rekall log` — unified execution timeline
 
-## PHASE 1: THE PHYSICS (Snapshot + Revert + Resume) — SHIPPED
+## Current Priorities
 
-Core capability: true time travel while preserving full immutable history.
+### 1. Distribution (highest priority)
+- [ ] Blog post: "How Rekall saved $X in API credits" with real session data
+- [ ] Show HN submission
+- [ ] MCP server directory listing (Anthropic, community)
+- [ ] awesome-claude-code / awesome-cursor listings
+- [ ] Integration guides for each agent type
 
-1. **Computed State View + HEAD semantics** — Deterministic reducer computes active state from snapshot + event tail up to HEAD. Pure functions, no I/O.
-2. **HeadMove event type** — Append-only HEAD movement replaces StateRevert. Full audit trail preserved.
-3. **Snapshotting protocol** — Global snapshot with tamper-evident hash. Bootstrap = load snapshot + replay tail.
-4. **CLI commands** — `rekall rewind --to <event_id|timestamp>` and `rekall resume` (hidden/advanced).
+### 2. Zero-friction adoption
+- [x] One-command init (hooks + MCP + IDE configs)
+- [x] Auto-checkpoint on git commit
+- [x] Auto-brief via SessionStart hook
+- [x] Auto-session-end via Stop hook
+- [x] Checkpoint audit for missing decisions/attempts
+- [ ] Anonymous opt-in usage telemetry
 
-**Status**: Shipped in v0.2.0-beta.2. 36 reducer tests, determinism proven.
+### 3. User feedback loop
+- [ ] 10 real users providing feedback
+- [ ] Track which commands are actually used
+- [ ] Identify what users ask for vs what we assumed
 
----
+## Infrastructure (shipped, not promoted)
 
-## PHASE 2: THE WEDGE (Async Breakpoint / Ask Human) — IN PROGRESS
+These features are built and working but hidden from the primary surface until user demand justifies promotion:
 
-Make agents gracefully pause and resume with human input — without hanging connections.
+- **Deterministic reducer** — computed state from snapshot + event replay
+- **Time travel** — HeadMove events, rewind/resume commands
+- **Policy engine** — allow/warn/block/require_approval from policy.yaml
+- **Capability controls** — role-based gating for high-risk operations
+- **Signed approvals** — HMAC-SHA256 signed events
+- **Hash chain verification** — tamper-evident ledger across all streams
+- **Forensic Explorer** — browser UI with Ledger + Trace views
 
-4. **Terminal breakpoint tool**
-   MCP tool: `breakpoint.ask_human_for_decision(prompt, options, action_metadata)`
-   - Appends a `WaitingOnHuman` event
-   - Returns structured `STOP: WAITING_ON_HUMAN` so the agent runner exits cleanly
+These will be promoted when enterprise customers ask for them.
 
-5. **Human decision + re-awaken flow**
-   - CLI: `rekall decide <decision_id> --option <X> [--note "..."]`
-     - Appends `Decision` + `HumanAnchor` events
-   - CLI: `rekall resume`
-     - Detects resolved `WaitingOnHuman` -> continues deterministically
-
-**Definition of Done**
-- Full cycle: agent pauses -> human decides later (even hours later) -> agent resumes exactly
-- Demo script included
-
----
-
-## PHASE 3: THE TOLLBOOTH (Policy + Capabilities) — SHIPPED
-
-Guardrails that help instead of block.
-
-6. **Real policy evaluator** — allow/warn/block/require_approval outcomes from `policy.yaml` rules.
-7. **Scoped evaluation** — Rules match by org, project, environment, agent.
-8. **Auditable policy decisions** — Every evaluation recorded as a `PolicyEvaluation` event.
-9. **Capability controls** — Minimal role-based gating (approve_decisions, modify_policy, etc).
-10. **Approval flow** — `ApprovalRequired` / `ApprovalGranted` events with HMAC-SHA256 signatures.
-
-**Status**: Shipped. 18 policy tests, 14 provenance tests.
+## Non-Negotiables
+- Append-only immutability
+- Local-first (no server required)
+- Works with every major AI coding assistant
+- Developer-friendly defaults (open, not bureaucratic)
 
 ---
 
-## PHASE 4: THE VAULT (Hash chain + Signatures) — SHIPPED
-
-Tamper-evident history.
-
-8. **Cryptographic integrity** — Every event gets `event_hash` + `prev_hash`. Hash chain verified across all 6 streams.
-9. **Signed approvals** — HMAC-SHA256 signed with device-local secret.
-10. **`rekall verify`** — Validates full chain integrity across timeline, work_items, decisions, attempts, activity, head_moves.
-11. **Snapshot integrity** — Deterministic hash, tamper detection on load.
-
-**Status**: Shipped. All streams hash-chained and verifiable.
-
----
-
-## PHASE 5: "SYNC" WITHOUT A SERVER (Bundles) — PLANNED
-
-9. **rekall bundle**
-   - `rekall bundle --out <file.tar.gz>`
-   - Includes snapshot, events, policy, manifest, and signatures
-   - Anyone can `rekall verify` the bundle
-
----
-
-## BONUS: FORENSIC EXPLORER — SHIPPED
-
-Local browser UI for inspecting the execution record (`rekall explorer`).
-
-- **Ledger View** — Dense, filterable event table with keyboard navigation, virtual scrolling, hash chain detail.
-- **Lineage View** — SVG causality graph with stream lanes, minimap, jump-to shortcuts.
-- **Live refresh** — Polls every 3s, new events flash on arrival.
-- Zero external dependencies.
-
----
-
-### Shipping Constraints
-- Lead with **Time Travel + Policy + Forensic Explorer**
-- No enforcement-by-default
-- No feature sprawl
-
-### Final Deliverable for v0.2
-A single **demo runbook** showing:
-1. Time travel saves credits: bad run -> rewind -> resume with new decision
-2. Policy actuation: rules allow/warn/block/require_approval
-3. Forensic Explorer: inspect the full execution record visually
-
----
-
-**Feedback welcome** — this roadmap is public by design.
-Open an issue or DM [@TyReamer](https://x.com/tyreamer) with thoughts.
-
-*Last updated: 2026-03-15*
+*Last updated: 2026-03-16*

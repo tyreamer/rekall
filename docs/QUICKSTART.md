@@ -1,68 +1,53 @@
 # Rekall Quickstart
 
-Get a verifiable AI execution record running in 5 minutes.
-
-## Prerequisites
-- Python 3.10+
+Get persistent agent memory in 2 minutes.
 
 ## Install
 
 ```bash
 pip install rekall.tools
-```
-
-## The 5-Minute Tour
-
-### 1. Initialize
-```bash
-cd /path/to/your-repo
+cd your-project
 rekall init
 ```
-This creates:
-- `project-state/` vault folder
-- `AGENTS.md` operating contract
-- IDE instruction files (`.cursor/mcp.json`, `CLAUDE.md`, `.windsurfrules`, etc.)
 
-### 2. Get a Session Brief
-```bash
-rekall brief
-```
-Returns: current focus, blockers, failed attempts (DO NOT RETRY), pending decisions, and usage stats. Fresh vaults show a quick-start guide.
+This does everything:
+- Creates the `project-state/` vault
+- Installs auto-checkpoint git hook (every commit recorded)
+- Sets up Claude Code session hooks (brief on start, audit on end)
+- Configures Cursor MCP (`.cursor/mcp.json`)
+- Generates IDE instruction files for all assistants
 
-### 3. Do Work, Checkpoint Progress
-```bash
-# After completing something meaningful:
-rekall checkpoint --summary "Implemented auth flow" --commit auto
-```
+## What Happens Next
 
-### 4. Record Failures (So Agents Don't Repeat Them)
-```bash
-rekall attempts add <work-item-id> --title "Tried SQLite for analytics" --evidence "Too slow at 10k rows"
-```
-Next time an agent runs `rekall brief`, it will see: **DO NOT RETRY: Tried SQLite for analytics**
+**Automatically (no action needed):**
+- Every git commit creates a Rekall checkpoint
+- Every Claude Code session starts with a brief of where you left off
+- Every session end audits for missing recordings
 
-### 5. View History
+**When you want to:**
 ```bash
-rekall log          # Unified timeline: checkpoints + attempts + decisions
-rekall stats        # Usage metrics: checkpoints, retries prevented, tokens saved
-rekall verify       # Cryptographic integrity check
+rekall brief                    # See current context anytime
+rekall checkpoint --summary "..." --commit auto   # Explicit milestone
+rekall log                      # View execution timeline
 ```
 
-### 6. Visual Explorer
+**When something fails:**
 ```bash
-rekall explorer     # Opens browser with Ledger + Lineage views
+rekall attempts add <id> --title "Tried X" --evidence "Failed because Y"
 ```
+Next session will show: **DO NOT RETRY: Tried X**
 
----
-
-## Connect Your Agent
-
-**Claude Code:** Already works via CLI. For MCP:
+**When you make a decision:**
 ```bash
-claude mcp add rekall -- rekall serve --store-dir ./project-state
+rekall decisions propose --title "Use Postgres" --rationale "..." --tradeoffs "..."
 ```
+Next session will show the pending decision until it's resolved.
 
-**Cursor:** Auto-configured. `rekall init` generates `.cursor/mcp.json`.
+## Agent Setup
+
+**Claude Code:** Fully automatic after `rekall init`.
+
+**Cursor:** MCP auto-configured. No manual steps.
 
 **Windsurf:** Add to MCP settings:
 ```json
@@ -73,22 +58,10 @@ claude mcp add rekall -- rekall serve --store-dir ./project-state
 }
 ```
 
-**CLI agents (Codex, Aider):** Just run `rekall init`. The agent reads `AGENTS.md`.
+**CLI agents (Codex, Aider):** Agent reads `AGENTS.md` and runs commands directly.
 
-## Auto-Checkpoint on Git Commit
+## That's It
 
-```bash
-rekall hooks install --auto-checkpoint
-```
-Every `git commit` silently records a Rekall checkpoint. Zero behavior change.
+Rekall works in the background. Your agents start warm. Failed paths aren't retried. Decisions aren't re-debated.
 
-## What You Get
-- **`project-state/`** — Portable, append-only execution ledger
-- **`AGENTS.md`** — Universal protocol for any AI assistant
-- **Session brief** — One-call context that prevents repeat failures
-- **Hash chain verification** — Every event is tamper-evident
-
-## Next Steps
-- Read [Beta Guide](BETA.md) for what to try and how to report issues.
-- Read [MCP Tools Reference](mcp-tools.md) for the full tool API.
-- Read [Connecting Clients](CONNECTING_CLIENTS.md) for detailed IDE setup.
+For more: [Beta Guide](BETA.md) | [MCP Tools](mcp-tools.md)
