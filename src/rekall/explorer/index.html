@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rekall Forensic Explorer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg-0:#09090b;--bg-1:#0f0f12;--bg-2:#16161a;--bg-3:#1e1e24;--bg-4:#26262e;
+  --border:#1e1e26;--border-2:#2a2a34;--border-hover:#38384a;
+  --text-0:#ededf0;--text-1:#9898a4;--text-2:#5c5c6a;--text-3:#3c3c48;
+  --accent:#10b981;--accent-soft:rgba(16,185,129,.12);--accent-glow:rgba(16,185,129,.06);
+  --red:#ef4444;--red-soft:rgba(239,68,68,.10);
+  --amber:#eab308;--amber-soft:rgba(234,179,8,.10);
+  --blue:#3b82f6;--blue-soft:rgba(59,130,246,.10);
+  --purple:#8b5cf6;--purple-soft:rgba(139,92,246,.10);
+  --cyan:#06b6d4;--cyan-soft:rgba(6,182,212,.10);
+  --mono:'SF Mono','Cascadia Code','JetBrains Mono','Fira Code',monospace;
+  --sans:'Inter',-apple-system,'Segoe UI',sans-serif;
+  --radius:5px;--row-h:34px;
+}
+html,body{height:100%}
+body{background:var(--bg-0);color:var(--text-0);font-family:var(--sans);font-size:13px;line-height:1.5;overflow:hidden}
+::selection{background:var(--accent);color:#000}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--border-hover)}
+
+#app{display:grid;grid-template-rows:46px 1fr;height:100vh}
+
+/* ═══ HEADER ═══ */
+header{
+  display:flex;align-items:center;gap:12px;
+  padding:0 16px;background:var(--bg-1);border-bottom:1px solid var(--border);z-index:100;
+}
+.logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;letter-spacing:-.03em;color:var(--text-0);white-space:nowrap}
+.logo-mark{width:16px;height:16px;border-radius:4px;background:linear-gradient(135deg,var(--accent),#059669);box-shadow:0 0 8px rgba(16,185,129,.25)}
+.logo span{color:var(--text-2);font-weight:400;margin-left:2px;font-size:11px}
+.hdr-sep{width:1px;height:20px;background:var(--border)}
+.mode-group{display:flex;align-items:center;gap:1px;background:var(--bg-2);border-radius:var(--radius);padding:2px;border:1px solid var(--border)}
+.mode-btn{
+  padding:4px 14px;border-radius:3px;border:none;cursor:pointer;
+  font-size:11px;font-weight:500;font-family:var(--sans);
+  background:transparent;color:var(--text-2);transition:all .12s;
+}
+.mode-btn.active{background:var(--bg-0);color:var(--text-0);box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.mode-btn:hover:not(.active){color:var(--text-1)}
+.hdr-right{display:flex;align-items:center;gap:8px;margin-left:auto}
+.search-box{
+  background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:5px 10px 5px 28px;color:var(--text-0);font-size:11px;font-family:var(--sans);width:220px;
+  outline:none;transition:border-color .15s;
+}
+.search-box:focus{border-color:var(--accent);background:var(--bg-3)}
+.search-box::placeholder{color:var(--text-3)}
+.search-wrap{position:relative}
+.search-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--text-3);font-size:12px;pointer-events:none}
+.hdr-pill{
+  font-size:10px;color:var(--text-2);background:var(--bg-2);border:1px solid var(--border);
+  padding:3px 8px;border-radius:12px;font-family:var(--mono);white-space:nowrap;display:flex;align-items:center;gap:4px;
+}
+.dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0}
+.dot-ok{background:var(--accent)}.dot-err{background:var(--red)}
+.dot-live{background:var(--accent);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ═══ MAIN ═══ */
+main{display:grid;grid-template-columns:1fr;overflow:hidden}
+main.has-detail{grid-template-columns:1fr 380px}
+
+/* ═══ LEDGER VIEW ═══ */
+#ledger{display:flex;flex-direction:column;overflow:hidden}
+.toolbar{
+  flex-shrink:0;display:flex;align-items:center;gap:6px;
+  padding:6px 12px;background:var(--bg-1);border-bottom:1px solid var(--border);
+}
+.toolbar-group{display:flex;align-items:center;gap:3px}
+.fbtn{
+  font-size:10px;padding:3px 10px;border-radius:12px;border:1px solid var(--border);
+  background:transparent;color:var(--text-2);cursor:pointer;font-family:var(--sans);
+  transition:all .1s;white-space:nowrap;letter-spacing:.01em;
+}
+.fbtn:hover{border-color:var(--border-hover);color:var(--text-1)}
+.fbtn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.jbtn{
+  font-size:9px;padding:2px 6px;border-radius:3px;border:1px solid var(--border);
+  background:var(--bg-2);color:var(--text-3);cursor:pointer;font-family:var(--mono);
+  transition:all .1s;white-space:nowrap;letter-spacing:.03em;text-transform:uppercase;
+}
+.jbtn:hover{border-color:var(--border-hover);color:var(--text-1)}
+.jbtn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.toolbar-meta{margin-left:auto;font-size:10px;color:var(--text-3);font-family:var(--mono);display:flex;align-items:center;gap:6px}
+.kbd{font-family:var(--mono);font-size:8px;color:var(--text-3);background:var(--bg-3);padding:1px 4px;border-radius:2px;border:1px solid var(--border)}
+.toolbar-label{font-size:9px;color:var(--text-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em}
+.toolbar-sep{width:1px;height:16px;background:var(--border);margin:0 4px}
+
+/* Column header */
+.col-head{
+  display:grid;grid-template-columns:4px 28px 120px 110px 1fr 70px 64px;
+  background:var(--bg-1);border-bottom:1px solid var(--border-2);position:sticky;top:0;z-index:9;
+}
+.col-head span{
+  padding:5px 8px;font-size:9px;font-weight:600;color:var(--text-3);
+  text-transform:uppercase;letter-spacing:.06em;
+}
+
+/* Virtual scroll */
+.ledger-scroll{flex:1;overflow-y:auto;position:relative}
+.vscroll-spacer{position:relative}
+.vscroll-window{position:absolute;left:0;right:0}
+
+/* Rows */
+.row{
+  display:grid;grid-template-columns:4px 28px 120px 110px 1fr 70px 64px;
+  height:var(--row-h);align-items:center;cursor:pointer;
+  border-bottom:1px solid var(--bg-2);transition:background .06s;position:relative;
+}
+.row:hover{background:var(--bg-2)}
+.row.selected{background:var(--accent-glow)}
+.row.selected .row-rail{opacity:1}
+.row.focused{box-shadow:inset 0 0 0 1px var(--accent)}
+.row.new-event{animation:flash .8s ease-out}
+@keyframes flash{0%{background:var(--accent-soft)}100%{background:transparent}}
+.row span{padding:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+
+/* Type rail */
+.row-rail{width:4px;height:100%;opacity:.5;transition:opacity .1s}
+.rail-checkpoint{background:var(--accent)}
+.rail-attempt_failed{background:var(--red)}
+.rail-attempt_succeeded{background:var(--accent)}
+.rail-decision{background:var(--amber)}
+.rail-head_move{background:var(--purple)}
+.rail-wi{background:var(--cyan)}
+.rail-policy{background:var(--amber)}
+.rail-session{background:var(--text-3)}
+.rail-default{background:var(--text-3)}
+
+.row .r-vi{text-align:center;font-size:9px}
+.row .r-ts{font-family:var(--mono);color:var(--text-2);font-size:10px;letter-spacing:-.01em}
+.row .r-summary{color:var(--text-0)}
+.row .r-actor{color:var(--text-3);font-size:10px}
+.row .r-hash{font-family:var(--mono);font-size:9px;color:var(--text-3);letter-spacing:.02em}
+
+/* Badges */
+.badge{
+  display:inline-block;padding:2px 7px;border-radius:3px;
+  font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+  font-family:var(--mono);line-height:1.3;
+}
+.b-checkpoint{color:var(--accent);background:var(--accent-soft)}
+.b-session_end{color:var(--text-2);background:var(--bg-3)}
+.b-attempt_failed{color:var(--red);background:var(--red-soft)}
+.b-attempt_succeeded{color:var(--accent);background:var(--accent-soft)}
+.b-decision_proposed{color:var(--amber);background:var(--amber-soft)}
+.b-decision_decided{color:var(--blue);background:var(--blue-soft)}
+.b-wi_created,.b-wi_patched{color:var(--cyan);background:var(--cyan-soft)}
+.b-head_move{color:var(--purple);background:var(--purple-soft)}
+.b-policyevaluation{color:var(--amber);background:var(--amber-soft)}
+.b-approvalrequired{color:var(--red);background:var(--red-soft)}
+.b-approvalgranted{color:var(--accent);background:var(--accent-soft)}
+.b-default{color:var(--text-3);background:var(--bg-3)}
+
+.vi{font-size:8px;line-height:1}.vi-ok{color:var(--accent)}.vi-no{color:var(--text-3);opacity:.4}
+
+/* ═══ DETAIL / EVIDENCE PANEL ═══ */
+#detail{
+  border-left:1px solid var(--border);background:var(--bg-1);overflow-y:auto;
+  display:none;flex-direction:column;
+}
+.det-head{
+  padding:10px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+}
+.det-head h3{font-size:12px;font-weight:600;letter-spacing:-.02em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.det-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.det-act{
+  font-size:9px;padding:3px 8px;border-radius:3px;border:1px solid var(--border);
+  background:var(--bg-2);color:var(--text-2);cursor:pointer;font-family:var(--mono);
+  transition:all .1s;white-space:nowrap;letter-spacing:.02em;
+}
+.det-act:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.det-close{background:none;border:none;color:var(--text-3);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:3px;transition:all .1s}
+.det-close:hover{background:var(--bg-3);color:var(--text-0)}
+
+.det-body{padding:0;flex:1;overflow-y:auto}
+.det-card{margin:8px 12px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.det-card-head{padding:6px 10px;font-size:9px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);background:var(--bg-3)}
+.det-card-body{padding:10px}
+.det-field{margin-bottom:8px}
+.det-field:last-child{margin-bottom:0}
+.det-label{font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.det-val{font-size:11px;color:var(--text-0);word-break:break-all}
+.det-mono{font-family:var(--mono);font-size:10px;color:var(--text-1)}
+.det-hash{font-family:var(--mono);font-size:9px;color:var(--text-2);word-break:break-all}
+.det-integrity{display:flex;align-items:center;gap:6px;margin-top:6px}
+.det-integrity .dot{width:8px;height:8px}
+.det-related{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.det-chip-group{display:inline-flex;align-items:stretch;border-radius:3px;overflow:hidden;border:1px solid var(--border)}
+.det-chip{
+  font-family:var(--mono);font-size:9px;color:var(--text-2);
+  background:var(--bg-3);padding:2px 6px;cursor:pointer;transition:all .1s;border:none;
+}
+.det-chip:hover{color:var(--accent);background:var(--accent-soft)}
+.det-chip-trace{
+  font-family:var(--mono);font-size:8px;color:var(--text-3);
+  background:var(--bg-4);padding:2px 4px;cursor:pointer;transition:all .1s;
+  border-left:1px solid var(--border);border:none;
+}
+.det-chip-trace:hover{color:var(--purple);background:var(--purple-soft)}
+.det-raw{
+  background:var(--bg-0);border-radius:0 0 var(--radius) var(--radius);
+  padding:10px 12px;font-family:var(--mono);font-size:9px;line-height:1.6;
+  color:var(--text-2);max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all;
+}
+
+/* ═══ TRACE VIEW ═══ */
+#lineage{overflow:hidden;position:relative;display:none;flex-direction:column}
+.lin-toolbar{
+  flex-shrink:0;display:flex;align-items:center;gap:6px;
+  padding:6px 12px;background:var(--bg-1);border-bottom:1px solid var(--border);
+}
+.lin-hint{font-size:10px;color:var(--text-3);margin-left:auto}
+.lin-canvas{flex:1;overflow:auto;position:relative}
+.lin-svg{overflow:visible}
+
+/* Trace nodes */
+.ln{cursor:pointer;transition:opacity .15s}
+.ln:hover .ln-shape{filter:brightness(1.3);stroke-width:2.5}
+.ln.selected .ln-shape{stroke-width:3;filter:brightness(1.4)}
+.ln.dimmed{opacity:.25}
+.ln-shape{transition:all .15s}
+.ln-label{font-family:var(--sans);font-size:9px;fill:var(--text-1);pointer-events:none}
+.ln-ts{font-family:var(--mono);font-size:8px;fill:var(--text-3);pointer-events:none}
+
+/* Trace edges */
+.le{fill:none;stroke-width:1.5;transition:opacity .15s}
+.le-chain{stroke:var(--border-hover);opacity:.4}
+.le-causal{stroke:var(--accent);opacity:.3;stroke-dasharray:5,4}
+.le.dimmed{opacity:.08}
+
+/* Dead end marker */
+.dead-end{stroke:var(--red);stroke-width:2;opacity:.5}
+
+/* Trace isolated state */
+.trace-isolated{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;gap:12px;color:var(--text-3);
+}
+.trace-isolated-label{font-size:11px;font-family:var(--mono);letter-spacing:.02em}
+
+/* Tooltip */
+.tt{
+  position:fixed;background:var(--bg-3);border:1px solid var(--border-2);
+  border-radius:var(--radius);padding:8px 10px;font-size:10px;
+  pointer-events:none;z-index:50;max-width:300px;box-shadow:0 8px 24px rgba(0,0,0,.5);display:none;
+}
+.tt-type{font-weight:600;margin-bottom:2px}.tt-sum{color:var(--text-1)}.tt-ts{color:var(--text-3);font-family:var(--mono);font-size:9px;margin-top:2px}
+
+.empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-3);font-size:12px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">
+      <div class="logo-mark"></div>
+      Rekall <span>Forensic Explorer</span>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="mode-group">
+      <button class="mode-btn active" data-mode="ledger">Ledger</button>
+      <button class="mode-btn" data-mode="lineage">Trace</button>
+    </div>
+    <div class="hdr-right">
+      <div class="search-wrap">
+        <span class="search-icon">/</span>
+        <input class="search-box" type="text" placeholder="Search events..." id="search">
+      </div>
+      <div class="hdr-pill" id="pill-events"><span class="dot dot-live"></span> <span id="ev-count">-</span></div>
+      <div class="hdr-pill" id="pill-verify"><span class="dot" id="v-dot"></span> <span id="v-label">-</span></div>
+    </div>
+  </header>
+
+  <main id="main">
+    <div id="ledger">
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <button class="fbtn active" data-filter="all">All</button>
+          <button class="fbtn" data-filter="checkpoint">Checkpoints</button>
+          <button class="fbtn" data-filter="attempt">Attempts</button>
+          <button class="fbtn" data-filter="decision">Decisions</button>
+          <button class="fbtn" data-filter="head_move">HEAD</button>
+          <button class="fbtn" data-filter="wi_">Work</button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <div class="toolbar-group">
+          <button class="fbtn active" data-time="all">All time</button>
+          <button class="fbtn" data-time="1h">1h</button>
+          <button class="fbtn" data-time="24h">24h</button>
+          <button class="fbtn" data-time="7d">7d</button>
+          <button class="fbtn" data-time="30d">30d</button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <div class="toolbar-group">
+          <button class="jbtn" data-jump="checkpoint" title="Jump to latest checkpoint">CP</button>
+          <button class="jbtn" data-jump="attempt_failed" title="Jump to latest failure">FAIL</button>
+          <button class="jbtn" data-jump="decision" title="Jump to latest decision">DEC</button>
+          <button class="jbtn" data-jump="head_move" title="Jump to latest HEAD move">HEAD</button>
+        </div>
+        <div class="toolbar-meta">
+          <span id="ledger-count"></span>
+          <span class="kbd">j</span><span class="kbd">k</span>
+          <span class="kbd">Enter</span>
+          <span class="kbd">t</span> trace
+          <span class="kbd">/</span>
+        </div>
+      </div>
+      <div class="col-head">
+        <span></span><span></span><span>Time</span><span>Type</span><span>Summary</span><span>Actor</span><span>Hash</span>
+      </div>
+      <div class="ledger-scroll" id="ledger-scroll">
+        <div class="vscroll-spacer" id="vscroll-spacer">
+          <div class="vscroll-window" id="vscroll-window"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="lineage">
+      <div class="lin-toolbar">
+        <div class="toolbar-group">
+          <button class="jbtn" data-ljump="checkpoint">Last CP</button>
+          <button class="jbtn" data-ljump="attempt_failed">Last Fail</button>
+          <button class="jbtn" data-ljump="decision">Last Decision</button>
+          <button class="jbtn" data-ljump="head_move">Last HEAD</button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <span class="toolbar-label">Depth</span>
+        <div class="toolbar-group">
+          <button class="jbtn" data-depth="1">1</button>
+          <button class="jbtn active" data-depth="2">2</button>
+          <button class="jbtn" data-depth="3">3</button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <button class="jbtn" id="trace-to-ledger" title="View selected event in Ledger">&#8592; Ledger</button>
+        <span class="toolbar-label" id="trace-scope" style="display:none"></span>
+        <div class="lin-hint">Select event to explore causal neighborhood &middot; <span class="kbd">t</span> toggle</div>
+      </div>
+      <div class="lin-canvas" id="lin-canvas"></div>
+      <div class="tt" id="tooltip"></div>
+    </div>
+
+    <div id="detail">
+      <div class="det-head">
+        <h3 id="det-title">Evidence</h3>
+        <div class="det-actions">
+          <button class="det-act" id="det-trace" title="View in Trace">Trace &#8594;</button>
+          <button class="det-close" id="det-close">&times;</button>
+        </div>
+      </div>
+      <div class="det-body" id="det-body"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ═══ STATE ═══ */
+let allEvents=[], filteredEvents=[], selectedId=null, focusIdx=-1;
+let currentMode='ledger', activeFilter='all', timeRange='all', verifyResults={};
+let traceDepth=2;
+const ROW_H=34;
+
+/* ═══ INIT ═══ */
+async function init(){ await refresh(); setInterval(refresh,3000); }
+
+async function refresh(){
+  const [ev,vr]=await Promise.all([fetch('/api/events').then(r=>r.json()),fetch('/api/verify').then(r=>r.json())]);
+  const prev=new Set(allEvents.map(e=>e.id));
+  allEvents=ev; verifyResults=vr;
+  if(prev.size) allEvents.forEach(e=>{e._isNew=!prev.has(e.id)});
+  document.getElementById('ev-count').textContent=allEvents.length+' events';
+  const ok=Object.values(vr).every(v=>!v.errors||!v.errors.length);
+  document.getElementById('v-dot').className='dot '+(ok?'dot-ok':'dot-err');
+  document.getElementById('v-label').textContent=ok?'Verified':'Issues';
+  applyFilter();
+}
+
+/* ═══ MODE SWITCHING (synchronized) ═══ */
+function switchMode(mode){
+  if(mode===currentMode)return;
+  currentMode=mode;
+  document.querySelectorAll('.mode-btn').forEach(b=>{
+    b.classList.toggle('active',b.dataset.mode===mode);
+  });
+  document.getElementById('ledger').style.display=mode==='ledger'?'flex':'none';
+  document.getElementById('lineage').style.display=mode==='lineage'?'flex':'none';
+
+  // Auto-select latest checkpoint if switching to trace with no selection
+  if(mode==='lineage'&&!selectedId){
+    const cp=allEvents.find(e=>e.type==='checkpoint');
+    if(cp){selectedId=cp.id;showDetail(cp)}
+  }
+
+  applyFilter();
+
+  // Center on selected event in the target view
+  if(selectedId){
+    if(mode==='ledger'){
+      const idx=filteredEvents.findIndex(e=>e.id===selectedId);
+      if(idx>=0){focusIdx=idx;ensure(idx)}
+    }
+    // Trace auto-centers in renderTrace via scrollTo
+  }
+}
+
+/* ═══ FILTER (time + type + search) ═══ */
+function getTimeCutoff(){
+  if(timeRange==='all')return null;
+  const now=new Date();
+  const ms={
+    '1h':3600000,'24h':86400000,'7d':604800000,'30d':2592000000
+  };
+  return new Date(now.getTime()-(ms[timeRange]||0)).toISOString();
+}
+
+function applyFilter(){
+  const q=document.getElementById('search').value.toLowerCase();
+  const cutoff=getTimeCutoff();
+  filteredEvents=allEvents.filter(e=>{
+    // Time filter
+    if(cutoff&&e.timestamp&&e.timestamp<cutoff)return false;
+    // Type filter
+    if(activeFilter!=='all'&&!e.type.includes(activeFilter))return false;
+    // Search
+    if(q&&!e.summary.toLowerCase().includes(q)&&!e.id.toLowerCase().includes(q)&&!e.type.toLowerCase().includes(q))return false;
+    return true;
+  });
+
+  // Handle selection falling out of scope
+  if(selectedId&&!filteredEvents.some(e=>e.id===selectedId)){
+    // Try to select the latest checkpoint in scope, or latest event
+    const replacement=filteredEvents.find(e=>e.type==='checkpoint')||filteredEvents[0];
+    if(replacement){
+      selectedId=replacement.id;
+      focusIdx=0;
+      showDetail(replacement);
+    } else {
+      selectedId=null;
+      focusIdx=-1;
+      closeDetail();
+    }
+  }
+
+  document.getElementById('ledger-count').textContent=filteredEvents.length+'/'+allEvents.length;
+
+  // Update trace scope indicator
+  const scopeEl=document.getElementById('trace-scope');
+  if(timeRange!=='all'){
+    scopeEl.style.display='inline';
+    scopeEl.textContent='Scope: '+timeRange;
+  } else {
+    scopeEl.style.display='none';
+  }
+
+  if(currentMode==='ledger')renderLedger();
+  if(currentMode==='lineage')renderTrace();
+}
+
+/* ═══ HELPERS ═══ */
+const BM={checkpoint:'b-checkpoint',session_end:'b-session_end',attempt_failed:'b-attempt_failed',attempt_succeeded:'b-attempt_succeeded',decision_proposed:'b-decision_proposed',decision_decided:'b-decision_decided',wi_created:'b-wi_created',wi_patched:'b-wi_patched',head_move:'b-head_move',policyevaluation:'b-policyevaluation',approvalrequired:'b-approvalrequired',approvalgranted:'b-approvalgranted'};
+function bc(t){return BM[t.replace(/[^a-z_]/g,'')]||'b-default'}
+function bl(t){return t.replace(/_/g,' ')}
+function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function esvg(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):''}
+
+function railClass(type){
+  if(type.includes('checkpoint'))return'rail-checkpoint';
+  if(type.includes('attempt_failed'))return'rail-attempt_failed';
+  if(type.includes('attempt_succeeded'))return'rail-attempt_succeeded';
+  if(type.includes('decision'))return'rail-decision';
+  if(type==='head_move')return'rail-head_move';
+  if(type.startsWith('wi_'))return'rail-wi';
+  if(type.includes('policy')||type.includes('approval'))return'rail-policy';
+  if(type==='session_end')return'rail-session';
+  return'rail-default';
+}
+
+/* ═══ VIRTUAL LEDGER ═══ */
+const sEl=()=>document.getElementById('ledger-scroll');
+const spEl=()=>document.getElementById('vscroll-spacer');
+const wEl=()=>document.getElementById('vscroll-window');
+
+function renderLedger(){
+  const c=sEl(),total=filteredEvents.length;
+  spEl().style.height=(total*ROW_H)+'px';
+  const st=c.scrollTop,vh=c.clientHeight;
+  const s=Math.max(0,Math.floor(st/ROW_H)-5),e=Math.min(total,Math.ceil((st+vh)/ROW_H)+5);
+  const w=wEl();w.style.top=(s*ROW_H)+'px';
+  let h='';
+  for(let i=s;i<e;i++){
+    const ev=filteredEvents[i];
+    const ts=ev.timestamp?ev.timestamp.slice(5,19).replace('T',' '):'';
+    const hash=ev.event_hash?ev.event_hash.slice(0,7):'';
+    const sel=ev.id===selectedId?' selected':'';
+    const foc=i===focusIdx?' focused':'';
+    const nw=ev._isNew?' new-event':'';
+    const vi=ev.verified?'<span class="vi vi-ok">&#9679;</span>':'<span class="vi vi-no">&#9675;</span>';
+    h+=`<div class="row${sel}${foc}${nw}" data-id="${ev.id}" data-idx="${i}">
+      <div class="row-rail ${railClass(ev.type)}"></div>
+      <span class="r-vi">${vi}</span>
+      <span class="r-ts">${ts}</span>
+      <span><span class="badge ${bc(ev.type)}">${bl(ev.type)}</span></span>
+      <span class="r-summary">${esc(ev.summary)}</span>
+      <span class="r-actor">${esc(ev.actor)}</span>
+      <span class="r-hash">${hash}</span>
+    </div>`;
+    if(ev._isNew)ev._isNew=false;
+  }
+  w.innerHTML=h;
+}
+sEl().addEventListener('scroll',renderLedger);
+new ResizeObserver(()=>{if(currentMode==='ledger')renderLedger()}).observe(sEl());
+
+/* ═══ KEYBOARD ═══ */
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'){if(e.key==='Escape')e.target.blur();return}
+  if(e.key==='/'){e.preventDefault();document.getElementById('search').focus();return}
+  if(e.key==='Escape'){closeDetail();return}
+  // t: toggle mode with selection preserved
+  if(e.key==='t'){
+    e.preventDefault();
+    switchMode(currentMode==='ledger'?'lineage':'ledger');
+    return;
+  }
+  if(currentMode!=='ledger')return;
+  const t=filteredEvents.length;if(!t)return;
+  if(e.key==='j'||e.key==='ArrowDown'){e.preventDefault();focusIdx=Math.min(focusIdx+1,t-1);ensure(focusIdx);renderLedger()}
+  else if(e.key==='k'||e.key==='ArrowUp'){e.preventDefault();focusIdx=Math.max(focusIdx-1,0);ensure(focusIdx);renderLedger()}
+  else if(e.key==='Enter'&&focusIdx>=0){e.preventDefault();showDetail(filteredEvents[focusIdx])}
+  else if(e.key==='g'&&!e.ctrlKey){focusIdx=0;ensure(0);renderLedger()}
+  else if(e.key==='G'){focusIdx=t-1;ensure(focusIdx);renderLedger()}
+});
+function ensure(i){const c=sEl(),top=i*ROW_H,bot=top+ROW_H;if(top<c.scrollTop)c.scrollTop=top;else if(bot>c.scrollTop+c.clientHeight)c.scrollTop=bot-c.clientHeight}
+
+/* ═══ JUMPS ═══ */
+document.querySelectorAll('.jbtn[data-jump]').forEach(b=>{
+  b.addEventListener('click',()=>{const t=b.dataset.jump,i=filteredEvents.findIndex(e=>e.type.includes(t));if(i>=0){focusIdx=i;ensure(i);showDetail(filteredEvents[i])}})
+});
+
+/* ═══ DETAIL PANEL ═══ */
+function showDetail(ev){
+  selectedId=ev.id;
+  focusIdx=filteredEvents.findIndex(e=>e.id===ev.id);
+  const p=document.getElementById('detail'),m=document.getElementById('main');
+  p.style.display='flex';m.classList.add('has-detail');
+  document.getElementById('det-title').textContent='Evidence \u2014 '+bl(ev.type);
+  const b=document.getElementById('det-body');
+
+  let h=`<div class="det-card"><div class="det-card-head">Event</div><div class="det-card-body">
+    <div class="det-field"><span class="badge ${bc(ev.type)}" style="margin-bottom:6px">${bl(ev.type)}</span></div>
+    <div class="det-field"><div class="det-label">Summary</div><div class="det-val">${esc(ev.summary)}</div></div>`;
+  if(ev.detail)h+=`<div class="det-field"><div class="det-label">Detail</div><div class="det-val">${esc(ev.detail)}</div></div>`;
+  h+=`<div class="det-field"><div class="det-label">Timestamp</div><div class="det-mono">${ev.timestamp}</div></div>
+    <div class="det-field"><div class="det-label">Actor</div><div class="det-val">${esc(ev.actor)}</div></div>
+    <div class="det-field"><div class="det-label">Stream / ID</div><div class="det-mono">${ev.stream} &middot; ${ev.id}</div></div>`;
+  if(ev.git_sha)h+=`<div class="det-field"><div class="det-label">Git SHA</div><div class="det-mono">${ev.git_sha}</div></div>`;
+  h+=`</div></div>`;
+
+  if(ev.event_hash){
+    h+=`<div class="det-card"><div class="det-card-head">Integrity</div><div class="det-card-body">
+      <div class="det-field"><div class="det-label">Event Hash</div><div class="det-hash">${ev.event_hash}</div></div>
+      <div class="det-field"><div class="det-label">Previous Hash</div><div class="det-hash">${ev.prev_hash||'genesis (first in chain)'}</div></div>
+      <div class="det-integrity"><span class="dot ${ev.verified?'dot-ok':'dot-err'}"></span><span style="font-size:11px">${ev.verified?'Hash chain verified':'Chain not verified'}</span></div>
+    </div></div>`;
+  }
+
+  if(ev.related_ids&&ev.related_ids.length){
+    h+=`<div class="det-card"><div class="det-card-head">Related Events</div><div class="det-card-body">
+      <div class="det-related">${ev.related_ids.map(id=>
+        `<span class="det-chip-group"><span class="det-chip" data-id="${id}">${id.slice(0,14)}</span><span class="det-chip-trace" data-trace-id="${id}" title="View in Trace">\u2192T</span></span>`
+      ).join('')}</div>
+    </div></div>`;
+  }
+
+  h+=`<div class="det-card"><div class="det-card-head">Raw Evidence</div><pre class="det-raw">${esc(JSON.stringify(ev.raw,null,2))}</pre></div>`;
+  b.innerHTML=h;
+  if(currentMode==='ledger')renderLedger();
+  if(currentMode==='lineage')renderTrace();
+}
+
+function closeDetail(){
+  selectedId=null;
+  document.getElementById('detail').style.display='none';
+  document.getElementById('main').classList.remove('has-detail');
+  if(currentMode==='ledger')renderLedger();
+}
+
+/* ═══ TRACE VIEW (Causal Neighborhood) ═══ */
+function renderTrace(){
+  const canvas=document.getElementById('lin-canvas');
+  if(!filteredEvents.length){canvas.innerHTML='<div class="empty">No events to trace</div>';return}
+
+  const src=filteredEvents.slice().reverse();
+  const idMap=new Map(); src.forEach((e,i)=>idMap.set(e.id,i));
+  const hashMap=new Map(); src.forEach((e,i)=>{if(e.event_hash)hashMap.set(e.event_hash,i)});
+
+  let centerIdx=src.length-1;
+  if(selectedId){const si=idMap.get(selectedId);if(si!==undefined)centerIdx=si}
+
+  const neighborhood=new Set();
+  const HOPS=traceDepth;
+
+  function walkBack(idx,depth){
+    if(depth>HOPS||neighborhood.has(idx))return;
+    neighborhood.add(idx);
+    const e=src[idx];
+    if(e.prev_hash){const pi=hashMap.get(e.prev_hash);if(pi!==undefined)walkBack(pi,depth+1)}
+    if(e.related_ids)for(const r of e.related_ids){const ri=idMap.get(r);if(ri!==undefined)walkBack(ri,depth+1)}
+  }
+  const fwdMap=new Map();
+  src.forEach((e,i)=>{if(e.prev_hash){const pi=hashMap.get(e.prev_hash);if(pi!==undefined){if(!fwdMap.has(pi))fwdMap.set(pi,[]);fwdMap.get(pi).push(i)}}});
+  function walkFwd(idx,depth){
+    if(depth>HOPS||neighborhood.has(idx))return;
+    neighborhood.add(idx);
+    const fwd=fwdMap.get(idx)||[];
+    for(const fi of fwd)walkFwd(fi,depth+1);
+    const e=src[idx];
+    if(e.related_ids)for(const r of e.related_ids){const ri=idMap.get(r);if(ri!==undefined&&!neighborhood.has(ri))walkFwd(ri,depth+1)}
+  }
+
+  walkBack(centerIdx,0);
+  walkFwd(centerIdx,0);
+
+  const nodes=[...neighborhood].sort((a,b)=>src[a].timestamp.localeCompare(src[b].timestamp));
+  if(!nodes.length)nodes.push(centerIdx);
+
+  // Isolated event: show graceful empty state
+  if(nodes.length<=1){
+    const ev=src[centerIdx];
+    canvas.innerHTML=`<div class="trace-isolated">
+      <span class="badge ${bc(ev.type)}">${bl(ev.type)}</span>
+      <div class="trace-isolated-label">Isolated event &mdash; no causal connections in this vault</div>
+      <div style="font-size:10px;color:var(--text-3);max-width:300px;text-align:center">${esc(ev.summary)}</div>
+    </div>`;
+    return;
+  }
+
+  const usedStreams=[...new Set(nodes.map(i=>src[i].stream))];
+  const streamY=new Map();usedStreams.forEach((s,i)=>streamY.set(s,i));
+
+  const nW=130,nH=44,gapX=50,gapY=64,padL=16,padT=32;
+  const svgW=nodes.length*(nW+gapX)+padL*2;
+  const svgH=usedStreams.length*(nH+gapY)+padT+40;
+
+  const pos=new Map();
+  nodes.forEach((ni,xi)=>{
+    const e=src[ni];
+    const x=padL+xi*(nW+gapX);
+    const y=padT+(streamY.get(e.stream)||0)*(nH+gapY);
+    pos.set(ni,{x,y,e});
+  });
+
+  let svg=`<svg class="lin-svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}">`;
+
+  usedStreams.forEach((s,i)=>{
+    const y=padT+i*(nH+gapY)+nH/2+4;
+    svg+=`<text x="4" y="${y}" style="font-family:var(--sans);font-size:9px;fill:var(--text-3);font-weight:500">${s}</text>`;
+  });
+
+  const nodeSet=new Set(nodes);
+  nodes.forEach(ni=>{
+    const e=src[ni],p=pos.get(ni);if(!p)return;
+    if(e.prev_hash){
+      const pi=hashMap.get(e.prev_hash);
+      if(pi!==undefined&&nodeSet.has(pi)){
+        const pp=pos.get(pi);if(pp){
+          svg+=`<path class="le le-chain" d="M${pp.x+nW},${pp.y+nH/2} C${pp.x+nW+20},${pp.y+nH/2} ${p.x-20},${p.y+nH/2} ${p.x},${p.y+nH/2}"/>`;
+        }
+      }
+    }
+    if(e.related_ids)for(const r of e.related_ids){
+      const ri=idMap.get(r);
+      if(ri!==undefined&&nodeSet.has(ri)&&ri!==ni){
+        const rp=pos.get(ri);if(rp){
+          svg+=`<path class="le le-causal" d="M${rp.x+nW},${rp.y+nH/2} C${rp.x+nW+16},${rp.y+nH/2} ${p.x-16},${p.y+nH/2} ${p.x},${p.y+nH/2}"/>`;
+        }
+      }
+    }
+  });
+
+  nodes.forEach(ni=>{
+    const e=src[ni],p=pos.get(ni);if(!p)return;
+    if(e.type==='attempt_failed'&&!(fwdMap.get(ni)||[]).some(fi=>nodeSet.has(fi))){
+      svg+=`<line class="dead-end" x1="${p.x+nW+6}" y1="${p.y+nH/2-8}" x2="${p.x+nW+18}" y2="${p.y+nH/2+8}"/>`;
+      svg+=`<line class="dead-end" x1="${p.x+nW+18}" y1="${p.y+nH/2-8}" x2="${p.x+nW+6}" y2="${p.y+nH/2+8}"/>`;
+    }
+  });
+
+  nodes.forEach(ni=>{
+    const e=src[ni],p=pos.get(ni);if(!p)return;
+    const isCenter=ni===centerIdx;
+    const sel=e.id===selectedId?' selected':'';
+    const shape=traceShape(e,p.x,p.y,nW,nH,isCenter);
+    const label=e.summary?(e.summary.slice(0,18)+(e.summary.length>18?'..':'')):bl(e.type);
+    const ts=e.timestamp?e.timestamp.slice(5,16).replace('T',' '):'';
+    svg+=`<g class="ln${sel}" data-id="${e.id}">
+      ${shape}
+      <text class="ln-label" x="${p.x+nW/2}" y="${p.y+nH+14}" text-anchor="middle">${esvg(label)}</text>
+      <text class="ln-ts" x="${p.x+nW/2}" y="${p.y-6}" text-anchor="middle">${ts}</text>
+    </g>`;
+  });
+
+  svg+='</svg>';
+  canvas.innerHTML=svg;
+
+  const cp=pos.get(centerIdx);
+  if(cp){
+    canvas.scrollLeft=Math.max(0,cp.x-canvas.clientWidth/2+nW/2);
+    canvas.scrollTop=Math.max(0,cp.y-canvas.clientHeight/2+nH/2);
+  }
+}
+
+function traceShape(e,x,y,w,h,isCenter){
+  const cols={
+    checkpoint:{f:'var(--accent-soft)',s:'var(--accent)'},
+    attempt_failed:{f:'var(--red-soft)',s:'var(--red)'},
+    attempt_succeeded:{f:'var(--accent-soft)',s:'var(--accent)'},
+    decision_proposed:{f:'var(--amber-soft)',s:'var(--amber)'},
+    decision_decided:{f:'var(--blue-soft)',s:'var(--blue)'},
+    head_move:{f:'var(--purple-soft)',s:'var(--purple)'},
+    session_end:{f:'var(--bg-3)',s:'var(--text-3)'},
+  };
+  const c=cols[e.type]||{f:'var(--bg-3)',s:'var(--border-hover)'};
+  const sw=isCenter?2.5:1.5;
+  if(e.type==='attempt_failed'){
+    const cx=x+w/2,cy=y+h/2;
+    return`<polygon class="ln-shape" points="${cx},${y} ${x+w},${cy} ${cx},${y+h} ${x},${cy}" fill="${c.f}" stroke="${c.s}" stroke-width="${sw}"/>`;
+  }
+  if(e.type==='head_move') return`<circle class="ln-shape" cx="${x+w/2}" cy="${y+h/2}" r="${h/2}" fill="${c.f}" stroke="${c.s}" stroke-width="${sw}"/>`;
+  if(e.type.includes('decision')){
+    const cx=x+w/2,cy=y+h/2;
+    return`<polygon class="ln-shape" points="${x+12},${y} ${x+w-12},${y} ${x+w},${cy} ${x+w-12},${y+h} ${x+12},${y+h} ${x},${cy}" fill="${c.f}" stroke="${c.s}" stroke-width="${sw}"/>`;
+  }
+  return`<rect class="ln-shape" x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${c.f}" stroke="${c.s}" stroke-width="${sw}"/>`;
+}
+
+/* ═══ EVENT HANDLERS ═══ */
+
+// Mode toggle via header buttons
+document.querySelectorAll('.mode-btn').forEach(b=>{
+  b.addEventListener('click',()=>switchMode(b.dataset.mode));
+});
+
+// Filter buttons
+document.querySelectorAll('.fbtn').forEach(b=>{b.addEventListener('click',()=>{
+  document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');activeFilter=b.dataset.filter;focusIdx=-1;applyFilter();
+})});
+
+// Time range filter
+document.querySelectorAll('[data-time]').forEach(b=>{b.addEventListener('click',()=>{
+  document.querySelectorAll('[data-time]').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');timeRange=b.dataset.time;focusIdx=-1;applyFilter();
+})});
+
+// Search
+document.getElementById('search').addEventListener('input',()=>{focusIdx=-1;applyFilter()});
+
+// Ledger row clicks
+document.getElementById('vscroll-window').addEventListener('click',e=>{
+  const r=e.target.closest('.row');if(!r)return;
+  const ev=allEvents.find(x=>x.id===r.dataset.id);if(ev)showDetail(ev);
+});
+
+// Trace node clicks
+document.getElementById('lin-canvas').addEventListener('click',e=>{
+  const n=e.target.closest('.ln');if(!n)return;
+  const ev=allEvents.find(x=>x.id===n.dataset.id);if(ev){showDetail(ev);renderTrace()}
+});
+
+// Trace tooltip
+document.getElementById('lin-canvas').addEventListener('mousemove',e=>{
+  const n=e.target.closest('.ln'),tt=document.getElementById('tooltip');
+  if(!n){tt.style.display='none';return}
+  const ev=allEvents.find(x=>x.id===n.dataset.id);if(!ev){tt.style.display='none';return}
+  tt.innerHTML=`<div class="tt-type">${bl(ev.type)}</div><div class="tt-sum">${esc(ev.summary)}</div><div class="tt-ts">${ev.timestamp?ev.timestamp.slice(0,19).replace('T',' '):''}</div>`;
+  tt.style.display='block';tt.style.left=(e.clientX+12)+'px';tt.style.top=(e.clientY-10)+'px';
+});
+document.getElementById('lin-canvas').addEventListener('mouseleave',()=>{document.getElementById('tooltip').style.display='none'});
+
+// Detail close
+document.getElementById('det-close').addEventListener('click',closeDetail);
+
+// Detail: "View in Trace" button
+document.getElementById('det-trace').addEventListener('click',()=>{
+  if(selectedId)switchMode('lineage');
+});
+
+// Trace toolbar: "View in Ledger" button
+document.getElementById('trace-to-ledger').addEventListener('click',()=>{
+  switchMode('ledger');
+});
+
+// Detail: related chip clicks (navigate) and trace-chip clicks (open in trace)
+document.getElementById('det-body').addEventListener('click',e=>{
+  const chip=e.target.closest('.det-chip');
+  const traceChip=e.target.closest('.det-chip-trace');
+  if(traceChip){
+    const id=traceChip.dataset.traceId;
+    const ev=allEvents.find(x=>x.id===id);
+    if(ev){selectedId=ev.id;showDetail(ev);switchMode('lineage')}
+    return;
+  }
+  if(chip){
+    const ev=allEvents.find(x=>x.id===chip.dataset.id);
+    if(ev)showDetail(ev);
+  }
+});
+
+// Trace depth control
+document.querySelectorAll('[data-depth]').forEach(b=>{b.addEventListener('click',()=>{
+  document.querySelectorAll('[data-depth]').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  traceDepth=parseInt(b.dataset.depth);
+  renderTrace();
+})});
+
+// Trace jump buttons
+document.querySelectorAll('[data-ljump]').forEach(b=>{b.addEventListener('click',()=>{
+  const t=b.dataset.ljump;
+  const ev=filteredEvents.find(e=>e.type.includes(t));
+  if(ev){showDetail(ev);if(currentMode==='lineage')renderTrace()}
+})});
+
+init();
+</script>
+</body>
+</html>

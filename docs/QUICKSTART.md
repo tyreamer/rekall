@@ -4,18 +4,12 @@ Get a verifiable AI execution record running in 5 minutes.
 
 ## Prerequisites
 - Python 3.10+
-- A virtual environment (`venv`) is recommended, or use `pipx`.
 
 ## Install
 
-### Task 1 — Run the Demo (~2 min)
-
 ```bash
 pip install rekall.tools
-rekall demo
 ```
-
-*(Optional: Use `pipx install .` for global CLI wrapper usage).*
 
 ## The 5-Minute Tour
 
@@ -24,52 +18,77 @@ rekall demo
 cd /path/to/your-repo
 rekall init
 ```
-This creates a `project-state/` vault folder.
+This creates:
+- `project-state/` vault folder
+- `AGENTS.md` operating contract
+- IDE instruction files (`.cursor/mcp.json`, `CLAUDE.md`, `.windsurfrules`, etc.)
 
 ### 2. Get a Session Brief
 ```bash
 rekall brief
 ```
-One call returns: current focus, blockers, failed attempts (paths not to retry), pending decisions, and recommended next actions. On a fresh vault this will be empty — that's expected.
+Returns: current focus, blockers, failed attempts (DO NOT RETRY), pending decisions, and usage stats. Fresh vaults show a quick-start guide.
 
-### 3. Start a Session
+### 3. Do Work, Checkpoint Progress
 ```bash
-rekall session start
+# After completing something meaningful:
+rekall checkpoint --summary "Implemented auth flow" --commit auto
 ```
-Same as `brief`, but also starts session tracking (drift detection).
 
-### 4. Generate the Operating Contract
+### 4. Record Failures (So Agents Don't Repeat Them)
 ```bash
-rekall agents
+rekall attempts add <work-item-id> --title "Tried SQLite for analytics" --evidence "Too slow at 10k rows"
 ```
-This creates `AGENTS.md` at your repo root — a universal protocol that any AI assistant (Claude Code, Cursor, Codex, Gemini, Windsurf) can discover and follow.
+Next time an agent runs `rekall brief`, it will see: **DO NOT RETRY: Tried SQLite for analytics**
 
-### 5. Connect Your Agent
-
-**CLI agents (Claude Code, Codex, Aider):** You're done — the agent reads `AGENTS.md` and runs `rekall` commands directly.
-
-**IDE agents (Cursor, Windsurf):** Add a one-time MCP config entry. See [Connecting Clients](CONNECTING_CLIENTS.md). Your IDE auto-launches the server — you never run `rekall serve` manually.
-
-### 6. End the Session
+### 5. View History
 ```bash
-rekall session end --summary "Initialized Rekall, ready for first task"
+rekall log          # Unified timeline: checkpoints + attempts + decisions
+rekall stats        # Usage metrics: checkpoints, retries prevented, tokens saved
+rekall verify       # Cryptographic integrity check
 ```
-This records a handoff note and warns about any bypass patterns.
+
+### 6. Visual Explorer
+```bash
+rekall explorer     # Opens browser with Ledger + Lineage views
+```
 
 ---
 
-## Advanced Operations
-- **`rekall checkpoint`**: Record milestones and task completions with optional git commit attachment.
-- **`rekall guard`**: Preflight check for constraints, decisions, risks, and blockers.
-- **`rekall mode lite|coordination|governed`**: Set usage mode (lightweight vs full governance).
-- **`rekall export`**: Create a portable state artifact snapshot.
-- **`rekall verify`**: Check cryptographic integrity of the ledger.
+## Connect Your Agent
 
-## What you just got
-- **`project-state/` folder**: A portable execution ledger (YAML/JSONL files) that agents can read and write.
-- **`AGENTS.md`**: A universal operating contract for any AI assistant.
-- **Session brief**: One-call working context that's faster than reading chat history or MEMORY.md.
+**Claude Code:** Already works via CLI. For MCP:
+```bash
+claude mcp add rekall -- rekall serve --store-dir ./project-state
+```
+
+**Cursor:** Auto-configured. `rekall init` generates `.cursor/mcp.json`.
+
+**Windsurf:** Add to MCP settings:
+```json
+{
+  "mcpServers": {
+    "rekall": { "command": "rekall", "args": ["serve", "--store-dir", "./project-state"] }
+  }
+}
+```
+
+**CLI agents (Codex, Aider):** Just run `rekall init`. The agent reads `AGENTS.md`.
+
+## Auto-Checkpoint on Git Commit
+
+```bash
+rekall hooks install --auto-checkpoint
+```
+Every `git commit` silently records a Rekall checkpoint. Zero behavior change.
+
+## What You Get
+- **`project-state/`** — Portable, append-only execution ledger
+- **`AGENTS.md`** — Universal protocol for any AI assistant
+- **Session brief** — One-call context that prevents repeat failures
+- **Hash chain verification** — Every event is tamper-evident
 
 ## Next Steps
 - Read [Beta Guide](BETA.md) for what to try and how to report issues.
-- Read [Connecting Clients](CONNECTING_CLIENTS.md) to wire up Claude Code, Cursor, or Codex.
+- Read [MCP Tools Reference](mcp-tools.md) for the full tool API.
+- Read [Connecting Clients](CONNECTING_CLIENTS.md) for detailed IDE setup.

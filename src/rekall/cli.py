@@ -759,6 +759,20 @@ def cmd_verify(args):
         die(ExitCode.INTERNAL_ERROR, f"Failed to execute verification: {e}", getattr(args, "json", False))
 
 
+def cmd_explorer(args):
+    """Launch the Forensic Explorer in your browser."""
+    port = getattr(args, "port", 7700)
+    no_browser = getattr(args, "no_browser", False)
+
+    try:
+        from rekall.explorer.server import start_server
+        start_server(port=port, open_browser=not no_browser)
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        die(ExitCode.INTERNAL_ERROR, str(e), getattr(args, "json", False))
+
+
 def cmd_stats(args):
     """Show local usage stats from the vault."""
     store_dir = resolve_vault_dir(getattr(args, "store_dir", "."))
@@ -1406,6 +1420,16 @@ def cmd_checkpoint(args):
             out_payload["git_sha"] = git_sha
 
         if args.json:
+            # Include recording prompts in JSON output so MCP agents see them
+            decisions = store._load_stream_raw("decisions", hot_only=True)
+            attempts = store._load_stream_raw("attempts", hot_only=True)
+            json_prompts: list = []
+            if not decisions:
+                json_prompts.append("No decisions recorded yet. If you made architectural choices, run: rekall decisions propose --title '...' --rationale '...' --tradeoffs '...'")
+            if not attempts:
+                json_prompts.append("No failed attempts recorded yet. If anything failed, run: rekall attempts add <id> --title '...' --evidence '...'")
+            if json_prompts:
+                out_payload["_prompts"] = json_prompts
             print(json.dumps(out_payload))
         else:
             print(f"\n\\u2705 Checkpoint saved [{ctype}]")
@@ -1415,7 +1439,28 @@ def cmd_checkpoint(args):
                 print(f"   Git Commit  : {git_sha} ({git_subject})")
             if export_path:
                 print(f"   Export path : {export_path}")
+
+            # Recording audit: remind about decisions and attempts
+            decisions = store._load_stream_raw("decisions", hot_only=True)
+            attempts = store._load_stream_raw("attempts", hot_only=True)
+            prompts = []
+            if not decisions:
+                prompts.append("decisions (rekall decisions propose --title '...' --rationale '...' --tradeoffs '...')")
+            if not attempts:
+                prompts.append("failed attempts (rekall attempts add <id> --title '...' --evidence '...')")
+            if prompts:
+                print(f"\n   {Theme.ICON_WARNING} Recording gap: no {' or '.join(prompts)} logged yet.")
             print("")
+
+        # Best-effort integrity check on checkpoint
+        try:
+            for stream_name in ["timeline", "work_items", "decisions", "attempts"]:
+                vr = store.verify_stream_integrity(stream_name)
+                if vr["errors"]:
+                    if not args.json:
+                        print(f"   {Theme.ICON_ERROR} Integrity issue in {stream_name}: {vr['errors'][0]}")
+        except Exception:
+            pass
 
         # Best-effort Hub sync on checkpoint
         _try_hub_sync(base_dir, store.manifest, quiet=getattr(args, "quiet", True))
@@ -1977,19 +2022,23 @@ def _detect_bypass(store: StateStore, store_dir) -> list:
     except Exception:
         pass
 
-    # 2. Check for empty ledger despite having work items
-    work_items = list(store.work_items.values())
-    attempts = store._load_stream("attempts", hot_only=True)
-    if work_items and not attempts:
-        in_progress = [w for w in work_items if w.get("status") == "in_progress"]
-        if in_progress:
-            warnings.append(
-                f"{len(in_progress)} work item(s) in progress but no attempts recorded. "
-                f"Log work with `rekall attempts add <work_item_id> --title '...'`."
-            )
-
-    # 3. Check for pending decisions that are stale
+    # 2. Check for zero decisions recorded this session
     decisions = store._load_stream("decisions", hot_only=True)
+    if not decisions:
+        warnings.append(
+            "No decisions recorded. If you made architectural choices or tradeoffs, "
+            "run: rekall decisions propose --title '...' --rationale '...' --tradeoffs '...'"
+        )
+
+    # 3. Check for zero attempts recorded
+    attempts = store._load_stream("attempts", hot_only=True)
+    if not attempts:
+        warnings.append(
+            "No failed attempts recorded. If anything was tried and didn't work, "
+            "run: rekall attempts add <id> --title '...' --evidence '...'"
+        )
+
+    # 4. Check for pending decisions that are stale
     pending = [d for d in decisions if d.get("status") in ("proposed", "pending", "PENDING")]
     if pending:
         warnings.append(
@@ -2571,23 +2620,52 @@ def _generate_ide_instruction_files(force=False):
         claude_md.write_text(claude_content, encoding="utf-8")
         print("\u2705 Created CLAUDE.md")
 
-    # Claude
+    # Claude Code: settings.json with hooks for automatic brief injection
     claude_dir = Path(".claude")
     claude_dir.mkdir(exist_ok=True)
     claude_file = claude_dir / "settings.json"
-    if not claude_file.exists() or force:
-        settings = {
-            "customInstructions": instruction
-        }
-        if claude_file.exists():
-            try:
-                with open(claude_file, "r") as f:
-                    settings = _json.load(f)
-                settings["customInstructions"] = instruction
-            except Exception:
-                pass
-        claude_file.write_text(_json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-        print("\u2705 Created/Updated .claude/settings.json")
+
+    # Build settings with SessionStart hook
+    settings = {}
+    if claude_file.exists() and not force:
+        try:
+            with open(claude_file, "r", encoding="utf-8") as f:
+                settings = _json.load(f)
+        except Exception:
+            pass
+
+    settings["customInstructions"] = instruction
+
+    # Hooks: auto-brief on start, auto-session-end on exit
+    # SessionStart: inject brief (unavoidable context)
+    # SessionEnd: run session end with audit (catches missing decisions/attempts)
+    settings["hooks"] = {
+        "SessionStart": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "rekall brief 2>/dev/null || true"
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "rekall session end --summary 'Auto-ended by Claude Code session hook' 2>/dev/null || true"
+                    }
+                ]
+            }
+        ]
+    }
+
+    claude_file.write_text(_json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    print("\u2705 Created/Updated .claude/settings.json (hooks: auto-brief on session start)")
 
     # Cursor MCP config (repo-local, shareable)
     cursor_mcp = Path(".cursor/mcp.json")
@@ -2978,6 +3056,16 @@ Type 'rekall <command> --help' for details on any command.
     )
     parser_verify.set_defaults(func=cmd_verify)
 
+    # Explorer (hidden/advanced)
+    parser_explorer = subparsers.add_parser(
+        "explorer",
+        help=argparse.SUPPRESS,
+        parents=[shared_flags],
+    )
+    parser_explorer.add_argument("--port", type=int, default=7700, help="Port for the explorer server")
+    parser_explorer.add_argument("--no-browser", action="store_true", help="Don't auto-open browser")
+    parser_explorer.set_defaults(func=cmd_explorer)
+
     # Stats (hidden/advanced)
     parser_stats = subparsers.add_parser(
         "stats",
@@ -3322,7 +3410,7 @@ Type 'rekall <command> --help' for details on any command.
     _SESSION_GATE_EXEMPT = {"brief", "init", "session", "demo", "features",
                             "agents", "assistants", "serve", "doctor", "hooks",
                             "mode", "validate", "verify", "rewind", "resume",
-                            "snapshot"}
+                            "snapshot", "explorer"}
     if args.command not in _SESSION_GATE_EXEMPT:
         try:
             vault = resolve_vault_dir()

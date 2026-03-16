@@ -1172,6 +1172,18 @@ def rekall_checkpoint(args: dict) -> list:
         out = {"ok": True, "type": ctype, "id": tid}
         if git_sha:
             out["git_sha"] = git_sha
+
+        # Recording audit: remind agents about decisions and attempts
+        prompts = []
+        decisions = store._load_stream_raw("decisions", hot_only=True)
+        attempts = store._load_stream_raw("attempts", hot_only=True)
+        if not decisions:
+            prompts.append("No decisions recorded. If you made architectural choices, call rekall.decision with title, rationale, and tradeoffs.")
+        if not attempts:
+            prompts.append("No failed attempts recorded. If anything was tried and didn't work, call rekall.attempt with title and evidence.")
+        if prompts:
+            out["_recording_gaps"] = prompts
+
         return [out]
     except Exception as e:
         err_code = "VALIDATION_ERROR"
