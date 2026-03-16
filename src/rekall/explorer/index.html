@@ -294,6 +294,15 @@ main.has-detail{grid-template-columns:1fr 380px}
           <button class="fbtn" data-filter="head_move">HEAD</button>
           <button class="fbtn" data-filter="wi_">Work</button>
         </div>
+        <div class="toolbar-sep"></div>
+        <div class="toolbar-group">
+          <button class="fbtn active" data-time="all">All time</button>
+          <button class="fbtn" data-time="1h">1h</button>
+          <button class="fbtn" data-time="24h">24h</button>
+          <button class="fbtn" data-time="7d">7d</button>
+          <button class="fbtn" data-time="30d">30d</button>
+        </div>
+        <div class="toolbar-sep"></div>
         <div class="toolbar-group">
           <button class="jbtn" data-jump="checkpoint" title="Jump to latest checkpoint">CP</button>
           <button class="jbtn" data-jump="attempt_failed" title="Jump to latest failure">FAIL</button>
@@ -335,6 +344,7 @@ main.has-detail{grid-template-columns:1fr 380px}
         </div>
         <div class="toolbar-sep"></div>
         <button class="jbtn" id="trace-to-ledger" title="View selected event in Ledger">&#8592; Ledger</button>
+        <span class="toolbar-label" id="trace-scope" style="display:none"></span>
         <div class="lin-hint">Select event to explore causal neighborhood &middot; <span class="kbd">t</span> toggle</div>
       </div>
       <div class="lin-canvas" id="lin-canvas"></div>
@@ -357,7 +367,7 @@ main.has-detail{grid-template-columns:1fr 380px}
 <script>
 /* ═══ STATE ═══ */
 let allEvents=[], filteredEvents=[], selectedId=null, focusIdx=-1;
-let currentMode='ledger', activeFilter='all', verifyResults={};
+let currentMode='ledger', activeFilter='all', timeRange='all', verifyResults={};
 let traceDepth=2;
 const ROW_H=34;
 
@@ -404,15 +414,55 @@ function switchMode(mode){
   }
 }
 
-/* ═══ FILTER ═══ */
+/* ═══ FILTER (time + type + search) ═══ */
+function getTimeCutoff(){
+  if(timeRange==='all')return null;
+  const now=new Date();
+  const ms={
+    '1h':3600000,'24h':86400000,'7d':604800000,'30d':2592000000
+  };
+  return new Date(now.getTime()-(ms[timeRange]||0)).toISOString();
+}
+
 function applyFilter(){
   const q=document.getElementById('search').value.toLowerCase();
+  const cutoff=getTimeCutoff();
   filteredEvents=allEvents.filter(e=>{
+    // Time filter
+    if(cutoff&&e.timestamp&&e.timestamp<cutoff)return false;
+    // Type filter
     if(activeFilter!=='all'&&!e.type.includes(activeFilter))return false;
+    // Search
     if(q&&!e.summary.toLowerCase().includes(q)&&!e.id.toLowerCase().includes(q)&&!e.type.toLowerCase().includes(q))return false;
     return true;
   });
+
+  // Handle selection falling out of scope
+  if(selectedId&&!filteredEvents.some(e=>e.id===selectedId)){
+    // Try to select the latest checkpoint in scope, or latest event
+    const replacement=filteredEvents.find(e=>e.type==='checkpoint')||filteredEvents[0];
+    if(replacement){
+      selectedId=replacement.id;
+      focusIdx=0;
+      showDetail(replacement);
+    } else {
+      selectedId=null;
+      focusIdx=-1;
+      closeDetail();
+    }
+  }
+
   document.getElementById('ledger-count').textContent=filteredEvents.length+'/'+allEvents.length;
+
+  // Update trace scope indicator
+  const scopeEl=document.getElementById('trace-scope');
+  if(timeRange!=='all'){
+    scopeEl.style.display='inline';
+    scopeEl.textContent='Scope: '+timeRange;
+  } else {
+    scopeEl.style.display='none';
+  }
+
   if(currentMode==='ledger')renderLedger();
   if(currentMode==='lineage')renderTrace();
 }
@@ -706,6 +756,12 @@ document.querySelectorAll('.mode-btn').forEach(b=>{
 document.querySelectorAll('.fbtn').forEach(b=>{b.addEventListener('click',()=>{
   document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');activeFilter=b.dataset.filter;focusIdx=-1;applyFilter();
+})});
+
+// Time range filter
+document.querySelectorAll('[data-time]').forEach(b=>{b.addEventListener('click',()=>{
+  document.querySelectorAll('[data-time]').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');timeRange=b.dataset.time;focusIdx=-1;applyFilter();
 })});
 
 // Search
