@@ -1,8 +1,8 @@
 # Rekall Quickstart
 
-Get persistent agent memory in 2 minutes.
+Get persistent agent memory in 2 minutes using the **Agent Continuity Protocol (ACP)**.
 
-## Install
+## Install the Reference Implementation
 
 ```bash
 pip install rekall.tools
@@ -10,10 +10,10 @@ cd your-project
 rekall init
 ```
 
-This does everything:
-- Creates the `project-state/` vault
-- Installs auto-checkpoint git hook (every commit recorded)
-- Sets up Claude Code session hooks (brief on start, audit on end)
+This bootstraps ACP in your repo:
+- Creates the `project-state/` ACP vault
+- Installs an auto-checkpoint git hook (every commit is recorded as an ACP checkpoint)
+- Sets up Claude Code session hooks (ACP brief on start)
 - Configures Cursor MCP (`.cursor/mcp.json`)
 - Generates IDE instruction files for all assistants
 
@@ -21,27 +21,26 @@ This does everything:
 
 **Automatically (no action needed):**
 - Every git commit creates a Rekall checkpoint
-- Every Claude Code session starts with a brief of where you left off
-- Every session end audits for missing recordings
+- Every Claude Code session starts with an ACP brief of where you left off
 
 **When you want to:**
 ```bash
-rekall brief                    # See current context anytime
-rekall checkpoint --summary "..." --commit auto   # Explicit milestone
-rekall log                      # View execution timeline
+rekall brief                    # See current context anytime (ACP Brief)
+rekall checkpoint --summary "..." --commit auto   # Explicit milestone (ACP Checkpoint)
+rekall log                      # View execution timeline (ACP Log)
 ```
 
 **When something fails:**
 ```bash
 rekall attempts add <id> --title "Tried X" --evidence "Failed because Y"
 ```
-Next session will show: **DO NOT RETRY: Tried X**
+Next session the ACP brief will show: **DO NOT RETRY: Tried X**
 
 **When you make a decision:**
 ```bash
 rekall decisions propose --title "Use Postgres" --rationale "..." --tradeoffs "..."
 ```
-Next session will show the pending decision until it's resolved.
+Next session the ACP brief will show the pending decision until it's resolved.
 
 ## Agent Setup
 
@@ -58,10 +57,10 @@ Next session will show the pending decision until it's resolved.
 }
 ```
 
-**CLI agents (Codex, Aider):** Agent reads `AGENTS.md` and runs commands directly.
+**CLI agents (Codex, Aider):** Agent reads the repo instructions and runs ACP commands natively.
 
 ## That's It
 
-Rekall works in the background. Your agents start warm. Failed paths aren't retried. Decisions aren't re-debated.
+Rekall works in the background as your local-first ACP runtime. Your agents start warm. Failed paths aren't retried. Decisions aren't re-debated.
 
-For more: [Beta Guide](BETA.md) | [MCP Tools](mcp-tools.md)
+For more: [ACP Spec](acp.md) | [MCP Tools](mcp-tools.md)
