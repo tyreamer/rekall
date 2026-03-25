@@ -2812,7 +2812,7 @@ Type 'rekall <command> --help' for details on any command.
     # Init
     parser_init = subparsers.add_parser(
         "init",
-        help="Create the Rekall vault in your project.",
+        help="Bootstrap ACP (Agent Continuity Protocol) in your project.",
         parents=[shared_flags],
     )
     parser_init.add_argument(
@@ -3179,7 +3179,7 @@ Type 'rekall <command> --help' for details on any command.
     # Checkpoint
     parser_checkpoint = subparsers.add_parser(
         "checkpoint",
-        help="Record a milestone, task completion, or decision.",
+        help="Write an ACP Checkpoint (record a milestone, task completion, or decision).",
         parents=[shared_flags],
     )
     parser_checkpoint.add_argument(
@@ -3232,7 +3232,7 @@ Type 'rekall <command> --help' for details on any command.
     # Log
     parser_log = subparsers.add_parser(
         "log",
-        help="View the event timeline (like git log).",
+        help="Read the ACP Execution History (view the event timeline).",
         parents=[shared_flags],
     )
     parser_log.add_argument("--limit", type=int, default=50, help="Number of events to show")
@@ -3346,7 +3346,7 @@ Type 'rekall <command> --help' for details on any command.
     # Brief
     parser_brief = subparsers.add_parser(
         "brief",
-        help="One-call read: focus, blockers, failed paths, next actions.",
+        help="Read the ACP Brief: focus, blockers, failed paths, next actions.",
         parents=[shared_flags],
     )
     parser_brief.add_argument(
